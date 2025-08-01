@@ -31,15 +31,22 @@ def generate_inventory_from_csv(csv_file):
         with open(csv_file, 'r') as f:
             reader = csv.DictReader(f)
             for row in reader:
-                vm_name = row['vm_name']
-                ip = row['ip'] if row['ip'] != '0' else f"192.168.1.{len(masters + workers + lb_nodes) + 10}"
+                vm_name = row.get('vm_name') or ''
+                vm_name = vm_name.strip() if vm_name else ''
+                if not vm_name:
+                    continue
+                    
+                ip = row.get('ip', '0')
+                if ip == '0' or not ip:
+                    ip = f"192.168.1.{len(masters + workers + lb_nodes) + 10}"
                 
                 hostvars = {
                     'ansible_host': ip,
                     'vm_name': vm_name,
-                    'cores': row['cores'],
-                    'memory': row['memory'],
-                    'disk_size': row['disk_size']
+                    'cores': row.get('cores', '2'),
+                    'memory': row.get('memory', '4096'),
+                    'disk_size': row.get('disk_size', '32G'),
+                    'template': row.get('template', 'unknown')
                 }
                 
                 # Classify nodes based on naming convention

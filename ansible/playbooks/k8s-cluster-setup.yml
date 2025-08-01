@@ -24,11 +24,40 @@
           Pod Network CIDR: {{ pod_network_cidr }}
 
   tasks:
+    # Detect OS from template and set facts
+    - name: Set OS facts from template
+      set_fact:
+        detected_os_family: >-
+          {%- if 'centos' in template.lower() or 'rhel' in template.lower() or 'rocky' in template.lower() or 'alma' in template.lower() -%}
+          RedHat
+          {%- elif 'debian' in template.lower() or 'ubuntu' in template.lower() -%}
+          Debian
+          {%- else -%}
+          {{ ansible_os_family }}
+          {%- endif -%}
+        package_manager: >-
+          {%- if 'centos' in template.lower() or 'rhel' in template.lower() or 'rocky' in template.lower() or 'alma' in template.lower() -%}
+          yum
+          {%- elif 'debian' in template.lower() or 'ubuntu' in template.lower() -%}
+          apt
+          {%- else -%}
+          auto
+          {%- endif -%}
+
+    - name: Display detected OS information
+      debug:
+        msg: |
+          Host: {{ inventory_hostname }}
+          Template: {{ template }}
+          Detected OS Family: {{ detected_os_family }}
+          Package Manager: {{ package_manager }}
+          Actual OS Family: {{ ansible_os_family }}
+
     # Common tasks for all nodes
-    - name: Disable SELinux (CentOS/RHEL)
+    - name: Disable SELinux (RedHat-based systems)
       selinux:
         state: disabled
-      when: ansible_os_family == "RedHat"
+      when: detected_os_family == "RedHat"
       notify: reboot system
 
     - name: Disable swap permanently
@@ -68,18 +97,27 @@
         - { name: 'net.bridge.bridge-nf-call-ip6tables', value: '1' }
         - { name: 'net.ipv4.ip_forward', value: '1' }
 
-    - name: Install containerd (CentOS/RHEL)
+    - name: Update package cache (RedHat-based)
+      yum:
+        update_cache: yes
+      when: detected_os_family == "RedHat"
+
+    - name: Update package cache (Debian-based)
+      apt:
+        update_cache: yes
+      when: detected_os_family == "Debian"
+
+    - name: Install containerd (RedHat-based)
       yum:
         name: containerd.io
         state: present
-      when: ansible_os_family == "RedHat"
+      when: detected_os_family == "RedHat"
 
-    - name: Install containerd (Debian/Ubuntu)
+    - name: Install containerd (Debian-based)
       apt:
         name: containerd.io
         state: present
-        update_cache: yes
-      when: ansible_os_family == "Debian"
+      when: detected_os_family == "Debian"
 
     - name: Create containerd configuration directory
       file:
@@ -103,7 +141,7 @@
         replace: 'SystemdCgroup = true'
       notify: restart containerd
 
-    - name: Add Kubernetes repository (CentOS/RHEL)
+    - name: Add Kubernetes repository (RedHat-based)
       yum_repository:
         name: kubernetes
         description: Kubernetes Repository
@@ -111,20 +149,20 @@
         gpgcheck: yes
         gpgkey: https://pkgs.k8s.io/core:/stable:/v1.28/rpm/repodata/repomd.xml.key
         enabled: yes
-      when: ansible_os_family == "RedHat"
+      when: detected_os_family == "RedHat"
 
-    - name: Add Kubernetes APT key (Debian/Ubuntu)
+    - name: Add Kubernetes APT key (Debian-based)
       apt_key:
         url: https://pkgs.k8s.io/core:/stable:/v1.28/deb/Release.key
         state: present
-      when: ansible_os_family == "Debian"
+      when: detected_os_family == "Debian"
 
-    - name: Add Kubernetes repository (Debian/Ubuntu)
+    - name: Add Kubernetes repository (Debian-based)
       apt_repository:
         repo: "deb https://pkgs.k8s.io/core:/stable:/v1.28/deb/ /"
         state: present
         update_cache: yes
-      when: ansible_os_family == "Debian"
+      when: detected_os_family == "Debian"
 
     - name: Install Kubernetes components
       package:
@@ -134,7 +172,7 @@
           - kubectl
         state: present
 
-    - name: Hold Kubernetes packages (Debian/Ubuntu)
+    - name: Hold Kubernetes packages (Debian-based)
       dpkg_selections:
         name: "{{ item }}"
         selection: hold
@@ -142,7 +180,7 @@
         - kubelet
         - kubeadm
         - kubectl
-      when: ansible_os_family == "Debian"
+      when: detected_os_family == "Debian"
 
     - name: Start and enable containerd
       systemd:

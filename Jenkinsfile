@@ -88,6 +88,10 @@ pipeline {
                                 
                                 echo "Cluster configuration detected:"
                                 python3 scripts/show_cluster_config.py ${INVENTORY_FILE}
+                                
+                                echo ""
+                                echo "OS Distribution Analysis:"
+                                python3 scripts/detect_os_type.py ${INVENTORY_FILE}
                             '''
                         }
                     }
