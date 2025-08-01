@@ -85,7 +85,11 @@ pipeline {
                             sh '''
                                 echo "Generating dynamic inventory from CSV..."
                                 
+                                # Generate inventory directly using our CSV generator (avoid terraform fallback)
                                 python3 generate_inventory.py ../terraform/vms.csv > ${INVENTORY_FILE}
+                                
+                                echo "Verifying generated inventory JSON:"
+                                python3 -m json.tool ${INVENTORY_FILE}
                                 
                                 echo "Generated inventory:"
                                 python3 -m json.tool ${INVENTORY_FILE}
@@ -140,6 +144,12 @@ pipeline {
                             # Debug: Show inventory content
                             echo "Current inventory content:"
                             cat ${INVENTORY_FILE}
+                            echo ""
+                            echo "Validating JSON format:"
+                            python3 -m json.tool ${INVENTORY_FILE} || echo "JSON validation failed!"
+                            echo ""
+                            echo "Looking for problematic characters:"
+                            grep -n "{" ${INVENTORY_FILE} | head -10 || echo "No { characters found"
                             echo ""
                             
                             # Test ping connectivity
