@@ -4,7 +4,7 @@ output "vm_assignments" {
     for vm_name, vm_data in local.vm_data : vm_name => {
       original_name = vm_data.vm_name_original
       final_name    = vm_data.vm_name_final
-      random_suffix = random_string.vm_suffix[vm_name].result
+      random_suffix = random_string.vm_suffix.result
       vmid          = vm_data.vmid
       vmid_source   = vm_data.vmid_source
       ip_address    = vm_data.ip_address
@@ -47,7 +47,7 @@ output "vm_name_mapping" {
   value = {
     for vm_name, vm_data in local.vm_data : vm_data.vm_name_original => {
       final_name    = vm_data.vm_name_final
-      random_suffix = random_string.vm_suffix[vm_name].result
+      random_suffix = random_string.vm_suffix.result
     }
   }
 }
