@@ -35,7 +35,10 @@ pipeline {
                 stage('Terraform Init') {
                     steps {
                         dir("${TERRAFORM_DIR}") {
-                            sh 'terraform init'
+                            sh '''
+                                echo "Initializing Terraform..."
+                                terraform init -upgrade
+                            '''
                         }
                     }
                 }
