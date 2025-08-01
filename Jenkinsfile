@@ -8,9 +8,9 @@ pipeline {
             description: 'Run Ansible after Terraform apply'
         )
         choice(
-            name: 'ansible_playbook',
-            choices: ['nginx-install.yaml', 'kubernetes-prep.yaml', 'common-setup.yaml'],
-            description: 'Ansible playbook to run'
+            name: 'deployment_type',
+            choices: ['kubernetes', 'common'],
+            description: 'Type of deployment to run'
         )
     }
 
@@ -18,30 +18,36 @@ pipeline {
         TERRAFORM_DIR = 'terraform'
         ANSIBLE_DIR = 'ansible'
         ANSIBLE_CONFIG = "${ANSIBLE_DIR}/ansible.cfg"
+        INVENTORY_FILE = '/tmp/k8s-inventory.json'
     }
 
     stages {
         stage('Checkout') {
             steps {
-                git branch: 'main', credentialsId: 'gitlab-credential', url: 'https://gitlab.labngoprek.my.id/root/iac-provision'
+                git branch: 'main', 
+                    credentialsId: 'gitlab-credential', 
+                    url: 'https://gitlab.labngoprek.my.id/root/iac-provision'
             }
         }
         
-        stage('Terraform Init') {
-            steps {
-                dir("${TERRAFORM_DIR}") {
-                    sh 'terraform init'
+        stage('Terraform Operations') {
+            parallel {
+                stage('Terraform Init') {
+                    steps {
+                        dir("${TERRAFORM_DIR}") {
+                            sh 'terraform init'
+                        }
+                    }
                 }
-            }
-        }
-        
-        stage('Terraform Plan') {
-            steps {
-                dir("${TERRAFORM_DIR}") {
-                    sh '''
-                        echo "📋 Planning Terraform deployment..."
-                        terraform plan -out=tfplan
-                    '''
+                stage('Terraform Plan') {
+                    steps {
+                        dir("${TERRAFORM_DIR}") {
+                            sh '''
+                                echo "Planning Terraform deployment..."
+                                terraform plan -out=tfplan
+                            '''
+                        }
+                    }
                 }
             }
         }
@@ -50,92 +56,80 @@ pipeline {
             steps {
                 dir("${TERRAFORM_DIR}") {
                     sh '''
-                        echo "🚀 Applying Terraform plan..."
+                        echo "Applying Terraform plan..."
                         terraform apply tfplan
                         
-                        echo ""
-                        echo "✅ Infrastructure deployed successfully!"
+                        echo "Infrastructure deployed successfully!"
                         terraform state list
                     '''
                 }
             }
         }
         
-        stage('Generate Ansible Inventory') {
+        stage('Prepare Ansible') {
             when {
-                expression { params.run_ansible == true }
+                expression { params.run_ansible }
             }
-            steps {
-                dir("${TERRAFORM_DIR}") {
-                    script {
+            parallel {
+                stage('Generate Dynamic Inventory') {
+                    steps {
+                        dir("${ANSIBLE_DIR}") {
+                            sh '''
+                                echo "Generating dynamic inventory from CSV..."
+                                
+                                python3 generate_inventory.py ../terraform/vms.csv > ${INVENTORY_FILE}
+                                
+                                echo "Generated inventory:"
+                                python3 -m json.tool ${INVENTORY_FILE}
+                                
+                                echo "Cluster configuration detected:"
+                                python3 scripts/show_cluster_config.py ${INVENTORY_FILE}
+                            '''
+                        }
+                    }
+                }
+                stage('Wait for VMs') {
+                    steps {
                         sh '''
-                            echo "📝 Generating Ansible inventory..."
-                            
-                            # Create inventory directory
-                            mkdir -p ../${ANSIBLE_DIR}/inventory
-                            
-                            # Generate INI format inventory
-                            terraform output -raw ansible_inventory_ini > ../${ANSIBLE_DIR}/inventory/hosts.ini
-                            
-                            echo "📋 Generated inventory file:"
-                            ls -la ../${ANSIBLE_DIR}/inventory/
-                            
-                            echo "🔍 Inventory content preview:"
-                            head -20 ../${ANSIBLE_DIR}/inventory/hosts.ini
+                            echo "Waiting for VMs to be ready..."
+                            sleep 45
                         '''
                     }
                 }
             }
         }
         
-        stage('Wait for VMs Ready') {
+        stage('Test Connectivity') {
             when {
-                expression { params.run_ansible == true }
-            }
-            steps {
-                script {
-                    sh '''
-                        echo "⏳ Waiting for VMs to be ready..."
-                        sleep 45
-                        
-                        echo "🔍 Testing VM connectivity..."
-                        cd ${ANSIBLE_DIR}
-                        
-                        # Get IP addresses from inventory
-                        grep "ansible_host=" inventory/hosts.ini | awk -F'ansible_host=' '{print $2}' | awk '{print $1}' | while read ip; do
-                            echo "Testing connectivity to $ip..."
-                            timeout 10 ping -c 2 $ip || echo "Warning: $ip not responding to ping yet"
-                        done
-                    '''
-                }
-            }
-        }
-        
-        stage('Ansible Connectivity Test') {
-            when {
-                expression { params.run_ansible == true }
+                expression { params.run_ansible }
             }
             steps {
                 dir("${ANSIBLE_DIR}") {
                     script {
                         sh '''
-                            echo "🔍 Testing Ansible connectivity..."
+                            echo "Testing VM connectivity..."
                             
+                            # Test ping connectivity
+                            python3 scripts/get_host_ips.py ${INVENTORY_FILE} | while read ip; do
+                                echo "Testing connectivity to $ip..."
+                                timeout 10 ping -c 2 $ip || echo "Warning: $ip not responding"
+                            done
+                            
+                            echo "Testing Ansible connectivity..."
                             # Retry mechanism for ansible ping
                             for i in {1..3}; do
                                 echo "Attempt $i/3: Testing ansible connectivity..."
-                                if ansible all -i inventory/hosts.ini -m ping --timeout=15; then
-                                    echo "✅ All hosts are reachable!"
+                                if ansible all -i ${INVENTORY_FILE} -m ping --timeout=15; then
+                                    echo "All hosts are reachable!"
                                     break
                                 else
-                                    echo "⚠️  Some hosts not ready, waiting 30s before retry..."
+                                    echo "Some hosts not ready, waiting 30s before retry..."
                                     sleep 30
                                 fi
                                 
                                 if [ $i -eq 3 ]; then
-                                    echo "❌ Failed to connect to all hosts after 3 attempts"
-                                    echo "🔍 Checking individual hosts:"
-                                    ansible all -i inventory/hosts.ini -m ping --timeout=10 -v || true
+                                    echo "Failed to connect to all hosts after 3 attempts"
+                                    ansible all -i ${INVENTORY_FILE} -m ping --timeout=10 -v || true
                                     exit 1
                                 fi
                             done
@@ -145,38 +139,40 @@ pipeline {
             }
         }
         
-        stage('Deploy with Ansible') {
+        stage('Deploy Services') {
             when {
-                expression { params.run_ansible == true }
+                expression { params.run_ansible }
             }
             steps {
                 dir("${ANSIBLE_DIR}") {
                     script {
-                        def playbookName = params.ansible_playbook
+                        def deploymentType = params.deployment_type
+                        
                         sh """
-                            echo "🚀 Starting deployment with Ansible..."
-                            echo "📋 Using playbook: ${playbookName}"
+                            echo "Starting ${deploymentType} deployment..."
                             
-                            # Run selected ansible playbook
-                            ansible-playbook -i inventory/hosts.ini playbooks/${playbookName} -v
+                            case "${deploymentType}" in
+                                "kubernetes")
+                                    echo "Deploying Kubernetes cluster..."
+                                    ./run-k8s-setup.sh
+                                    ;;
+                                "common")
+                                    echo "Running common setup..."
+                                    ansible-playbook -i ${INVENTORY_FILE} playbooks/common-setup.yaml -v
+                                    ;;
+                                *)
+                                    echo "Unknown deployment type: ${deploymentType}"
+                                    exit 1
+                                    ;;
+                            esac
                             
                             if [ \$? -eq 0 ]; then
-                                echo ""
-                                echo "🎉 Ansible deployment completed successfully!"
-                                echo ""
-                                echo "🌐 Access your services:"
+                                echo "Deployment completed successfully!"
                                 
-                                # Extract IPs and show access URLs
-                                grep "ansible_host=" inventory/hosts.ini | while read line; do
-                                    hostname=\$(echo \$line | awk '{print \$1}')
-                                    ip=\$(echo \$line | awk -F'ansible_host=' '{print \$2}' | awk '{print \$1}')
-                                    echo "  - \$hostname: http://\$ip"
-                                done
-                                
-                                echo ""
-                                echo "✅ All services are up and running!"
+                                echo "Service endpoints:"
+                                python3 scripts/show_endpoints.py ${INVENTORY_FILE}
                             else
-                                echo "❌ Ansible deployment failed!"
+                                echo "Deployment failed!"
                                 exit 1
                             fi
                         """
@@ -188,34 +184,67 @@ pipeline {
         stage('Verify Deployment') {
             when {
                 allOf {
-                    expression { params.run_ansible == true }
-                    expression { params.ansible_playbook == 'nginx-install.yaml' }
+                    expression { params.run_ansible }
+                    expression { params.deployment_type == 'kubernetes' }
+                }
+            }
+            steps {
+                dir("${ANSIBLE_DIR}") {
+                    sh '''
+                        echo "Verifying Kubernetes deployment..."
+                        
+                        # Get first master node
+                        FIRST_MASTER=$(python3 scripts/get_first_master.py ${INVENTORY_FILE})
+                        
+                        if [ -n "$FIRST_MASTER" ]; then
+                            echo "Testing kubectl on $FIRST_MASTER..."
+                            ansible $FIRST_MASTER -i ${INVENTORY_FILE} -m shell -a "kubectl get nodes" --timeout=30
+                            ansible $FIRST_MASTER -i ${INVENTORY_FILE} -m shell -a "kubectl get pods --all-namespaces" --timeout=30
+                        else
+                            echo "No master nodes found in inventory"
+                            exit 1
+                        fi
+                    '''
+                }
+            }
+        }
+        
+        stage('Extract KUBECONFIG') {
+            when {
+                allOf {
+                    expression { params.run_ansible }
+                    expression { params.deployment_type == 'kubernetes' }
                 }
             }
             steps {
                 dir("${ANSIBLE_DIR}") {
                     script {
                         sh '''
-                            echo "🔍 Verifying nginx deployment..."
+                            echo "Extracting KUBECONFIG from master node..."
                             
-                            # Check nginx status on all hosts
-                            ansible all -i inventory/hosts.ini -m shell -a "systemctl is-active nginx" --timeout=10
+                            # Create kubeconfig directory for archiving
+                            mkdir -p kubeconfig
                             
-                            echo ""
-                            echo "🌐 Testing HTTP responses:"
+                            # Get KUBECONFIG and save to file
+                            python3 scripts/get_kubeconfig.py ${INVENTORY_FILE} kubeconfig/admin.conf
                             
-                            # Test HTTP responses
-                            grep "ansible_host=" inventory/hosts.ini | while read line; do
-                                hostname=$(echo $line | awk '{print $1}')
-                                ip=$(echo $line | awk -F'ansible_host=' '{print $2}' | awk '{print $1}')
-                                
-                                echo "Testing $hostname ($ip)..."
-                                if curl -s -o /dev/null -w "%{http_code}" "http://$ip" | grep -q "200"; then
-                                    echo "  ✅ $hostname: HTTP 200 OK"
-                                else
-                                    echo "  ❌ $hostname: HTTP request failed"
-                                fi
-                            done
+                            if [ $? -eq 0 ]; then
+                                echo ""
+                                echo "==================== KUBECONFIG ===================="
+                                echo "KUBECONFIG has been extracted and saved to kubeconfig/admin.conf"
+                                echo ""
+                                echo "Quick setup commands:"
+                                echo "  mkdir -p ~/.kube"
+                                echo "  # Copy the content from the archived kubeconfig/admin.conf"
+                                echo "  kubectl get nodes"
+                                echo ""
+                                echo "Content preview:"
+                                head -20 kubeconfig/admin.conf
+                                echo "... (full content available in archived artifacts)"
+                                echo "====================================================="
+                            else
+                                echo "Failed to extract KUBECONFIG"
+                            fi
                         '''
                     }
                 }
@@ -225,17 +254,14 @@ pipeline {
         stage('Show Summary') {
             steps {
                 dir("${TERRAFORM_DIR}") {
-                    script {
-                        sh '''
-                            echo ""
-                            echo "📊 Deployment Summary:"
-                            terraform output assignment_summary
-                            
-                            echo ""
-                            echo "🏗️  Infrastructure Details:"
-                            terraform output vm_assignments
-                        '''
-                    }
+                    sh '''
+                        echo "==================== DEPLOYMENT SUMMARY ===================="
+                        terraform output assignment_summary
+                        
+                        echo ""
+                        echo "==================== INFRASTRUCTURE DETAILS ===================="
+                        terraform output vm_assignments
+                    '''
                 }
             }
         }
@@ -244,58 +270,75 @@ pipeline {
     post {
         always {
             script {
-                if (params.run_ansible == true) {
-                    // Archive generated files
-                    archiveArtifacts artifacts: "${ANSIBLE_DIR}/inventory/hosts.ini", allowEmptyArchive: true
+                if (params.run_ansible) {
+                    archiveArtifacts artifacts: "${ANSIBLE_DIR}/inventory/*", allowEmptyArchive: true
+                    archiveArtifacts artifacts: "${TERRAFORM_DIR}/vms.csv", allowEmptyArchive: true
+                    
+                    if (params.deployment_type == 'kubernetes') {
+                        archiveArtifacts artifacts: "${ANSIBLE_DIR}/kubeconfig/*", allowEmptyArchive: true
+                    }
                 }
             }
         }
         
         success {
             script {
-                echo """
-                🎉 Infrastructure deployment completed successfully!
+                def successMessage = """
+            ==================== SUCCESS ====================
+            Infrastructure deployment completed successfully!
+            
+            What was deployed:
+            - VMs provisioned with Terraform
+            - ${params.deployment_type} configured with Ansible
+            - Dynamic inventory generated automatically"""
+            
+                if (params.deployment_type == 'kubernetes') {
+                    successMessage += """
+            - KUBECONFIG extracted and archived
+            
+            Kubernetes Access:
+            - Download 'kubeconfig/admin.conf' from Jenkins artifacts
+            - Run: mkdir -p ~/.kube && cp admin.conf ~/.kube/config
+            - Test: kubectl get nodes"""
+                }
                 
-                📋 What was deployed:
-                - VMs provisioned with Terraform
-                - Services configured with Ansible (${params.ansible_playbook})
-                - Inventory files generated automatically
-                
-                🌐 Next steps:
-                - Access the services using the URLs shown above
-                - Check the inventory files for host details
-                - Run additional playbooks as needed
-                
-                💡 To destroy resources manually if needed:
-                - SSH to Jenkins server
-                - cd to terraform directory
-                - Run: terraform destroy --auto-approve
-                """
+                successMessage += """
+            
+            Next steps:
+            - Access services using endpoints shown above
+            - Check archived files for configuration details
+            - Scale or modify as needed
+            
+            Cleanup (if needed):
+            - cd terraform && terraform destroy --auto-approve
+            ==================================================
+            """
+            
+                echo successMessage
             }
         }
         
         failure {
-            script {
-                echo """
-                ❌ Pipeline failed!
-                
-                🔍 Check the following:
-                - Terraform state and resources
-                - VM connectivity and SSH access
-                - Ansible inventory and playbook syntax
-                - Network connectivity to target VMs
-                """
-            }
+            echo """
+            ==================== FAILURE ====================
+            Pipeline execution failed!
+            
+            Common troubleshooting steps:
+            1. Check Terraform state and resources
+            2. Verify VM connectivity and SSH access
+            3. Validate Ansible inventory and playbooks
+            4. Check network connectivity to target VMs
+            5. Review stage logs for specific errors
+            ==================================================
+            """
         }
         
         cleanup {
-            script {
-                // Clean up temporary files
-                sh '''
-                    rm -f ${TERRAFORM_DIR}/tfplan
-                    rm -f ${ANSIBLE_DIR}/inventory/hosts.ini
-                '''
-            }
+            sh '''
+                echo "Cleaning up temporary files..."
+                rm -f ${TERRAFORM_DIR}/tfplan
+                rm -f ${INVENTORY_FILE}
+            '''
         }
     }
 }

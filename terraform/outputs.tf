@@ -67,9 +67,6 @@ ${v.vm_name_final} ansible_host=${replace(v.ip_address, "/.*", "")} vmid=${v.vmi
 [kube_all:children]
 kube_masters
 kube_workers
-
-[nginx_servers:children]
-kube_all
 EOT
 }
 
@@ -104,4 +101,17 @@ output "ansible_inventory_json" {
       }
     }
   })
+}
+
+# Export VM data sebagai CSV untuk dynamic inventory generator
+resource "local_file" "vms_csv" {
+  content = <<-EOT
+vmid,vm_name,template,node,ip,cores,memory,disk_size
+%{for k, v in local.vm_data~}
+${v.vmid},${v.vm_name_original},${v.template},${v.node},${replace(v.ip_address, "/.*", "")},${v.cores},${v.memory},${v.disk_size}
+%{endfor~}
+EOT
+  filename = "${path.module}/vms.csv"
+
+  depends_on = [proxmox_vm_qemu.vms]
 }

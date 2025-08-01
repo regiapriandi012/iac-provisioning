@@ -1,0 +1,380 @@
+---
+- name: "Dynamic Kubernetes Cluster Setup (Single Master or HA)"
+  hosts: k8s_cluster
+  become: true
+  gather_facts: true
+  
+  vars:
+    # Will be set dynamically by inventory generator
+    temp_dir: "/tmp/k8s-setup"
+    
+  pre_tasks:
+    - name: Create temporary directory
+      file:
+        path: "{{ temp_dir }}"
+        state: directory
+        mode: '0755'
+    
+    - name: Display cluster configuration
+      debug:
+        msg: |
+          Cluster Mode: {{ 'HA Multi-Master' if is_ha_cluster else 'Single Master' }}
+          Master Count: {{ master_count }}
+          Control Plane Endpoint: {{ control_plane_endpoint }}
+          Pod Network CIDR: {{ pod_network_cidr }}
+
+  tasks:
+    # Common tasks for all nodes
+    - name: Disable SELinux (CentOS/RHEL)
+      selinux:
+        state: disabled
+      when: ansible_os_family == "RedHat"
+      notify: reboot system
+
+    - name: Disable swap permanently
+      replace:
+        path: /etc/fstab
+        regexp: '^([^#].*?\sswap\s+sw\s+.*)$'
+        replace: '# \1'
+      notify: disable swap
+
+    - name: Disable swap immediately
+      command: swapoff -a
+      when: ansible_swaptotal_mb > 0
+
+    - name: Load required kernel modules
+      modprobe:
+        name: "{{ item }}"
+        state: present
+      loop:
+        - overlay
+        - br_netfilter
+
+    - name: Set kernel modules to load at boot
+      copy:
+        content: |
+          overlay
+          br_netfilter
+        dest: /etc/modules-load.d/k8s.conf
+
+    - name: Set kernel parameters for Kubernetes
+      sysctl:
+        name: "{{ item.name }}"
+        value: "{{ item.value }}"
+        sysctl_file: /etc/sysctl.d/k8s.conf
+        reload: yes
+      loop:
+        - { name: 'net.bridge.bridge-nf-call-iptables', value: '1' }
+        - { name: 'net.bridge.bridge-nf-call-ip6tables', value: '1' }
+        - { name: 'net.ipv4.ip_forward', value: '1' }
+
+    - name: Install containerd (CentOS/RHEL)
+      yum:
+        name: containerd.io
+        state: present
+      when: ansible_os_family == "RedHat"
+
+    - name: Install containerd (Debian/Ubuntu)
+      apt:
+        name: containerd.io
+        state: present
+        update_cache: yes
+      when: ansible_os_family == "Debian"
+
+    - name: Create containerd configuration directory
+      file:
+        path: /etc/containerd
+        state: directory
+
+    - name: Generate containerd default configuration
+      shell: containerd config default
+      register: containerd_config
+
+    - name: Write containerd configuration
+      copy:
+        content: "{{ containerd_config.stdout }}"
+        dest: /etc/containerd/config.toml
+      notify: restart containerd
+
+    - name: Enable SystemdCgroup in containerd
+      replace:
+        path: /etc/containerd/config.toml
+        regexp: 'SystemdCgroup = false'
+        replace: 'SystemdCgroup = true'
+      notify: restart containerd
+
+    - name: Add Kubernetes repository (CentOS/RHEL)
+      yum_repository:
+        name: kubernetes
+        description: Kubernetes Repository
+        baseurl: https://pkgs.k8s.io/core:/stable:/v1.28/rpm/
+        gpgcheck: yes
+        gpgkey: https://pkgs.k8s.io/core:/stable:/v1.28/rpm/repodata/repomd.xml.key
+        enabled: yes
+      when: ansible_os_family == "RedHat"
+
+    - name: Add Kubernetes APT key (Debian/Ubuntu)
+      apt_key:
+        url: https://pkgs.k8s.io/core:/stable:/v1.28/deb/Release.key
+        state: present
+      when: ansible_os_family == "Debian"
+
+    - name: Add Kubernetes repository (Debian/Ubuntu)
+      apt_repository:
+        repo: "deb https://pkgs.k8s.io/core:/stable:/v1.28/deb/ /"
+        state: present
+        update_cache: yes
+      when: ansible_os_family == "Debian"
+
+    - name: Install Kubernetes components
+      package:
+        name:
+          - kubelet
+          - kubeadm
+          - kubectl
+        state: present
+
+    - name: Hold Kubernetes packages (Debian/Ubuntu)
+      dpkg_selections:
+        name: "{{ item }}"
+        selection: hold
+      loop:
+        - kubelet
+        - kubeadm
+        - kubectl
+      when: ansible_os_family == "Debian"
+
+    - name: Start and enable containerd
+      systemd:
+        name: containerd
+        state: started
+        enabled: yes
+
+    - name: Start and enable kubelet
+      systemd:
+        name: kubelet
+        state: started
+        enabled: yes
+
+  handlers:
+    - name: reboot system
+      reboot:
+        reboot_timeout: 300
+    
+    - name: disable swap
+      command: swapoff -a
+    
+    - name: restart containerd
+      systemd:
+        name: containerd
+        state: restarted
+
+# HAProxy Setup for Multi-Master HA
+- name: "Setup HAProxy Load Balancer for HA Masters"
+  hosts: k8s_masters
+  become: true
+  vars:
+    haproxy_stats_port: 8404
+  tasks:
+    - name: Install HAProxy (only for HA clusters)
+      package:
+        name: haproxy
+        state: present
+      when: is_ha_cluster
+
+    - name: Configure HAProxy for Kubernetes API
+      template:
+        src: haproxy.cfg.j2
+        dest: /etc/haproxy/haproxy.cfg
+        backup: yes
+      when: is_ha_cluster
+      notify: restart haproxy
+
+    - name: Start and enable HAProxy
+      systemd:
+        name: haproxy
+        state: started
+        enabled: yes
+      when: is_ha_cluster
+
+  handlers:
+    - name: restart haproxy
+      systemd:
+        name: haproxy
+        state: restarted
+
+# Initialize First Master Node
+- name: "Initialize First Kubernetes Master"
+  hosts: k8s_masters[0]
+  become: true
+  tasks:
+    - name: Check if cluster is already initialized
+      stat:
+        path: /etc/kubernetes/admin.conf
+      register: k8s_initialized
+
+    - name: Initialize Kubernetes cluster (Single Master)
+      command: >
+        kubeadm init
+        --pod-network-cidr={{ pod_network_cidr }}
+        --service-cidr={{ service_cidr }}
+        --kubernetes-version=v{{ kubernetes_version }}
+      when: not k8s_initialized.stat.exists and not is_ha_cluster
+      register: kubeadm_init_single
+
+    - name: Initialize Kubernetes cluster (HA Multi-Master)
+      command: >
+        kubeadm init
+        --control-plane-endpoint={{ control_plane_endpoint }}
+        --upload-certs
+        --pod-network-cidr={{ pod_network_cidr }}
+        --service-cidr={{ service_cidr }}
+        --kubernetes-version=v{{ kubernetes_version }}
+      when: not k8s_initialized.stat.exists and is_ha_cluster
+      register: kubeadm_init_ha
+
+    - name: Extract join command for workers
+      shell: kubeadm token create --print-join-command
+      register: join_command_raw
+      when: not k8s_initialized.stat.exists
+
+    - name: Set join command fact
+      set_fact:
+        join_command: "{{ join_command_raw.stdout }}"
+      when: not k8s_initialized.stat.exists
+
+    - name: Extract certificate key for HA masters
+      shell: kubeadm init phase upload-certs --upload-certs | tail -1
+      register: certificate_key_raw
+      when: not k8s_initialized.stat.exists and is_ha_cluster
+
+    - name: Set certificate key fact
+      set_fact:
+        certificate_key: "{{ certificate_key_raw.stdout }}"
+      when: not k8s_initialized.stat.exists and is_ha_cluster
+
+    - name: Create .kube directory
+      file:
+        path: /root/.kube
+        state: directory
+        mode: '0755'
+
+    - name: Copy admin.conf to .kube/config
+      copy:
+        src: /etc/kubernetes/admin.conf
+        dest: /root/.kube/config
+        remote_src: yes
+        owner: root
+        group: root
+        mode: '0644'
+
+# Join Additional Master Nodes (HA only)
+- name: "Join Additional Master Nodes"
+  hosts: k8s_masters[1:]
+  become: true
+  serial: 1
+  tasks:
+    - name: Check if node is already joined
+      stat:
+        path: /etc/kubernetes/admin.conf
+      register: node_joined
+
+    - name: Join additional master nodes
+      command: >
+        {{ hostvars[groups['k8s_masters'][0]]['join_command'] }}
+        --control-plane
+        --certificate-key {{ hostvars[groups['k8s_masters'][0]]['certificate_key'] }}
+      when: 
+        - not node_joined.stat.exists
+        - is_ha_cluster
+        - hostvars[groups['k8s_masters'][0]]['join_command'] is defined
+
+    - name: Create .kube directory
+      file:
+        path: /root/.kube
+        state: directory
+        mode: '0755'
+      when: not node_joined.stat.exists and is_ha_cluster
+
+    - name: Copy admin.conf to .kube/config
+      copy:
+        src: /etc/kubernetes/admin.conf
+        dest: /root/.kube/config
+        remote_src: yes
+        owner: root
+        group: root
+        mode: '0644'
+      when: not node_joined.stat.exists and is_ha_cluster
+
+# Join Worker Nodes
+- name: "Join Worker Nodes to Cluster"
+  hosts: k8s_workers
+  become: true
+  tasks:
+    - name: Check if node is already joined
+      stat:
+        path: /etc/kubernetes/kubelet.conf
+      register: worker_joined
+
+    - name: Join worker nodes to cluster
+      command: "{{ hostvars[groups['k8s_masters'][0]]['join_command'] }}"
+      when: 
+        - not worker_joined.stat.exists
+        - hostvars[groups['k8s_masters'][0]]['join_command'] is defined
+
+# Install Network Plugin
+- name: "Install Container Network Interface (CNI)"
+  hosts: k8s_masters[0]
+  become: true
+  tasks:
+    - name: Check if CNI is already installed
+      shell: kubectl get pods -n kube-system | grep -E "(flannel|calico|weave)" | wc -l
+      register: cni_installed
+      ignore_errors: true
+
+    - name: Install Flannel CNI
+      shell: kubectl apply -f https://github.com/flannel-io/flannel/releases/latest/download/kube-flannel.yml
+      when: cni_installed.stdout == "0"
+
+    - name: Wait for all nodes to be ready
+      shell: kubectl get nodes --no-headers | grep -v Ready | wc -l
+      register: nodes_not_ready
+      until: nodes_not_ready.stdout == "0"
+      retries: 30
+      delay: 10
+
+# Final Status Check
+- name: "Cluster Status Verification"
+  hosts: k8s_masters[0]
+  become: true
+  tasks:
+    - name: Get cluster info
+      shell: kubectl cluster-info
+      register: cluster_info
+
+    - name: Get node status
+      shell: kubectl get nodes -o wide
+      register: node_status
+
+    - name: Display cluster information
+      debug:
+        msg: |
+          ===============================================
+          Kubernetes Cluster Setup Complete!
+          ===============================================
+          
+          Cluster Mode: {{ 'HA Multi-Master (' + master_count|string + ' masters)' if is_ha_cluster else 'Single Master' }}
+          Control Plane Endpoint: {{ control_plane_endpoint }}
+          
+          {{ cluster_info.stdout }}
+          
+          Node Status:
+          {{ node_status.stdout }}
+          
+          {% if is_ha_cluster %}
+          HAProxy Stats: http://{{ ansible_default_ipv4.address }}:8404/stats
+          {% endif %}
+          
+          Next steps:
+          - kubectl get pods --all-namespaces
+          - kubectl get svc --all-namespaces
