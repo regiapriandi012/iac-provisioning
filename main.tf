@@ -17,33 +17,24 @@ provider "proxmox" {
     pm_api_token_secret = var.pm_api_token_secret
 }
 
-# Generate random suffix untuk semua VM names
+# Generate random suffix yang sama untuk semua VM dalam satu provision
 resource "random_string" "vm_suffix" {
-  for_each = {
-    for vm in csvdecode(file(var.vm_csv_file)) : vm.vm_name => vm
-  }
-  
   length  = 12
   special = false
   upper   = false
   
   keepers = {
-    vm_name = each.value.vm_name
+    vm_count = length(csvdecode(file(var.vm_csv_file)))
   }
 }
 
-# Generate random VMID untuk VMs yang vmid = 0
-resource "random_integer" "vmid" {
-  for_each = {
-    for vm in csvdecode(file(var.vm_csv_file)) : vm.vm_name => vm
-    if tonumber(vm.vmid) == 0
-  }
- 
+# Generate base VMID untuk sequential assignment
+resource "random_integer" "vmid_base" {
   min = 10000
-  max = 20000
- 
+  max = 19000
+  
   keepers = {
-    vm_name = each.value.vm_name
+    vm_count = length([for vm in csvdecode(file(var.vm_csv_file)) : vm if tonumber(vm.vmid) == 0])
   }
 }
 
@@ -65,15 +56,20 @@ locals {
   vms_need_auto_ip = [
     for vm in local.vm_data_raw : vm if vm.ip == "0"
   ]
+  
+  # Create list of VMs that need auto VMID
+  vms_need_auto_vmid = [
+    for vm in local.vm_data_raw : vm if tonumber(vm.vmid) == 0
+  ]
  
   vm_data = {
     for i, vm in local.vm_data_raw : vm.vm_name => {
-      # Use defined VMID or random (if vmid = 0)
-      vmid = tonumber(vm.vmid) != 0 ? tonumber(vm.vmid) : random_integer.vmid[vm.vm_name].result
+      # Use defined VMID or sequential VMID (if vmid = 0)
+      vmid = tonumber(vm.vmid) != 0 ? tonumber(vm.vmid) : random_integer.vmid_base.result + index(local.vms_need_auto_vmid, vm)
      
-      # Generate VM name with random suffix
+      # Generate VM name with same random suffix for all VMs
       vm_name_original = vm.vm_name
-      vm_name_final    = "${vm.vm_name}-${random_string.vm_suffix[vm.vm_name].result}"
+      vm_name_final    = "${vm.vm_name}-${random_string.vm_suffix.result}"
       
       template  = vm.template
       node      = vm.node
@@ -87,7 +83,7 @@ locals {
       disk_size = vm.disk_size
      
       # Flag untuk tracking
-      vmid_source = tonumber(vm.vmid) != 0 ? "defined" : "random"
+      vmid_source = tonumber(vm.vmid) != 0 ? "defined" : "sequential"
       ip_source   = vm.ip != "0" ? "defined" : "sequential"
     }
   }

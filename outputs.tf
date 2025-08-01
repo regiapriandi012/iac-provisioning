@@ -31,12 +31,14 @@ output "created_vms" {
 output "assignment_summary" {
   description = "Summary of how IDs and IPs were assigned"
   value = {
-    defined_vmids = length([for vm in local.vm_data : vm if vm.vmid_source == "defined"])
-    random_vmids  = length([for vm in local.vm_data : vm if vm.vmid_source == "random"])
-    defined_ips   = length([for vm in local.vm_data : vm if vm.ip_source == "defined"])
-    sequential_ips = length([for vm in local.vm_data : vm if vm.ip_source == "sequential"])
-    total_vms     = length(local.vm_data)
-    ip_base       = random_integer.ip_base.result
+    defined_vmids    = length([for vm in local.vm_data : vm if vm.vmid_source == "defined"])
+    sequential_vmids = length([for vm in local.vm_data : vm if vm.vmid_source == "sequential"])
+    defined_ips      = length([for vm in local.vm_data : vm if vm.ip_source == "defined"])
+    sequential_ips   = length([for vm in local.vm_data : vm if vm.ip_source == "sequential"])
+    total_vms        = length(local.vm_data)
+    vmid_base        = random_integer.vmid_base.result
+    ip_base          = random_integer.ip_base.result
+    shared_suffix    = random_string.vm_suffix.result
   }
 }
 
