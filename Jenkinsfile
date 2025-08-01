@@ -9,7 +9,7 @@ pipeline {
         )
         choice(
             name: 'ansible_playbook',
-            choices: ['nginx-install.yml', 'kubernetes-prep.yml', 'common-setup.yml'],
+            choices: ['nginx-install.yaml', 'kubernetes-prep.yaml', 'common-setup.yaml'],
             description: 'Ansible playbook to run'
         )
     }
@@ -189,7 +189,7 @@ pipeline {
             when {
                 allOf {
                     expression { params.run_ansible == true }
-                    expression { params.ansible_playbook == 'nginx-install.yml' }
+                    expression { params.ansible_playbook == 'nginx-install.yaml' }
                 }
             }
             steps {
