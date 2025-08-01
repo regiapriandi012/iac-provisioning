@@ -137,6 +137,11 @@ pipeline {
                         sh '''
                             echo "Testing VM connectivity..."
                             
+                            # Debug: Show inventory content
+                            echo "Current inventory content:"
+                            cat ${INVENTORY_FILE}
+                            echo ""
+                            
                             # Test ping connectivity
                             python3 scripts/get_host_ips.py ${INVENTORY_FILE} | while read ip; do
                                 echo "Testing connectivity to $ip..."
@@ -147,7 +152,11 @@ pipeline {
                             # Retry mechanism for ansible ping
                             for i in 1 2 3; do
                                 echo "Attempt $i/3: Testing ansible connectivity..."
-                                if ansible all -i ${INVENTORY_FILE} -m ping --timeout=15; then
+                                
+                                # Clean any potential formatting issues
+                                ansible-inventory -i ${INVENTORY_FILE} --list --yaml > /tmp/cleaned-inventory.yml
+                                
+                                if ansible all -i /tmp/cleaned-inventory.yml -m ping --timeout=15; then
                                     echo "All hosts are reachable!"
                                     break
                                 else
@@ -157,7 +166,9 @@ pipeline {
                                 
                                 if [ $i -eq 3 ]; then
                                     echo "Failed to connect to all hosts after 3 attempts"
-                                    ansible all -i ${INVENTORY_FILE} -m ping --timeout=10 -v || true
+                                    echo "Debug: Listing all hosts from inventory:"
+                                    ansible-inventory -i ${INVENTORY_FILE} --list
+                                    ansible all -i /tmp/cleaned-inventory.yml -m ping --timeout=10 -v || true
                                     exit 1
                                 fi
                             done

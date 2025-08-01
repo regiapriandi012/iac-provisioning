@@ -110,9 +110,12 @@ def generate_inventory_from_csv(csv_file):
     filtered_inventory = {}
     
     for k, v in inventory.items():
-        if k in ['all', '_meta']:
-            # Always keep all and _meta sections
+        if k == 'all':
+            # Always keep all section
             filtered_inventory[k] = v
+        elif k == '_meta':
+            # Skip _meta section to avoid Ansible warnings - hostvars are in group hosts now
+            continue
         elif v.get('hosts'):
             # Keep groups with hosts
             filtered_inventory[k] = v
