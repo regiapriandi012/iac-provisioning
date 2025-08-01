@@ -30,31 +30,28 @@ pipeline {
             }
         }
         
-        stage('Terraform Operations') {
-            parallel {
-                stage('Terraform Init') {
-                    steps {
-                        dir("${TERRAFORM_DIR}") {
-                            sh '''
-                                echo "Cleaning up old Terraform state..."
-                                rm -f .terraform.lock.hcl
-                                rm -rf .terraform/
-                                
-                                echo "Initializing Terraform with fresh state..."
-                                terraform init
-                            '''
-                        }
-                    }
+        stage('Terraform Init') {
+            steps {
+                dir("${TERRAFORM_DIR}") {
+                    sh '''
+                        echo "Cleaning up old Terraform state..."
+                        rm -f .terraform.lock.hcl
+                        rm -rf .terraform/
+                        
+                        echo "Initializing Terraform with fresh state..."
+                        terraform init
+                    '''
                 }
-                stage('Terraform Plan') {
-                    steps {
-                        dir("${TERRAFORM_DIR}") {
-                            sh '''
-                                echo "Planning Terraform deployment..."
-                                terraform plan -out=tfplan
-                            '''
-                        }
-                    }
+            }
+        }
+        
+        stage('Terraform Plan') {
+            steps {
+                dir("${TERRAFORM_DIR}") {
+                    sh '''
+                        echo "Planning Terraform deployment..."
+                        terraform plan -out=tfplan
+                    '''
                 }
             }
         }
