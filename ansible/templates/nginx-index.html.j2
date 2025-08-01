@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>{{ ansible_hostname }}</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 40px; }
+        .header { background: #2c3e50; color: white; padding: 20px; border-radius: 5px; }
+        .info { background: #ecf0f1; padding: 15px; margin: 20px 0; border-radius: 5px; }
+        .status { color: #27ae60; font-weight: bold; }
+        .vm-info { background: #3498db; color: white; padding: 10px; border-radius: 5px; }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>🚀 {{ ansible_hostname }}</h1>
+        <p>Nginx Server is Running!</p>
+    </div>
+    
+    <div class="vm-info">
+        <h3>VM Information:</h3>
+        <p><strong>Original Name:</strong> {{ original_name | default('N/A') }}</p>
+        <p><strong>VMID:</strong> {{ vmid | default('N/A') }}</p>
+        <p><strong>Node:</strong> {{ node | default('N/A') }}</p>
+    </div>
+    
+    <div class="info">
+        <h3>System Information:</h3>
+        <p><strong>Hostname:</strong> {{ ansible_hostname }}</p>
+        <p><strong>IP Address:</strong> {{ ansible_default_ipv4.address }}</p>
+        <p><strong>OS:</strong> {{ ansible_distribution }} {{ ansible_distribution_version }}</p>
+        <p><strong>Architecture:</strong> {{ ansible_architecture }}</p>
+        <p><strong>Kernel:</strong> {{ ansible_kernel }}</p>
+        <p><strong>CPU Cores:</strong> {{ ansible_processor_vcpus }}</p>
+        <p><strong>Memory:</strong> {{ (ansible_memtotal_mb/1024)|round(1) }}GB</p>
+    </div>
+    
+    <div class="info">
+        <p class="status">✅ Nginx installed and configured via Ansible!</p>
+        <p><small>Deployed on: {{ ansible_date_time.iso8601 }}</small></p>
+    </div>
+</body>
+</html>

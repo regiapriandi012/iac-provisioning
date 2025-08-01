@@ -1,0 +1,73 @@
+---
+- name: Install and configure nginx on all VMs
+  hosts: nginx_servers
+  become: true
+  gather_facts: true
+  
+  vars:
+    nginx_port: 80
+    nginx_user: www-data
+    
+  tasks:
+    - name: Update package cache (CentOS/RHEL)
+      yum:
+        update_cache: yes
+      when: ansible_os_family == "RedHat"
+    
+    - name: Update package cache (Debian/Ubuntu)
+      apt:
+        update_cache: yes
+      when: ansible_os_family == "Debian"
+    
+    - name: Install nginx (CentOS/RHEL)
+      yum:
+        name: nginx
+        state: present
+      when: ansible_os_family == "RedHat"
+    
+    - name: Install nginx (Debian/Ubuntu)
+      apt:
+        name: nginx
+        state: present
+      when: ansible_os_family == "Debian"
+    
+    - name: Create custom index.html from template
+      template:
+        src: nginx-index.html.j2
+        dest: /var/www/html/index.html
+        mode: '0644'
+      notify: restart nginx
+    
+    - name: Start and enable nginx
+      systemd:
+        name: nginx
+        state: started
+        enabled: yes
+    
+    - name: Open firewall for nginx (CentOS/RHEL)
+      firewalld:
+        service: http
+        permanent: yes
+        state: enabled
+        immediate: yes
+      when: ansible_os_family == "RedHat"
+      ignore_errors: true
+    
+    - name: Check nginx status
+      uri:
+        url: "http://{{ ansible_default_ipv4.address }}"
+        method: GET
+        status_code: 200
+      register: nginx_check
+      ignore_errors: true
+    
+    - name: Display nginx status
+      debug:
+        msg: "✅ Nginx is running on http://{{ ansible_default_ipv4.address }}"
+      when: nginx_check.status == 200
+  
+  handlers:
+    - name: restart nginx
+      systemd:
+        name: nginx
+        state: restarted
