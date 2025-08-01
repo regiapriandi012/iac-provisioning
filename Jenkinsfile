@@ -36,8 +36,12 @@ pipeline {
                     steps {
                         dir("${TERRAFORM_DIR}") {
                             sh '''
-                                echo "Initializing Terraform..."
-                                terraform init -upgrade
+                                echo "Cleaning up old Terraform state..."
+                                rm -f .terraform.lock.hcl
+                                rm -rf .terraform/
+                                
+                                echo "Initializing Terraform with fresh state..."
+                                terraform init
                             '''
                         }
                     }
