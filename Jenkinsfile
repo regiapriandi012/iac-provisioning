@@ -65,6 +65,10 @@ pipeline {
                         
                         echo "Infrastructure deployed successfully!"
                         terraform state list
+                        
+                        echo ""
+                        echo "Updated CSV with sequential IP assignments:"
+                        cat vms.csv
                     '''
                 }
             }
@@ -107,7 +111,7 @@ pipeline {
                             cd ${ANSIBLE_DIR}
                             python3 scripts/get_host_ips.py ${INVENTORY_FILE} | while read ip; do
                                 echo "Waiting for SSH on $ip..."
-                                for i in {1..12}; do
+                                for i in 1 2 3 4 5 6 7 8 9 10 11 12; do
                                     if timeout 5 nc -z $ip 22 2>/dev/null; then
                                         echo "  SSH ready on $ip"
                                         break
@@ -141,7 +145,7 @@ pipeline {
                             
                             echo "Testing Ansible connectivity..."
                             # Retry mechanism for ansible ping
-                            for i in {1..3}; do
+                            for i in 1 2 3; do
                                 echo "Attempt $i/3: Testing ansible connectivity..."
                                 if ansible all -i ${INVENTORY_FILE} -m ping --timeout=15; then
                                     echo "All hosts are reachable!"

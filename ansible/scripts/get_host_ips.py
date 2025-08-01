@@ -9,8 +9,21 @@ def get_host_ips(inventory_file):
     try:
         with open(inventory_file, 'r') as f:
             inv = json.load(f)
-            for host, vars in inv['_meta']['hostvars'].items():
-                print(vars['ansible_host'])
+            
+            # Check if _meta section exists, otherwise extract from groups
+            if '_meta' in inv and 'hostvars' in inv['_meta']:
+                for host, vars in inv['_meta']['hostvars'].items():
+                    if 'ansible_host' in vars:
+                        print(vars['ansible_host'])
+            else:
+                # Extract from group hosts
+                for group_name, group_data in inv.items():
+                    if group_name in ['all', '_meta'] or not isinstance(group_data, dict):
+                        continue
+                    hosts = group_data.get('hosts', {})
+                    for host, host_vars in hosts.items():
+                        if isinstance(host_vars, dict) and 'ansible_host' in host_vars:
+                            print(host_vars['ansible_host'])
     except Exception as e:
         print(f"Error reading inventory: {e}", file=sys.stderr)
         sys.exit(1)
