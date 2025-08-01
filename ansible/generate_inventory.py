@@ -15,7 +15,10 @@ def generate_inventory_from_csv(csv_file):
         'k8s_masters': {'hosts': {}, 'vars': {}},
         'k8s_workers': {'hosts': {}, 'vars': {}},
         'k8s_lb': {'hosts': {}, 'vars': {}},
-        'k8s_cluster': {'children': ['k8s_masters', 'k8s_workers']},
+        'k8s_cluster': {'children': {
+            'k8s_masters': {},
+            'k8s_workers': {}
+        }},
         '_meta': {'hostvars': {}},
         'all': {'vars': {
             'ansible_user': 'root',
@@ -52,15 +55,15 @@ def generate_inventory_from_csv(csv_file):
                 # Classify nodes based on naming convention
                 if 'master' in vm_name.lower():
                     masters.append(vm_name)
-                    inventory['k8s_masters']['hosts'][vm_name] = {}
+                    inventory['k8s_masters']['hosts'][vm_name] = hostvars
                     inventory['_meta']['hostvars'][vm_name] = hostvars
                 elif 'worker' in vm_name.lower():
                     workers.append(vm_name)
-                    inventory['k8s_workers']['hosts'][vm_name] = {}
+                    inventory['k8s_workers']['hosts'][vm_name] = hostvars
                     inventory['_meta']['hostvars'][vm_name] = hostvars
                 elif 'lb' in vm_name.lower() or 'haproxy' in vm_name.lower():
                     lb_nodes.append(vm_name)
-                    inventory['k8s_lb']['hosts'][vm_name] = {}
+                    inventory['k8s_lb']['hosts'][vm_name] = hostvars
                     inventory['_meta']['hostvars'][vm_name] = hostvars
     
     except FileNotFoundError:
@@ -91,7 +94,7 @@ def generate_inventory_from_csv(csv_file):
         
         # Add HAProxy group if not explicitly defined
         if not lb_nodes and master_count > 1:
-            inventory['k8s_lb']['children'] = ['k8s_masters']  # Masters will also run HAProxy
+            inventory['k8s_lb']['children'] = {'k8s_masters': {}}  # Masters will also run HAProxy
     else:
         # Single master setup
         if masters:
@@ -101,11 +104,20 @@ def generate_inventory_from_csv(csv_file):
     inventory['all']['vars'].update(cluster_vars)
     
     # Remove empty groups but keep essential sections
-    essential_keys = ['_meta', 'all']
     filtered_inventory = {}
     
     for k, v in inventory.items():
-        if k in essential_keys or v.get('hosts') or v.get('children'):
+        if k == 'all':
+            # Always keep all section
+            filtered_inventory[k] = v
+        elif k == '_meta':
+            # Skip _meta to avoid Ansible warnings, hostvars are now in individual groups
+            continue
+        elif v.get('hosts'):
+            # Keep groups with hosts
+            filtered_inventory[k] = v
+        elif v.get('children') and any(child in inventory and inventory[child].get('hosts') for child in v['children']):
+            # Keep parent groups that have children with hosts
             filtered_inventory[k] = v
     
     return filtered_inventory
