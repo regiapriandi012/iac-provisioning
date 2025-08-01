@@ -42,6 +42,9 @@ def generate_inventory_from_csv(csv_file):
                 ip = row.get('ip', '0')
                 if ip == '0' or not ip:
                     ip = f"192.168.1.{len(masters + workers + lb_nodes) + 10}"
+                else:
+                    # Strip subnet mask if present (e.g., 10.200.0.30/24 -> 10.200.0.30)
+                    ip = ip.split('/')[0]
                 
                 hostvars = {
                     'ansible_host': ip,
