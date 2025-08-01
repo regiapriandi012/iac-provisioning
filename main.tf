@@ -47,27 +47,27 @@ resource "random_integer" "vmid" {
   }
 }
 
-# Generate random IP untuk VMs yang ip = 0
-resource "random_integer" "ip_octet" {
-  for_each = {
-    for vm in csvdecode(file(var.vm_csv_file)) : vm.vm_name => vm
-    if vm.ip == "0"
-  }
- 
-  min = 10
-  max = 240
- 
+# Generate base IP untuk sequential assignment
+resource "random_integer" "ip_base" {
+  min = 30
+  max = 200
+  
   keepers = {
-    vm_name = each.value.vm_name
+    vm_count = length([for vm in csvdecode(file(var.vm_csv_file)) : vm if vm.ip == "0"])
   }
 }
 
 # Local untuk memproses data VM dengan hybrid approach
 locals {
   vm_data_raw = csvdecode(file(var.vm_csv_file))
+  
+  # Create list of VMs that need auto IP, sorted by name for consistency
+  vms_need_auto_ip = [
+    for vm in local.vm_data_raw : vm if vm.ip == "0"
+  ]
  
   vm_data = {
-    for vm in local.vm_data_raw : vm.vm_name => {
+    for i, vm in local.vm_data_raw : vm.vm_name => {
       # Use defined VMID or random (if vmid = 0)
       vmid = tonumber(vm.vmid) != 0 ? tonumber(vm.vmid) : random_integer.vmid[vm.vm_name].result
      
@@ -78,9 +78,9 @@ locals {
       template  = vm.template
       node      = vm.node
      
-      # Use defined IP or random (if ip = "0")
-      ip_address = vm.ip != "0" ? vm.ip : "10.200.0.${random_integer.ip_octet[vm.vm_name].result}"
-      ip         = vm.ip != "0" ? "ip=${vm.ip}/24,gw=${var.gateway}" : "ip=10.200.0.${random_integer.ip_octet[vm.vm_name].result}/24,gw=${var.gateway}"
+      # Use defined IP or sequential IP (if ip = "0")
+      ip_address = vm.ip != "0" ? vm.ip : "10.200.0.${random_integer.ip_base.result + index(local.vms_need_auto_ip, vm)}"
+      ip         = vm.ip != "0" ? "ip=${vm.ip}/24,gw=${var.gateway}" : "ip=10.200.0.${random_integer.ip_base.result + index(local.vms_need_auto_ip, vm)}/24,gw=${var.gateway}"
      
       cores     = tonumber(vm.cores)
       memory    = tonumber(vm.memory)
@@ -88,7 +88,7 @@ locals {
      
       # Flag untuk tracking
       vmid_source = tonumber(vm.vmid) != 0 ? "defined" : "random"
-      ip_source   = vm.ip != "0" ? "defined" : "random"
+      ip_source   = vm.ip != "0" ? "defined" : "sequential"
     }
   }
 }

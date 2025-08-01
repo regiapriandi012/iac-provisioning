@@ -34,8 +34,9 @@ output "assignment_summary" {
     defined_vmids = length([for vm in local.vm_data : vm if vm.vmid_source == "defined"])
     random_vmids  = length([for vm in local.vm_data : vm if vm.vmid_source == "random"])
     defined_ips   = length([for vm in local.vm_data : vm if vm.ip_source == "defined"])
-    random_ips    = length([for vm in local.vm_data : vm if vm.ip_source == "random"])
+    sequential_ips = length([for vm in local.vm_data : vm if vm.ip_source == "sequential"])
     total_vms     = length(local.vm_data)
+    ip_base       = random_integer.ip_base.result
   }
 }
 
