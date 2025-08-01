@@ -152,14 +152,15 @@ pipeline {
             steps {
                 dir("${ANSIBLE_DIR}") {
                     script {
+                        def playbookName = params.ansible_playbook
                         sh """
                             echo "🚀 Starting deployment with Ansible..."
-                            echo "📋 Using playbook: ${params.ansible_playbook}"
+                            echo "📋 Using playbook: ${playbookName}"
                             
                             # Run selected ansible playbook
-                            ansible-playbook -i inventory/hosts.ini playbooks/${params.ansible_playbook} -v
+                            ansible-playbook -i inventory/hosts.ini playbooks/${playbookName} -v
                             
-                            if [ $? -eq 0 ]; then
+                            if [ \$? -eq 0 ]; then
                                 echo ""
                                 echo "🎉 Ansible deployment completed successfully!"
                                 echo ""
@@ -178,7 +179,7 @@ pipeline {
                                 echo "❌ Ansible deployment failed!"
                                 exit 1
                             fi
-                            """
+                        """
                     }
                 }
             }
