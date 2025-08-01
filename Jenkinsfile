@@ -7,10 +7,10 @@ pipeline {
             defaultValue: true,
             description: 'Run Ansible after Terraform apply'
         )
-        choice(
-            name: 'deployment_type',
-            choices: ['kubernetes', 'common'],
-            description: 'Type of deployment to run'
+        booleanParam(
+            name: 'skip_verification',
+            defaultValue: false,
+            description: 'Skip Kubernetes cluster verification steps'
         )
     }
 
@@ -139,53 +139,39 @@ pipeline {
             }
         }
         
-        stage('Deploy Services') {
+        stage('Deploy Kubernetes Cluster') {
             when {
                 expression { params.run_ansible }
             }
             steps {
                 dir("${ANSIBLE_DIR}") {
                     script {
-                        def deploymentType = params.deployment_type
-                        
-                        sh """
-                            echo "Starting ${deploymentType} deployment..."
+                        sh '''
+                            echo "Starting Kubernetes cluster deployment..."
                             
-                            case "${deploymentType}" in
-                                "kubernetes")
-                                    echo "Deploying Kubernetes cluster..."
-                                    ./run-k8s-setup.sh
-                                    ;;
-                                "common")
-                                    echo "Running common setup..."
-                                    ansible-playbook -i ${INVENTORY_FILE} playbooks/common-setup.yaml -v
-                                    ;;
-                                *)
-                                    echo "Unknown deployment type: ${deploymentType}"
-                                    exit 1
-                                    ;;
-                            esac
+                            echo "Deploying Kubernetes cluster..."
+                            ./run-k8s-setup.sh
                             
-                            if [ \$? -eq 0 ]; then
-                                echo "Deployment completed successfully!"
+                            if [ $? -eq 0 ]; then
+                                echo "Kubernetes deployment completed successfully!"
                                 
-                                echo "Service endpoints:"
+                                echo "Cluster endpoints:"
                                 python3 scripts/show_endpoints.py ${INVENTORY_FILE}
                             else
-                                echo "Deployment failed!"
+                                echo "Kubernetes deployment failed!"
                                 exit 1
                             fi
-                        """
+                        '''
                     }
                 }
             }
         }
         
-        stage('Verify Deployment') {
+        stage('Verify Kubernetes Cluster') {
             when {
                 allOf {
                     expression { params.run_ansible }
-                    expression { params.deployment_type == 'kubernetes' }
+                    expression { !params.skip_verification }
                 }
             }
             steps {
@@ -211,10 +197,7 @@ pipeline {
         
         stage('Extract KUBECONFIG') {
             when {
-                allOf {
-                    expression { params.run_ansible }
-                    expression { params.deployment_type == 'kubernetes' }
-                }
+                expression { params.run_ansible }
             }
             steps {
                 dir("${ANSIBLE_DIR}") {
@@ -274,9 +257,7 @@ pipeline {
                     archiveArtifacts artifacts: "${ANSIBLE_DIR}/inventory/*", allowEmptyArchive: true
                     archiveArtifacts artifacts: "${TERRAFORM_DIR}/vms.csv", allowEmptyArchive: true
                     
-                    if (params.deployment_type == 'kubernetes') {
-                        archiveArtifacts artifacts: "${ANSIBLE_DIR}/kubeconfig/*", allowEmptyArchive: true
-                    }
+                    archiveArtifacts artifacts: "${ANSIBLE_DIR}/kubeconfig/*", allowEmptyArchive: true
                 }
             }
         }
@@ -289,18 +270,16 @@ pipeline {
             
             What was deployed:
             - VMs provisioned with Terraform
-            - ${params.deployment_type} configured with Ansible
+            - Kubernetes cluster configured with Ansible
             - Dynamic inventory generated automatically"""
             
-                if (params.deployment_type == 'kubernetes') {
-                    successMessage += """
+                successMessage += """
             - KUBECONFIG extracted and archived
             
             Kubernetes Access:
             - Download 'kubeconfig/admin.conf' from Jenkins artifacts
             - Run: mkdir -p ~/.kube && cp admin.conf ~/.kube/config
             - Test: kubectl get nodes"""
-                }
                 
                 successMessage += """
             
