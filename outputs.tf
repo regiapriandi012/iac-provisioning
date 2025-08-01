@@ -120,7 +120,7 @@ output "ansible_playbook" {
       when: ansible_os_family == "Debian"
     
     - name: Create custom index.html
-      template:
+      copy:
         dest: /var/www/html/index.html
         content: |
           <!DOCTYPE html>
