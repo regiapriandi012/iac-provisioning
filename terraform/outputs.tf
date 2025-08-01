@@ -108,7 +108,7 @@ resource "local_file" "vms_csv" {
   content = <<-EOT
 vmid,vm_name,template,node,ip,cores,memory,disk_size
 %{for k, v in local.vm_data~}
-${v.vmid},${v.vm_name_original},${v.template},${v.node},${replace(v.ip_address, "/.*", "")},${v.cores},${v.memory},${v.disk_size}
+${v.vmid},${v.vm_name_original},${v.template},${v.node},${v.ip_address},${v.cores},${v.memory},${v.disk_size}
 %{endfor~}
 EOT
   filename = "${path.module}/vms.csv"
