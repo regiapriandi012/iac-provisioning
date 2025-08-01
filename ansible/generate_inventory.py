@@ -93,10 +93,15 @@ def generate_inventory_from_csv(csv_file):
     
     inventory['all']['vars'].update(cluster_vars)
     
-    # Remove empty groups
-    inventory = {k: v for k, v in inventory.items() if v.get('hosts') or v.get('children')}
+    # Remove empty groups but keep essential sections
+    essential_keys = ['_meta', 'all']
+    filtered_inventory = {}
     
-    return inventory
+    for k, v in inventory.items():
+        if k in essential_keys or v.get('hosts') or v.get('children'):
+            filtered_inventory[k] = v
+    
+    return filtered_inventory
 
 def main():
     """Main function to generate and output inventory"""
