@@ -1,0 +1,6 @@
+pm_api_url = "https://pve.labngoprek.my.id/api2/json"
+pm_api_token_id = "root@pam!terraform"
+pm_api_token_secret = "cf89760d-31e0-415c-b8db-e69330ab7cbc"
+vm_csv_file = "vms.csv"
+gateway = "10.200.0.254"
+storage = "local"
