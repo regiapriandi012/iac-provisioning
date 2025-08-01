@@ -152,6 +152,6 @@ resource "proxmox_vm_qemu" "vms" {
       type = "socket"
     }
     
-    # Tags untuk identifikasi dengan nama original dan final
-    tags = "terraform,${each.value.vm_name_original},${each.value.vm_name_final}"
+    # Tags untuk identifikasi
+    tags = "terraform,${each.value.vm_name_original}"
 }
