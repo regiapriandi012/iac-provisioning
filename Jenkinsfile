@@ -152,12 +152,12 @@ pipeline {
             steps {
                 dir("${ANSIBLE_DIR}") {
                     script {
-                        sh '''
+                        sh """
                             echo "🚀 Starting deployment with Ansible..."
-                            echo "📋 Using playbook: ${ansible_playbook}"
+                            echo "📋 Using playbook: ${params.ansible_playbook}"
                             
                             # Run selected ansible playbook
-                            ansible-playbook -i inventory/hosts.ini playbooks/${ansible_playbook} -v
+                            ansible-playbook -i inventory/hosts.ini playbooks/${params.ansible_playbook} -v
                             
                             if [ $? -eq 0 ]; then
                                 echo ""
@@ -167,9 +167,9 @@ pipeline {
                                 
                                 # Extract IPs and show access URLs
                                 grep "ansible_host=" inventory/hosts.ini | while read line; do
-                                    hostname=$(echo $line | awk '{print $1}')
-                                    ip=$(echo $line | awk -F'ansible_host=' '{print $2}' | awk '{print $1}')
-                                    echo "  - $hostname: http://$ip"
+                                    hostname=\$(echo \$line | awk '{print \$1}')
+                                    ip=\$(echo \$line | awk -F'ansible_host=' '{print \$2}' | awk '{print \$1}')
+                                    echo "  - \$hostname: http://\$ip"
                                 done
                                 
                                 echo ""
@@ -178,7 +178,7 @@ pipeline {
                                 echo "❌ Ansible deployment failed!"
                                 exit 1
                             fi
-                        '''
+                            """
                     }
                 }
             }
