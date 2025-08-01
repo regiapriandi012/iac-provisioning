@@ -72,12 +72,20 @@ check_prerequisites() {
 }
 
 generate_inventory() {
-    log_info "Generating dynamic inventory from CSV..."
+    log_info "Generating dynamic inventory from Terraform output..."
     
-    python3 "$INVENTORY_SCRIPT" "$CSV_FILE" > "$INVENTORY_FILE"
-    
-    if [[ $? -eq 0 ]]; then
-        log_success "Inventory generated successfully"
+    # Try terraform-based inventory first, fallback to CSV
+    if python3 generate_inventory_from_terraform.py > "$INVENTORY_FILE" 2>/dev/null; then
+        log_success "Inventory generated from Terraform output"
+    else
+        log_warning "Terraform output unavailable, falling back to CSV..."
+        python3 "$INVENTORY_SCRIPT" "$CSV_FILE" > "$INVENTORY_FILE"
+        if [[ $? -ne 0 ]]; then
+            log_error "Failed to generate inventory from CSV"
+            exit 1
+        fi
+        log_success "Inventory generated from CSV"
+    fi
         
         # Parse and display cluster configuration
         MASTER_COUNT=$(python3 -c "
