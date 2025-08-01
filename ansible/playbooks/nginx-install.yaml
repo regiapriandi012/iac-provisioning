@@ -31,13 +31,6 @@
         state: present
       when: ansible_os_family == "Debian"
     
-    - name: Create custom index.html from template
-      template:
-        src: nginx-index.html.j2
-        dest: /var/www/html/index.html
-        mode: '0644'
-      notify: restart nginx
-    
     - name: Start and enable nginx
       systemd:
         name: nginx

@@ -2,11 +2,6 @@ pipeline {
     agent any
     
     parameters {
-        choice(
-            name: 'action',
-            choices: ['apply', 'destroy'],
-            description: 'Terraform action to perform'
-        )
         booleanParam(
             name: 'run_ansible',
             defaultValue: true,
@@ -40,26 +35,35 @@ pipeline {
             }
         }
         
-        stage('Terraform Apply/Destroy') {
+        stage('Terraform Plan') {
             steps {
                 dir("${TERRAFORM_DIR}") {
-                    script {
-                        if (params.action == 'apply') {
-                            sh 'terraform apply --auto-approve'
-                        } else {
-                            sh 'terraform destroy --auto-approve'
-                        }
-                    }
+                    sh '''
+                        echo "📋 Planning Terraform deployment..."
+                        terraform plan -out=tfplan
+                    '''
+                }
+            }
+        }
+        
+        stage('Terraform Apply') {
+            steps {
+                dir("${TERRAFORM_DIR}") {
+                    sh '''
+                        echo "🚀 Applying Terraform plan..."
+                        terraform apply tfplan
+                        
+                        echo ""
+                        echo "✅ Infrastructure deployed successfully!"
+                        terraform state list
+                    '''
                 }
             }
         }
         
         stage('Generate Ansible Inventory') {
             when {
-                allOf {
-                    expression { params.action == 'apply' }
-                    expression { params.run_ansible == true }
-                }
+                expression { params.run_ansible == true }
             }
             steps {
                 dir("${TERRAFORM_DIR}") {
@@ -73,10 +77,7 @@ pipeline {
                             # Generate INI format inventory
                             terraform output -raw ansible_inventory_ini > ../${ANSIBLE_DIR}/inventory/hosts.ini
                             
-                            # Generate JSON format inventory (backup)
-                            terraform output -json ansible_inventory_json > ../${ANSIBLE_DIR}/inventory/hosts.json
-                            
-                            echo "📋 Generated inventory files:"
+                            echo "📋 Generated inventory file:"
                             ls -la ../${ANSIBLE_DIR}/inventory/
                             
                             echo "🔍 Inventory content preview:"
@@ -89,10 +90,7 @@ pipeline {
         
         stage('Wait for VMs Ready') {
             when {
-                allOf {
-                    expression { params.action == 'apply' }
-                    expression { params.run_ansible == true }
-                }
+                expression { params.run_ansible == true }
             }
             steps {
                 script {
@@ -115,10 +113,7 @@ pipeline {
         
         stage('Ansible Connectivity Test') {
             when {
-                allOf {
-                    expression { params.action == 'apply' }
-                    expression { params.run_ansible == true }
-                }
+                expression { params.run_ansible == true }
             }
             steps {
                 dir("${ANSIBLE_DIR}") {
@@ -152,10 +147,7 @@ pipeline {
         
         stage('Deploy with Ansible') {
             when {
-                allOf {
-                    expression { params.action == 'apply' }
-                    expression { params.run_ansible == true }
-                }
+                expression { params.run_ansible == true }
             }
             steps {
                 dir("${ANSIBLE_DIR}") {
@@ -195,7 +187,6 @@ pipeline {
         stage('Verify Deployment') {
             when {
                 allOf {
-                    expression { params.action == 'apply' }
                     expression { params.run_ansible == true }
                     expression { params.ansible_playbook == 'nginx-install.yml' }
                 }
@@ -231,9 +222,6 @@ pipeline {
         }
         
         stage('Show Summary') {
-            when {
-                expression { params.action == 'apply' }
-            }
             steps {
                 dir("${TERRAFORM_DIR}") {
                     script {
@@ -241,6 +229,10 @@ pipeline {
                             echo ""
                             echo "📊 Deployment Summary:"
                             terraform output assignment_summary
+                            
+                            echo ""
+                            echo "🏗️  Infrastructure Details:"
+                            terraform output vm_assignments
                         '''
                     }
                 }
@@ -251,32 +243,33 @@ pipeline {
     post {
         always {
             script {
-                if (params.action == 'apply' && params.run_ansible == true) {
+                if (params.run_ansible == true) {
                     // Archive generated files
-                    archiveArtifacts artifacts: "${ANSIBLE_DIR}/inventory/hosts.ini,${ANSIBLE_DIR}/inventory/hosts.json", allowEmptyArchive: true
+                    archiveArtifacts artifacts: "${ANSIBLE_DIR}/inventory/hosts.ini", allowEmptyArchive: true
                 }
             }
         }
         
         success {
             script {
-                if (params.action == 'apply') {
-                    echo """
-                    🎉 Infrastructure deployment completed successfully!
-                    
-                    📋 What was deployed:
-                    - VMs provisioned with Terraform
-                    - Services configured with Ansible (${params.ansible_playbook})
-                    - Inventory files generated automatically
-                    
-                    🌐 Next steps:
-                    - Access the services using the URLs shown above
-                    - Check the inventory files for host details
-                    - Run additional playbooks as needed
-                    """
-                } else {
-                    echo "🗑️  Infrastructure destroyed successfully!"
-                }
+                echo """
+                🎉 Infrastructure deployment completed successfully!
+                
+                📋 What was deployed:
+                - VMs provisioned with Terraform
+                - Services configured with Ansible (${params.ansible_playbook})
+                - Inventory files generated automatically
+                
+                🌐 Next steps:
+                - Access the services using the URLs shown above
+                - Check the inventory files for host details
+                - Run additional playbooks as needed
+                
+                💡 To destroy resources manually if needed:
+                - SSH to Jenkins server
+                - cd to terraform directory
+                - Run: terraform destroy --auto-approve
+                """
             }
         }
         
@@ -298,8 +291,8 @@ pipeline {
             script {
                 // Clean up temporary files
                 sh '''
+                    rm -f ${TERRAFORM_DIR}/tfplan
                     rm -f ${ANSIBLE_DIR}/inventory/hosts.ini
-                    rm -f ${ANSIBLE_DIR}/inventory/hosts.json
                 '''
             }
         }
