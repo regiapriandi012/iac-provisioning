@@ -108,11 +108,27 @@ with open('$INVENTORY_FILE', 'r') as f:
 run_playbook() {
     log_info "Starting Kubernetes cluster setup..."
     
+    log_info "Testing inventory and connectivity first..."
+    
+    # Test inventory parsing
+    ansible-inventory -i "$INVENTORY_FILE" --list > /dev/null || {
+        log_error "Failed to parse inventory file"
+        exit 1
+    }
+    
+    # Test basic connectivity with proper timeout
+    log_info "Testing connectivity to all hosts..."
+    ansible all -i "$INVENTORY_FILE" -m ping --timeout=30 -o \
+        -e ansible_ssh_common_args="-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null" || {
+        log_warning "Some hosts may not be reachable yet, continuing anyway..."
+    }
+    
     # Run the playbook with generated inventory
     ansible-playbook \
         -i "$INVENTORY_FILE" \
         "$PLAYBOOK" \
         -v \
+        -e ansible_ssh_common_args="-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null" \
         "$@"
     
     if [[ $? -eq 0 ]]; then

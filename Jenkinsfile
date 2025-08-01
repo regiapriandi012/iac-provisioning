@@ -100,7 +100,23 @@ pipeline {
                     steps {
                         sh '''
                             echo "Waiting for VMs to be ready..."
-                            sleep 45
+                            echo "Initial wait: 60 seconds for VM boot and SSH service startup"
+                            sleep 60
+                            
+                            echo "Testing VM readiness..."
+                            cd ${ANSIBLE_DIR}
+                            python3 scripts/get_host_ips.py ${INVENTORY_FILE} | while read ip; do
+                                echo "Waiting for SSH on $ip..."
+                                for i in {1..12}; do
+                                    if timeout 5 nc -z $ip 22 2>/dev/null; then
+                                        echo "  SSH ready on $ip"
+                                        break
+                                    else
+                                        echo "  Attempt $i/12: SSH not ready on $ip, waiting 10s..."
+                                        sleep 10
+                                    fi
+                                done
+                            done
                         '''
                     }
                 }
