@@ -480,12 +480,6 @@ pipeline {
                 Performance Summary
                 =====================
                 Total Build Time: ${totalDuration}
-                
-                Tips for faster provisioning:
-                - Enable template caching in Proxmox
-                - Use SSD storage for VMs
-                - Increase Jenkins executors
-                - Pre-pull container images
                 """
             }
         }
