@@ -1,0 +1,32 @@
+{
+  "k8s_masters": {
+    "hosts": {
+      "kube-master": {
+        "ansible_host": "10.200.0.142",
+        "ansible_user": "root"
+      }
+    }
+  },
+  "k8s_workers": {
+    "hosts": {
+      "kube-worker01": {
+        "ansible_host": "10.200.0.143",
+        "ansible_user": "root"
+      },
+      "kube-worker02": {
+        "ansible_host": "10.200.0.144",
+        "ansible_user": "root"
+      }
+    }
+  },
+  "all": {
+    "vars": {
+      "ansible_user": "root",
+      "ansible_ssh_common_args": "-o StrictHostKeyChecking=no",
+      "ansible_timeout": 120,
+      "control_plane_endpoint": "10.200.0.142:6443",
+      "master_count": 1,
+      "is_ha_cluster": false
+    }
+  }
+}

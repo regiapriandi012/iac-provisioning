@@ -24,7 +24,7 @@ def smart_ssh_check(host_info):
     # Use ansible ping directly - it's the most reliable SSH test
     cmd = [
         'ansible', host, 
-        '-i', '/tmp/k8s-inventory.json',
+        '-i', 'inventory/k8s-inventory.json',
         '-m', 'ping',
         '--timeout=8',
         '-o'  # one line output
@@ -120,7 +120,7 @@ def fast_vm_readiness_check(inventory_file, max_retries=3, retry_delay=15):
         return False
 
 if __name__ == '__main__':
-    inventory_file = sys.argv[1] if len(sys.argv) > 1 else '/tmp/k8s-inventory.json'
+    inventory_file = sys.argv[1] if len(sys.argv) > 1 else 'inventory/k8s-inventory.json'
     max_retries = int(sys.argv[2]) if len(sys.argv) > 2 else 3
     
     success = fast_vm_readiness_check(inventory_file, max_retries)

@@ -18,7 +18,7 @@ pipeline {
         TERRAFORM_DIR = 'terraform'
         ANSIBLE_DIR = 'ansible'
         ANSIBLE_CONFIG = "${ANSIBLE_DIR}/ansible.cfg"
-        INVENTORY_FILE = '/tmp/k8s-inventory.json'
+        INVENTORY_FILE = 'inventory/k8s-inventory.json'
     }
 
     stages {
@@ -85,8 +85,11 @@ pipeline {
                             sh '''
                                 echo "Generating dynamic inventory from CSV..."
                                 
-                                # Generate inventory directly using our CSV generator (avoid terraform fallback)
-                                python3 generate_inventory.py ../terraform/vms.csv > ${INVENTORY_FILE}
+                                # Ensure inventory directory exists
+                                mkdir -p inventory
+                                
+                                # Generate inventory directly using our simple generator
+                                python3 generate_simple_inventory.py ../terraform/vms.csv > ${INVENTORY_FILE}
                                 
                                 echo "Verifying generated inventory JSON:"
                                 python3 -m json.tool ${INVENTORY_FILE}
@@ -344,7 +347,7 @@ pipeline {
             sh '''
                 echo "Cleaning up temporary files..."
                 rm -f ${TERRAFORM_DIR}/tfplan
-                rm -f ${INVENTORY_FILE}
+                # Note: keeping inventory for artifact archiving
             '''
         }
     }

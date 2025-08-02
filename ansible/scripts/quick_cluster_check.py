@@ -176,7 +176,7 @@ def quick_cluster_analysis(inventory_file):
         return False
 
 if __name__ == '__main__':
-    inventory_file = sys.argv[1] if len(sys.argv) > 1 else '/tmp/k8s-inventory.json'
+    inventory_file = sys.argv[1] if len(sys.argv) > 1 else 'inventory/k8s-inventory.json'
     
     success = quick_cluster_analysis(inventory_file)
     sys.exit(0 if success else 1)
