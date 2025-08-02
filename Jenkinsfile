@@ -451,12 +451,15 @@ pipeline {
                                 returnStdout: true
                             ).trim()
                             
-                            // Create escaped content for JSON
-                            def kubeconfigEscaped = kubeconfigContent.replaceAll('"', '\\\\"').replaceAll('\n', '\\\\n')
+                            // Write kubeconfig to temp file
+                            writeFile file: "kubeconfig_temp.txt", text: kubeconfigContent
                             
-                            sh """#!/bin/bash
+                            sh '''#!/bin/bash
+                                # Read kubeconfig and escape it for JSON
+                                KUBECONFIG_CONTENT=$(cat kubeconfig_temp.txt | sed 's/\\/\\\\/g' | sed 's/"/\\\\"/g' | awk '{printf "%s\\\\n", $0}' | sed 's/\\\\n$//')
+                                
                                 # Create Slack message with KUBECONFIG
-                                cat > slack_kubeconfig.json << 'SLACK_EOF'
+                                cat > slack_kubeconfig.json << EOF
 {
   "text": "Kubernetes Cluster Ready!",
   "blocks": [
@@ -472,19 +475,19 @@ pipeline {
       "fields": [
         {
           "type": "mrkdwn",
-          "text": "*Build:* #${BUILD_NUMBER}"
+          "text": "*Build:* #''' + env.BUILD_NUMBER + '''"
         },
         {
           "type": "mrkdwn",
-          "text": "*Duration:* ${buildDuration}"
+          "text": "*Duration:* ''' + buildDuration + '''"
         },
         {
           "type": "mrkdwn",
-          "text": "*Cluster Endpoint:* `${clusterEndpoint}`"
+          "text": "*Cluster Endpoint:* `''' + clusterEndpoint + '''`"
         },
         {
           "type": "mrkdwn",
-          "text": "*Nodes:* ${masterCount} masters, ${workerCount} workers"
+          "text": "*Nodes:* ''' + masterCount + ''' masters, ''' + workerCount + ''' workers"
         }
       ]
     },
@@ -495,19 +498,19 @@ pipeline {
       "type": "section",
       "text": {
         "type": "mrkdwn",
-        "text": "*KUBECONFIG Setup Instructions:*\\n```bash\\nmkdir -p ~/.kube\\ncat > ~/.kube/config << 'EOF'\\n${kubeconfigEscaped}\\nEOF\\nchmod 600 ~/.kube/config\\nkubectl get nodes```"
+        "text": "*KUBECONFIG Setup Instructions:*\\n\`\`\`bash\\nmkdir -p ~/.kube\\ncat > ~/.kube/config << 'KUBECONFIG_EOF'\\n${KUBECONFIG_CONTENT}\\nKUBECONFIG_EOF\\nchmod 600 ~/.kube/config\\nkubectl get nodes\`\`\`"
       }
     },
     {
       "type": "section",
       "text": {
         "type": "mrkdwn",
-        "text": "*Jenkins Build:* <${BUILD_URL}|View Details>"
+        "text": "*Jenkins Build:* <''' + env.BUILD_URL + '''|View Details>"
       }
     }
   ]
 }
-SLACK_EOF
+EOF
                                 
                                 # Send to Slack
                                 curl -X POST ${SLACK_WEBHOOK_URL} \
@@ -518,8 +521,8 @@ SLACK_EOF
                                 || echo "Failed to send to Slack"
                                 
                                 # Cleanup
-                                rm -f slack_kubeconfig.json
-                            """
+                                rm -f slack_kubeconfig.json kubeconfig_temp.txt
+                            '''
                         }
                     }
                 }
