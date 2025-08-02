@@ -28,7 +28,7 @@ def get_kubeconfig(inventory_file, output_file=None):
                 return False
                 
             first_master = masters[0]
-            master_ip = inv['_meta']['hostvars'][first_master]['ansible_host']
+            master_ip = inv['k8s_masters']['hosts'][first_master]['ansible_host']
             
             print(f"Retrieving KUBECONFIG from {first_master} ({master_ip})...")
             
