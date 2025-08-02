@@ -53,7 +53,7 @@ cd ../ansible
      - `ha-3-masters`: 3 masters + 3 workers (4 cores, 8GB RAM) - HA setup
      - `custom`: Use your own CSV configuration
    - `vm_template`: Select VM template
-     - `t-debian-12`: Debian 12 (Bookworm)
+     - `t-debian12-86`: Debian 12 (Bookworm)
      - `t-centos9-86`: CentOS 9 Stream
    - `proxmox_node`: Proxmox node name (default: thinkcentre)
    - `vm_csv_content`: Custom CSV content (when preset is 'custom')

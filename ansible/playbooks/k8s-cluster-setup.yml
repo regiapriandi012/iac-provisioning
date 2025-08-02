@@ -133,6 +133,11 @@
         update_cache: yes
       when: detected_os_family == "RedHat"
 
+    - name: Fix dpkg if interrupted (Debian-based)
+      shell: dpkg --configure -a
+      when: detected_os_family == "Debian"
+      ignore_errors: yes
+
     - name: Install prerequisites for Docker repo (Debian-based)
       apt:
         name:
