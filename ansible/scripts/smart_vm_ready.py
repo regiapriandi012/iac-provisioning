@@ -5,11 +5,18 @@ Ultra-fast VM readiness checker with parallel execution and optimized checks
 
 import json
 import sys
-import asyncio
-import asyncssh
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import socket
+import subprocess
+
+# Try to import asyncssh, but fall back to sync SSH if not available
+try:
+    import asyncio
+    import asyncssh
+    HAS_ASYNCSSH = True
+except ImportError:
+    HAS_ASYNCSSH = False
 
 class UltraFastVMChecker:
     def __init__(self, inventory_file, max_workers=20):
@@ -30,6 +37,31 @@ class UltraFastVMChecker:
             result = sock.connect_ex((host, port))
             sock.close()
             return result == 0
+        except:
+            return False
+    
+    def sync_ssh_check(self, host, user="root", password="Passw0rd!", timeout=5):
+        """Synchronous SSH connectivity check using sshpass"""
+        try:
+            # Use sshpass with ssh to check connectivity
+            cmd = [
+                'sshpass', '-p', password,
+                'ssh', '-o', 'StrictHostKeyChecking=no',
+                '-o', 'UserKnownHostsFile=/dev/null',
+                '-o', 'ConnectTimeout=' + str(timeout),
+                '-o', 'BatchMode=yes',
+                f'{user}@{host}',
+                'echo', 'OK'
+            ]
+            
+            result = subprocess.run(
+                cmd,
+                capture_output=True,
+                text=True,
+                timeout=timeout + 1
+            )
+            
+            return result.returncode == 0 and result.stdout.strip() == "OK"
         except:
             return False
     
@@ -75,25 +107,46 @@ class UltraFastVMChecker:
         }
         
         if vms_to_ssh_check:
-            # Run async SSH checks
-            loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(loop)
-            
-            ssh_tasks = [
-                self.async_ssh_check(
-                    info['ansible_host'],
-                    info.get('ansible_user', 'root'),
-                    info.get('ansible_ssh_pass', 'Passw0rd!')
-                ) for info in vms_to_ssh_check.values()
-            ]
-            
-            ssh_results = loop.run_until_complete(
-                asyncio.gather(*ssh_tasks, return_exceptions=True)
-            )
-            loop.close()
-            
-            for vm_name, ssh_ok in zip(vms_to_ssh_check.keys(), ssh_results):
-                batch_results[vm_name]['ssh'] = ssh_ok is True
+            if HAS_ASYNCSSH:
+                # Run async SSH checks
+                loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(loop)
+                
+                ssh_tasks = [
+                    self.async_ssh_check(
+                        info['ansible_host'],
+                        info.get('ansible_user', 'root'),
+                        info.get('ansible_ssh_pass', 'Passw0rd!')
+                    ) for info in vms_to_ssh_check.values()
+                ]
+                
+                ssh_results = loop.run_until_complete(
+                    asyncio.gather(*ssh_tasks, return_exceptions=True)
+                )
+                loop.close()
+                
+                for vm_name, ssh_ok in zip(vms_to_ssh_check.keys(), ssh_results):
+                    batch_results[vm_name]['ssh'] = ssh_ok is True
+            else:
+                # Fall back to synchronous SSH checks
+                with ThreadPoolExecutor(max_workers=min(len(vms_to_ssh_check), 10)) as executor:
+                    ssh_futures = {
+                        executor.submit(
+                            self.sync_ssh_check,
+                            info['ansible_host'],
+                            info.get('ansible_user', 'root'),
+                            info.get('ansible_ssh_pass', 'Passw0rd!')
+                        ): vm_name
+                        for vm_name, info in vms_to_ssh_check.items()
+                    }
+                    
+                    for future in as_completed(ssh_futures, timeout=10):
+                        vm_name = ssh_futures[future]
+                        try:
+                            ssh_ok = future.result()
+                            batch_results[vm_name]['ssh'] = ssh_ok
+                        except:
+                            batch_results[vm_name]['ssh'] = False
         
         return batch_results
     
@@ -106,7 +159,8 @@ class UltraFastVMChecker:
             print("No hosts found in inventory")
             return False
         
-        print(f"Ultra-fast checking {len(all_hosts)} VMs with {self.max_workers} workers...")
+        method = "async SSH (asyncssh)" if HAS_ASYNCSSH else "sync SSH (sshpass)"
+        print(f"Ultra-fast checking {len(all_hosts)} VMs with {self.max_workers} workers using {method}...")
         start_time = time.time()
         
         # Split hosts into batches
