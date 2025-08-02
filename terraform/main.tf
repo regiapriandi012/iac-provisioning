@@ -68,9 +68,8 @@ locals {
      
       # Use defined IP or sequential IP (if ip = "0")
       # Reserve first IP (base-1) for HAProxy LB when multi-master
-      ip_offset = index(local.vms_need_auto_ip, vm)
-      ip_address = vm.ip != "0" ? vm.ip : "10.200.0.${random_integer.ip_base.result + ip_offset}"
-      ip         = vm.ip != "0" ? "ip=${vm.ip}/24,gw=${var.gateway}" : "ip=10.200.0.${random_integer.ip_base.result + ip_offset}/24,gw=${var.gateway}"
+      ip_address = vm.ip != "0" ? vm.ip : "10.200.0.${random_integer.ip_base.result + index(local.vms_need_auto_ip, vm)}"
+      ip         = vm.ip != "0" ? "ip=${vm.ip}/24,gw=${var.gateway}" : "ip=10.200.0.${random_integer.ip_base.result + index(local.vms_need_auto_ip, vm)}/24,gw=${var.gateway}"
      
       cores     = tonumber(vm.cores)
       memory    = tonumber(vm.memory)
