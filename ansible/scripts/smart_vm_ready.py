@@ -18,32 +18,26 @@ def safe_print(message):
         print(message, flush=True)
 
 def smart_ssh_check(host_info):
-    """Smart SSH check using direct ansible ping - much faster than netcat"""
+    """Smart SSH check using simple TCP connectivity - much faster and more reliable"""
     host, ip = host_info
-    
-    # Use ansible ping directly - it's the most reliable SSH test
-    cmd = [
-        'ansible', host, 
-        '-i', 'inventory/k8s-inventory.json',
-        '-m', 'ping',
-        '--timeout=8',
-        '-o'  # one line output
-    ]
     
     start_time = time.time()
     
     try:
-        result = subprocess.run(cmd, capture_output=True, text=True, timeout=12)
+        # Simple TCP connectivity check to SSH port 22
+        import socket
+        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        sock.settimeout(8)
+        result = sock.connect_ex((ip, 22))
+        sock.close()
+        
         elapsed = time.time() - start_time
         
-        if result.returncode == 0 and 'SUCCESS' in result.stdout:
-            return host, ip, True, f"Ready in {elapsed:.1f}s"
+        if result == 0:
+            return host, ip, True, f"SSH port ready in {elapsed:.1f}s"
         else:
-            error_msg = result.stderr.strip() if result.stderr else "Connection failed"
-            return host, ip, False, f"Failed in {elapsed:.1f}s: {error_msg[:50]}"
-    except subprocess.TimeoutExpired:
-        elapsed = time.time() - start_time
-        return host, ip, False, f"Timeout after {elapsed:.1f}s"
+            return host, ip, False, f"SSH port not ready in {elapsed:.1f}s (code: {result})"
+            
     except Exception as e:
         elapsed = time.time() - start_time
         return host, ip, False, f"Error in {elapsed:.1f}s: {str(e)[:50]}"

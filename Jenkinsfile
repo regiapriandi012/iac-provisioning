@@ -117,9 +117,9 @@ pipeline {
                             
                             cd ${ANSIBLE_DIR}
                             
-                            # Give VMs a moment to finish booting (much shorter than before)
-                            echo "Brief wait for VM initialization (20s)..."
-                            sleep 20
+                            # Give VMs a moment to finish booting
+                            echo "Wait for VM initialization (60s)..."
+                            sleep 60
                             
                             # Use our smart readiness checker
                             echo "Running smart parallel readiness check..."
