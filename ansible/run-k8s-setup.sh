@@ -238,10 +238,12 @@ main() {
 # Trap for cleanup
 cleanup() {
     log_info "Cleaning up temporary files..."
-    [[ -f "$INVENTORY_FILE" ]] && rm -f "$INVENTORY_FILE"
+    # Don't remove inventory file as it's needed by show_endpoints.py
+    # [[ -f "$INVENTORY_FILE" ]] && rm -f "$INVENTORY_FILE"
 }
 
-trap cleanup EXIT
+# Disable cleanup trap as we need the inventory file for Jenkins
+# trap cleanup EXIT
 
 # Run main function
 main "$@"

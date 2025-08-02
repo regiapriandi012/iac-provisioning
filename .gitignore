@@ -1,2 +1,6 @@
 terraform/terraform.tfstate
 terraform/terraform.tfstate.backup
+terraform/.terraform/
+terraform/.terraform.lock.hcl
+ansible/inventory/
+ansible/kubeconfig/

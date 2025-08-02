@@ -12,11 +12,20 @@ def generate_simple_inventory(csv_file):
     inventory = {
         'k8s_masters': {'hosts': {}},
         'k8s_workers': {'hosts': {}},
+        'k8s_cluster': {
+            'children': {
+                'k8s_masters': {},
+                'k8s_workers': {}
+            }
+        },
         'all': {
             'vars': {
                 'ansible_user': 'root',
                 'ansible_ssh_common_args': '-o StrictHostKeyChecking=no',
-                'ansible_timeout': 120
+                'ansible_timeout': 120,
+                'pod_network_cidr': '10.244.0.0/16',
+                'service_cidr': '10.96.0.0/12',
+                'kubernetes_version': '1.28.0'
             }
         }
     }
@@ -33,7 +42,8 @@ def generate_simple_inventory(csv_file):
                 
                 host_vars = {
                     'ansible_host': ip,
-                    'ansible_user': 'root'
+                    'ansible_user': 'root',
+                    'template': row.get('template', 'debian-12')
                 }
                 
                 # Simple classification

@@ -107,7 +107,7 @@ output "ansible_inventory_json" {
           vmid = v.vmid
           node = v.node
           original_name = v.vm_name_original
-          template = "t-centos9-86"
+          template = v.template
         } if can(regex("master", lower(v.vm_name_original)))
       }
     }
@@ -118,7 +118,7 @@ output "ansible_inventory_json" {
           vmid = v.vmid
           node = v.node
           original_name = v.vm_name_original
-          template = "t-centos9-86"
+          template = v.template
         } if can(regex("worker", lower(v.vm_name_original)))
       }
     }
