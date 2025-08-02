@@ -67,33 +67,60 @@ pipeline {
             }
         }
         
-        stage('Setup Cache') {
-            when {
-                expression { params.use_cache }
-            }
+        stage('Setup Environment') {
             steps {
                 script {
                     sh '''
-                        # Create cache directories
-                        mkdir -p ${CACHE_DIR}/{terraform,ansible,python}
+                        # Create cache directories if caching is enabled
+                        if [ "${params.use_cache}" = "true" ]; then
+                            mkdir -p ${CACHE_DIR}/{terraform,ansible,python}
+                        fi
                         
-                        # Check if terraform directory exists
-                        if [ -d "${TERRAFORM_DIR}" ]; then
-                            # Cache Terraform providers
+                        # Setup Python virtual environment
+                        echo "Setting up Python virtual environment..."
+                        
+                        # Check if venv exists in cache
+                        if [ "${params.use_cache}" = "true" ] && [ -d "${CACHE_DIR}/python/venv" ]; then
+                            echo "Using cached Python venv"
+                            cp -r ${CACHE_DIR}/python/venv ${WORKSPACE}/venv || true
+                        fi
+                        
+                        # Create venv if it doesn't exist
+                        if [ ! -d "${WORKSPACE}/venv" ]; then
+                            echo "Creating new Python venv..."
+                            python3 -m venv ${WORKSPACE}/venv
+                        fi
+                        
+                        # Activate venv and install required packages
+                        . ${WORKSPACE}/venv/bin/activate
+                        
+                        # Check if asyncssh is already installed
+                        if ! python3 -c "import asyncssh" 2>/dev/null; then
+                            echo "Installing required Python packages..."
+                            pip install --upgrade pip
+                            pip install asyncssh paramiko
+                        else
+                            echo "Python packages already installed"
+                        fi
+                        
+                        # Cache the venv for future use
+                        if [ "${params.use_cache}" = "true" ]; then
+                            echo "Caching Python venv..."
+                            cp -r ${WORKSPACE}/venv ${CACHE_DIR}/python/ || true
+                        fi
+                        
+                        # Check Terraform cache
+                        if [ "${params.use_cache}" = "true" ] && [ -d "${TERRAFORM_DIR}" ]; then
                             if [ -d "${CACHE_DIR}/terraform/.terraform" ]; then
                                 echo "Using cached Terraform providers"
                                 cp -r ${CACHE_DIR}/terraform/.terraform ${TERRAFORM_DIR}/ || true
                             fi
-                        else
-                            echo "WARNING: Terraform directory not found, skipping cache restore"
-                        fi
-                        
-                        # Cache Python packages
-                        if [ -d "${CACHE_DIR}/python/site-packages" ]; then
-                            echo "Using cached Python packages"
-                            export PYTHONPATH="${CACHE_DIR}/python/site-packages:$PYTHONPATH"
                         fi
                     '''
+                    
+                    // Set environment variables for subsequent stages
+                    env.PATH = "${WORKSPACE}/venv/bin:${env.PATH}"
+                    env.VIRTUAL_ENV = "${WORKSPACE}/venv"
                 }
             }
         }
@@ -222,27 +249,24 @@ pipeline {
                         def startTime = System.currentTimeMillis()
                         
                         sh '''
+                            # Ensure we're using venv
+                            . ${WORKSPACE}/venv/bin/activate
+                            
                             # Generate inventory
                             mkdir -p inventory
                             cd ../terraform
                             terraform output -raw ansible_inventory_json > ../ansible/${INVENTORY_FILE}
                             cd ../ansible
                             
-                            # Use ultra-fast checker if available
-                            if [ -f "scripts/ultra_fast_vm_ready.py" ]; then
-                                echo "Using ultra-fast VM readiness checker..."
-                                
-                                # Quick initial delay
-                                echo "Waiting 20s for VMs to initialize..."
-                                sleep 20
-                                
-                                # Run ultra-fast parallel check
-                                python3 scripts/ultra_fast_vm_ready.py ${INVENTORY_FILE} 20
-                            else
-                                # Fallback to standard checker
-                                echo "Using standard VM readiness checker..."
-                                python3 scripts/smart_vm_ready.py ${INVENTORY_FILE} 3
-                            fi
+                            # Use smart VM checker (which now supports both async and sync)
+                            echo "Using smart VM readiness checker..."
+                            
+                            # Quick initial delay
+                            echo "Waiting 20s for VMs to initialize..."
+                            sleep 20
+                            
+                            # Run VM readiness check with venv Python
+                            ${WORKSPACE}/venv/bin/python scripts/smart_vm_ready.py ${INVENTORY_FILE} 20
                         '''
                         
                         def duration = (System.currentTimeMillis() - startTime) / 1000
@@ -319,9 +343,12 @@ pipeline {
                 dir("${ANSIBLE_DIR}") {
                     script {
                         sh '''
+                            # Ensure we're using venv
+                            . ${WORKSPACE}/venv/bin/activate
+                            
                             # Extract KUBECONFIG
                             mkdir -p kubeconfig
-                            python3 scripts/get_kubeconfig.py ${INVENTORY_FILE} kubeconfig/admin.conf
+                            ${WORKSPACE}/venv/bin/python scripts/get_kubeconfig.py ${INVENTORY_FILE} kubeconfig/admin.conf
                             
                             echo "KUBECONFIG extracted successfully"
                         '''
