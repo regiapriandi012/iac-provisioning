@@ -224,12 +224,20 @@ pipeline {
                                 script {
                                     def startTime = System.currentTimeMillis()
                                     
-                                    sh '''
+                                    sh '''#!/bin/bash
                                         echo "Applying Terraform with parallel execution..."
                                         terraform apply -auto-approve -parallelism=10
                                         
                                         echo "Deployment summary:"
-                                        terraform output assignment_summary
+                                        terraform output assignment_summary || echo "No assignment summary available"
+                                        
+                                        echo ""
+                                        echo "Checking ansible inventory output:"
+                                        terraform output ansible_inventory_json || echo "ERROR: No ansible_inventory_json output found"
+                                        
+                                        echo ""
+                                        echo "Terraform state list:"
+                                        terraform state list || echo "No resources in state"
                                     '''
                                     
                                     def duration = (System.currentTimeMillis() - startTime) / 1000
@@ -258,8 +266,36 @@ pipeline {
                             # Generate inventory
                             mkdir -p inventory
                             cd ../terraform
+                            
+                            # Debug: Check terraform output
+                            echo "Checking Terraform outputs..."
+                            terraform output -json || echo "Failed to get terraform outputs"
+                            
+                            # Generate inventory file
+                            echo "Generating inventory file..."
                             terraform output -raw ansible_inventory_json > ../ansible/${INVENTORY_FILE}
+                            
                             cd ../ansible
+                            
+                            # Debug: Check inventory file
+                            echo "Checking inventory file content..."
+                            if [ -f "${INVENTORY_FILE}" ]; then
+                                echo "Inventory file exists. Size: $(wc -c < ${INVENTORY_FILE}) bytes"
+                                echo "First 500 chars of inventory:"
+                                head -c 500 ${INVENTORY_FILE}
+                                echo ""
+                                
+                                # Validate JSON
+                                if python3 -m json.tool ${INVENTORY_FILE} > /dev/null 2>&1; then
+                                    echo "Inventory JSON is valid"
+                                else
+                                    echo "ERROR: Invalid JSON in inventory file"
+                                    cat ${INVENTORY_FILE}
+                                fi
+                            else
+                                echo "ERROR: Inventory file not found at ${INVENTORY_FILE}"
+                                ls -la inventory/
+                            fi
                             
                             # Use smart VM checker (which now supports both async and sync)
                             echo "Using smart VM readiness checker..."
@@ -288,8 +324,24 @@ pipeline {
                     script {
                         def startTime = System.currentTimeMillis()
                         
-                        sh '''
+                        sh '''#!/bin/bash
                             echo "Starting optimized Kubernetes deployment..."
+                            
+                            # Check if inventory has hosts
+                            if [ -f "${INVENTORY_FILE}" ]; then
+                                HOST_COUNT=$(python3 -c "import json; data=json.load(open('${INVENTORY_FILE}')); print(len(data.get('all', {}).get('hosts', {})))" 2>/dev/null || echo "0")
+                                
+                                if [ "$HOST_COUNT" = "0" ]; then
+                                    echo "ERROR: No hosts found in inventory. Cannot deploy Kubernetes."
+                                    echo "Please check that VMs were successfully created by Terraform."
+                                    exit 1
+                                fi
+                                
+                                echo "Found $HOST_COUNT hosts in inventory. Proceeding with deployment..."
+                            else
+                                echo "ERROR: Inventory file not found at ${INVENTORY_FILE}"
+                                exit 1
+                            fi
                             
                             # Use optimized setup script if available
                             if [ -f "run-k8s-setup-optimized.sh" ]; then
