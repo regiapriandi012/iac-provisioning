@@ -1,138 +1,186 @@
 #!/usr/bin/env python3
 """
-Smart and FAST VM readiness check
-Replaces the slow netcat-based checking with direct Ansible ping
+Ultra-fast VM readiness checker with parallel execution and optimized checks
 """
+
 import json
 import sys
-import subprocess
+import asyncio
+import asyncssh
 import time
-import concurrent.futures
-from threading import Lock
+from concurrent.futures import ThreadPoolExecutor, as_completed
+import socket
 
-print_lock = Lock()
-
-def safe_print(message):
-    """Thread-safe printing"""
-    with print_lock:
-        print(message, flush=True)
-
-def smart_ssh_check(host_info):
-    """Smart SSH check using simple TCP connectivity - much faster and more reliable"""
-    host, ip = host_info
+class UltraFastVMChecker:
+    def __init__(self, inventory_file, max_workers=20):
+        self.inventory_file = inventory_file
+        self.max_workers = max_workers
+        self.results = {}
+        
+    def load_inventory(self):
+        """Load inventory file"""
+        with open(self.inventory_file, 'r') as f:
+            return json.load(f)
     
-    start_time = time.time()
-    
-    try:
-        # Simple TCP connectivity check to SSH port 22
-        import socket
+    def quick_port_check(self, host, port=22, timeout=2):
+        """Ultra-fast TCP port check"""
         sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        sock.settimeout(8)
-        result = sock.connect_ex((ip, 22))
-        sock.close()
+        sock.settimeout(timeout)
+        try:
+            result = sock.connect_ex((host, port))
+            sock.close()
+            return result == 0
+        except:
+            return False
+    
+    async def async_ssh_check(self, host, user="root", password="Passw0rd!", timeout=5):
+        """Async SSH connectivity check"""
+        try:
+            async with asyncssh.connect(
+                host, 
+                username=user, 
+                password=password,
+                known_hosts=None,
+                connect_timeout=timeout
+            ) as conn:
+                # Quick command to verify SSH works
+                result = await conn.run('echo "OK"', check=True, timeout=2)
+                return result.stdout.strip() == "OK"
+        except:
+            return False
+    
+    def check_vm_batch(self, vm_batch):
+        """Check a batch of VMs in parallel"""
+        batch_results = {}
         
-        elapsed = time.time() - start_time
-        
-        if result == 0:
-            return host, ip, True, f"SSH port ready in {elapsed:.1f}s"
-        else:
-            return host, ip, False, f"SSH port not ready in {elapsed:.1f}s (code: {result})"
+        # First, quick port scan for all VMs
+        with ThreadPoolExecutor(max_workers=len(vm_batch)) as executor:
+            port_futures = {
+                executor.submit(self.quick_port_check, vm_info['ansible_host']): vm_name
+                for vm_name, vm_info in vm_batch.items()
+            }
             
-    except Exception as e:
-        elapsed = time.time() - start_time
-        return host, ip, False, f"Error in {elapsed:.1f}s: {str(e)[:50]}"
-
-def fast_vm_readiness_check(inventory_file, max_retries=3, retry_delay=15):
-    """Fast VM readiness check with smart retry logic"""
-    try:
-        with open(inventory_file, 'r') as f:
-            content = f.read().strip()
-            
-            # Handle case where terraform output is JSON string (escaped)
-            if content.startswith('"') and content.endswith('"'):
-                # Remove quotes and unescape
-                content = json.loads(content)
-            
-            # Parse the actual JSON
-            if isinstance(content, str):
-                inv = json.loads(content)
-            else:
-                inv = content
+            for future in as_completed(port_futures, timeout=3):
+                vm_name = port_futures[future]
+                try:
+                    is_open = future.result()
+                    batch_results[vm_name] = {'port_22': is_open, 'ssh': False}
+                except:
+                    batch_results[vm_name] = {'port_22': False, 'ssh': False}
         
-        # Extract all hosts and IPs
-        hosts_to_check = []
-        for group_name, group_data in inv.items():
-            if group_name in ['all', '_meta'] or not isinstance(group_data, dict):
-                continue
-            if 'hosts' in group_data:
-                for host, host_vars in group_data['hosts'].items():
-                    if 'ansible_host' in host_vars:
-                        hosts_to_check.append((host, host_vars['ansible_host']))
+        # Then, SSH check only for VMs with open ports
+        vms_to_ssh_check = {
+            vm: info for vm, info in vm_batch.items() 
+            if vm in batch_results and batch_results[vm]['port_22']
+        }
         
-        if not hosts_to_check:
-            safe_print("ERROR: No hosts found in inventory")
+        if vms_to_ssh_check:
+            # Run async SSH checks
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            
+            ssh_tasks = [
+                self.async_ssh_check(
+                    info['ansible_host'],
+                    info.get('ansible_user', 'root'),
+                    info.get('ansible_ssh_pass', 'Passw0rd!')
+                ) for info in vms_to_ssh_check.values()
+            ]
+            
+            ssh_results = loop.run_until_complete(
+                asyncio.gather(*ssh_tasks, return_exceptions=True)
+            )
+            loop.close()
+            
+            for vm_name, ssh_ok in zip(vms_to_ssh_check.keys(), ssh_results):
+                batch_results[vm_name]['ssh'] = ssh_ok is True
+        
+        return batch_results
+    
+    def run_parallel_checks(self):
+        """Run checks in parallel batches"""
+        inventory = self.load_inventory()
+        all_hosts = inventory.get('all', {}).get('hosts', {})
+        
+        if not all_hosts:
+            print("No hosts found in inventory")
             return False
         
-        safe_print(f"Smart VM Readiness Check")
-        safe_print(f"Checking {len(hosts_to_check)} VMs: {', '.join([f'{h}({ip})' for h, ip in hosts_to_check])}")
-        safe_print("")
+        print(f"🚀 Ultra-fast checking {len(all_hosts)} VMs with {self.max_workers} workers...")
+        start_time = time.time()
         
-        for attempt in range(1, max_retries + 1):
-            safe_print(f"Attempt {attempt}/{max_retries}")
-            start_time = time.time()
+        # Split hosts into batches
+        batch_size = min(10, len(all_hosts))  # Process 10 VMs at a time
+        vm_items = list(all_hosts.items())
+        batches = [
+            dict(vm_items[i:i + batch_size]) 
+            for i in range(0, len(vm_items), batch_size)
+        ]
+        
+        # Process batches in parallel
+        all_ready = True
+        with ThreadPoolExecutor(max_workers=max(1, self.max_workers // 10)) as executor:
+            batch_futures = {
+                executor.submit(self.check_vm_batch, batch): idx
+                for idx, batch in enumerate(batches)
+            }
             
-            # Check all hosts in parallel - MUCH faster
-            with concurrent.futures.ThreadPoolExecutor(max_workers=len(hosts_to_check)) as executor:
-                future_to_host = {
-                    executor.submit(smart_ssh_check, host_info): host_info 
-                    for host_info in hosts_to_check
-                }
-                
-                ready_hosts = []
-                failed_hosts = []
-                
-                for future in concurrent.futures.as_completed(future_to_host):
-                    host, ip, is_ready, message = future.result()
+            for future in as_completed(batch_futures, timeout=30):
+                batch_idx = batch_futures[future]
+                try:
+                    batch_results = future.result()
+                    self.results.update(batch_results)
                     
-                    if is_ready:
-                        ready_hosts.append((host, ip))
-                        safe_print(f"OK {host} ({ip}): {message}")
-                    else:
-                        failed_hosts.append((host, ip))
-                        safe_print(f"FAIL {host} ({ip}): {message}")
-            
-            elapsed = time.time() - start_time
-            safe_print(f"Parallel check completed in {elapsed:.1f}s")
-            
-            if len(ready_hosts) == len(hosts_to_check):
-                safe_print(f"\nAll {len(hosts_to_check)} VMs are ready!")
-                safe_print(f"Total time: {elapsed:.1f}s (attempt {attempt})")
-                return True
-            
-            if attempt < max_retries:
-                safe_print(f"\n{len(failed_hosts)} VMs not ready. Retrying in {retry_delay}s...")
-                # Only update the list to check failed hosts
-                hosts_to_check = failed_hosts
-                time.sleep(retry_delay)
-            else:
-                safe_print(f"\nTimeout: {len(ready_hosts)}/{len(hosts_to_check) + len(ready_hosts)} VMs ready")
-                return False
+                    # Show progress
+                    ready_count = sum(1 for r in self.results.values() if r['ssh'])
+                    print(f"  ✓ Batch {batch_idx + 1}/{len(batches)} complete. "
+                          f"Ready: {ready_count}/{len(all_hosts)}")
+                except Exception as e:
+                    print(f"  ✗ Batch {batch_idx + 1} failed: {e}")
+                    all_ready = False
         
-        return False
+        # Final report
+        elapsed = time.time() - start_time
+        ready_vms = [vm for vm, status in self.results.items() if status['ssh']]
+        not_ready = [vm for vm, status in self.results.items() if not status['ssh']]
         
-    except Exception as e:
-        safe_print(f"ERROR: Error during readiness check: {e}")
-        return False
+        print(f"\n⏱️  Completed in {elapsed:.1f} seconds")
+        print(f"✅ Ready VMs ({len(ready_vms)}/{len(all_hosts)}): {', '.join(ready_vms)}")
+        
+        if not_ready:
+            print(f"❌ Not ready ({len(not_ready)}): {', '.join(not_ready)}")
+            
+            # Detailed status for debugging
+            print("\nDetailed status:")
+            for vm in not_ready:
+                status = self.results.get(vm, {})
+                print(f"  - {vm}: Port 22={'✓' if status.get('port_22') else '✗'}, "
+                      f"SSH={'✓' if status.get('ssh') else '✗'}")
+        
+        return len(ready_vms) == len(all_hosts)
 
-if __name__ == '__main__':
-    inventory_file = sys.argv[1] if len(sys.argv) > 1 else 'inventory/k8s-inventory.json'
-    max_retries = int(sys.argv[2]) if len(sys.argv) > 2 else 3
-    
-    success = fast_vm_readiness_check(inventory_file, max_retries)
-    
-    if success:
-        print("\nSUCCESS: ALL VMs are ready for Ansible operations!")
-        sys.exit(0)
-    else:
-        print("\nFAILED: Some VMs are not ready. Check the logs above.")
+
+def main():
+    if len(sys.argv) < 2:
+        print("Usage: ultra_fast_vm_ready.py <inventory_file> [max_workers]")
         sys.exit(1)
+    
+    inventory_file = sys.argv[1]
+    max_workers = int(sys.argv[2]) if len(sys.argv) > 2 else 20
+    
+    checker = UltraFastVMChecker(inventory_file, max_workers)
+    
+    try:
+        if checker.run_parallel_checks():
+            print("\n🎉 All VMs are ready!")
+            sys.exit(0)
+        else:
+            print("\n⚠️  Some VMs are not ready yet")
+            sys.exit(1)
+    except Exception as e:
+        print(f"Error: {e}")
+        sys.exit(1)
+
+
+if __name__ == "__main__":
+    main()

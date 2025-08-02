@@ -1,251 +1,147 @@
 #!/bin/bash
-#
-# Dynamic Kubernetes Cluster Setup Script
-# Automatically detects single master or HA multi-master setup
-#
-
 set -e
 
-# Colors for output
-RED='\033[0;31m'
-GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
-BLUE='\033[0;34m'
-NC='\033[0m' # No Color
+echo "🚀 Starting OPTIMIZED Kubernetes cluster deployment..."
+echo "=================================================="
 
-# Configuration
-CSV_FILE="${CSV_FILE:-../terraform/vms.csv}"
-# Removed - not used anymore
-PLAYBOOK="./playbooks/k8s-cluster-setup.yml"
 INVENTORY_FILE="inventory/k8s-inventory.json"
-INVENTORY_SCRIPT="./inventory.py"
+export ANSIBLE_CONFIG="./ansible.cfg"
 
-# Functions
-log_info() {
-    echo -e "${BLUE}[INFO]${NC} $1"
-}
-
-log_success() {
-    echo -e "${GREEN}[SUCCESS]${NC} $1"
-}
-
-log_warning() {
-    echo -e "${YELLOW}[WARNING]${NC} $1"
-}
-
-log_error() {
-    echo -e "${RED}[ERROR]${NC} $1"
-}
-
-print_banner() {
-    echo -e "${GREEN}"
-    echo "=================================================================="
-    echo "          Dynamic Kubernetes Cluster Setup"
-    echo "=================================================================="
-    echo -e "${NC}"
-}
-
-check_prerequisites() {
-    log_info "Checking prerequisites..."
-    
-    # Check if CSV file exists
-    if [[ ! -f "$CSV_FILE" ]]; then
-        log_error "CSV file not found: $CSV_FILE"
-        exit 1
-    fi
-    
-    # Check if Python is available
-    if ! command -v python3 &> /dev/null; then
-        log_error "Python3 is required but not installed"
-        exit 1
-    fi
-    
-    # Check if Ansible is available
-    if ! command -v ansible-playbook &> /dev/null; then
-        log_error "Ansible is required but not installed"
-        exit 1
-    fi
-    
-    # Make inventory script executable
-    chmod +x "$INVENTORY_SCRIPT"
-    
-    log_success "Prerequisites check passed"
-}
-
-generate_inventory() {
-    # Check if inventory already exists and is valid
-    if [[ -f "$INVENTORY_FILE" ]] && python3 -m json.tool "$INVENTORY_FILE" > /dev/null 2>&1; then
-        log_success "Using existing valid inventory file: $INVENTORY_FILE"
-        return 0
-    fi
-    
-    log_info "Generating simple inventory from CSV (avoiding phantom host issues)..."
-    
-    # Use simple generator to avoid parsing issues
-    if python3 generate_simple_inventory.py "$CSV_FILE" > "$INVENTORY_FILE"; then
-        log_success "Inventory generated from CSV"
-        
-        # Parse and display cluster configuration
-        MASTER_COUNT=$(python3 -c "
-import json
-with open('$INVENTORY_FILE', 'r') as f:
-    inv = json.load(f)
-    print(inv['all']['vars']['master_count'])
-")
-        
-        IS_HA=$(python3 -c "
-import json
-with open('$INVENTORY_FILE', 'r') as f:
-    inv = json.load(f)
-    print('true' if inv['all']['vars']['is_ha_cluster'] else 'false')
-")
-        
-        echo -e "${BLUE}Cluster Configuration:${NC}"
-        echo "  Master Nodes: $MASTER_COUNT"
-        echo "  Mode: $([ "$IS_HA" = "true" ] && echo "HA Multi-Master" || echo "Single Master")"
-        echo "  HAProxy LB: $([ "$IS_HA" = "true" ] && echo "Enabled" || echo "Disabled")"
-        
-    else
-        log_error "Failed to generate inventory from CSV"
-        exit 1
-    fi
-}
-
+# Function to run playbook with performance monitoring
 run_playbook() {
-    log_info "Starting Kubernetes cluster setup..."
+    local playbook=$1
+    local description=$2
+    local extra_args="${3:-}"
     
-    log_info "Testing inventory and connectivity first..."
+    echo ""
+    echo "▶️  Running: $description"
+    echo "   Playbook: $playbook"
+    START_TIME=$(date +%s)
     
-    # Set environment variable for dynamic inventory script
-    export ANSIBLE_INVENTORY_FILE="$INVENTORY_FILE"
-    
-    # Test inventory parsing
-    ansible-inventory -i "$INVENTORY_SCRIPT" --list > /dev/null || {
-        log_error "Failed to parse inventory file"
-        exit 1
-    }
-    
-    # Test basic connectivity with proper timeout (exclude phantom hosts)
-    log_info "Testing connectivity to all hosts..."
-    ansible k8s_masters:k8s_workers -i "$INVENTORY_SCRIPT" -m ping --timeout=30 -o || {
-        log_warning "Some hosts may not be reachable yet, continuing anyway..."
-    }
-    
-    # Run the playbook with generated inventory
+    # Run with optimized settings
     ansible-playbook \
-        -i "$INVENTORY_SCRIPT" \
-        "$PLAYBOOK" \
-        -v \
-        "$@"
+        -i inventory.py \
+        playbooks/$playbook \
+        --forks 50 \
+        --timeout 30 \
+        $extra_args
     
-    if [[ $? -eq 0 ]]; then
-        log_success "Kubernetes cluster setup completed successfully!"
-        print_next_steps
-    else
-        log_error "Kubernetes cluster setup failed"
-        exit 1
-    fi
+    END_TIME=$(date +%s)
+    DURATION=$((END_TIME - START_TIME))
+    echo "   ✅ Completed in ${DURATION} seconds"
+    
+    return 0
 }
 
-print_next_steps() {
-    echo -e "${GREEN}"
-    echo "=================================================================="
-    echo "                    Setup Complete!"
-    echo "=================================================================="
-    echo -e "${NC}"
+# Function to run playbooks in parallel where possible
+run_parallel_playbooks() {
+    echo ""
+    echo "🔄 Running parallel playbooks..."
     
-    echo "Next steps:"
-    echo "1. SSH to your master node"
-    echo "2. Run: kubectl get nodes"
-    echo "3. Run: kubectl get pods --all-namespaces"
+    # Run non-dependent playbooks in parallel
+    (
+        run_playbook "01-common.yml" "Common setup (parallel)" &
+        PID1=$!
+        
+        run_playbook "07-docker.yml" "Docker installation (parallel)" &
+        PID2=$!
+        
+        # Wait for parallel tasks
+        wait $PID1 $PID2
+    )
+}
+
+# Pre-flight checks
+echo "🔍 Pre-flight checks..."
+if [ ! -f "$INVENTORY_FILE" ]; then
+    echo "❌ Inventory file not found: $INVENTORY_FILE"
+    exit 1
+fi
+
+# Optimize fact gathering
+echo "🎯 Pre-gathering facts in parallel..."
+ansible all -i inventory.py -m setup -a "gather_subset=!all,!hardware,network,virtual" --forks 50 &>/dev/null || true
+
+# Main deployment sequence
+echo ""
+echo "📋 Starting deployment sequence..."
+TOTAL_START=$(date +%s)
+
+# Phase 1: Parallel preparation
+run_parallel_playbooks
+
+# Phase 2: Sequential Kubernetes setup (must be in order)
+echo ""
+echo "🔧 Kubernetes setup phase..."
+
+# Run critical playbooks in sequence with monitoring
+run_playbook "02-kubernetes-prereq.yml" "Kubernetes prerequisites"
+run_playbook "03-kubernetes-install.yml" "Kubernetes installation"
+run_playbook "04-kubernetes-master.yml" "Master node configuration"
+run_playbook "05-kubernetes-workers.yml" "Worker nodes join"
+
+# Phase 3: Parallel post-setup
+echo ""
+echo "🔌 Running post-setup tasks in parallel..."
+(
+    run_playbook "06-kubernetes-addons.yml" "Kubernetes addons" &
+    PID1=$!
     
-    if [[ "$IS_HA" = "true" ]]; then
-        echo "4. Check HAProxy stats: http://<master-ip>:8404/stats"
-        echo "5. Test HA by stopping one master node"
-    fi
+    # Network plugin with retry logic
+    echo "   Installing Cilium network plugin..."
+    ansible-playbook -i inventory.py playbooks/08-cilium.yml --forks 50 || \
+    ansible-playbook -i inventory.py playbooks/08-cilium.yml --forks 50 &
+    PID2=$!
+    
+    wait $PID1 $PID2
+)
+
+# Final verification
+echo ""
+echo "✅ Running final verification..."
+FIRST_MASTER=$(python3 scripts/get_first_master.py $INVENTORY_FILE)
+
+if [ -n "$FIRST_MASTER" ]; then
+    echo "   Checking cluster status on $FIRST_MASTER..."
+    
+    # Quick cluster health check
+    ansible $FIRST_MASTER -i inventory.py -m shell -a "kubectl get nodes -o wide && echo '---' && kubectl get pods -A | grep -v Running | head -20" || true
+    
+    # Get cluster info
+    NODE_COUNT=$(ansible $FIRST_MASTER -i inventory.py -m shell -a "kubectl get nodes -o json | jq '.items | length'" -o | tail -1 | tr -d '\r\n')
+    READY_COUNT=$(ansible $FIRST_MASTER -i inventory.py -m shell -a "kubectl get nodes -o json | jq '[.items[] | select(.status.conditions[] | select(.type==\"Ready\" and .status==\"True\"))] | length'" -o | tail -1 | tr -d '\r\n')
     
     echo ""
-    echo "Useful commands:"
-    echo "  kubectl cluster-info"
-    echo "  kubectl get nodes -o wide"
-    echo "  kubectl get pods --all-namespaces"
-    echo "  kubectl describe node <node-name>"
-}
+    echo "📊 Cluster Status:"
+    echo "   - Total Nodes: $NODE_COUNT"
+    echo "   - Ready Nodes: $READY_COUNT"
+fi
 
-show_help() {
-    echo "Usage: $0 [OPTIONS]"
+# Calculate total time
+TOTAL_END=$(date +%s)
+TOTAL_DURATION=$((TOTAL_END - TOTAL_START))
+MINUTES=$((TOTAL_DURATION / 60))
+SECONDS=$((TOTAL_DURATION % 60))
+
+echo ""
+echo "=================================================="
+echo "🎉 Kubernetes cluster deployment completed!"
+echo "⏱️  Total time: ${MINUTES}m ${SECONDS}s"
+echo ""
+echo "📋 Quick commands:"
+echo "   kubectl get nodes"
+echo "   kubectl get pods -A"
+echo "   kubectl cluster-info"
+echo "=================================================="
+
+# Performance tips
+if [ $TOTAL_DURATION -gt 600 ]; then
     echo ""
-    echo "Options:"
-    echo "  -h, --help              Show this help message"
-    echo "  -c, --csv-file FILE     Specify CSV file path (default: ../terraform/vms.csv)"
-    echo "  -v, --verbose           Enable verbose Ansible output"
-    echo "  --check                 Run in check mode (dry-run)"
-    echo "  --skip-tags TAGS        Skip specific Ansible tags"
-    echo "  --tags TAGS             Run only specific Ansible tags"
-    echo ""
-    echo "Examples:"
-    echo "  $0                                          # Basic run"
-    echo "  $0 -c /path/to/vms.csv                     # Custom CSV file"
-    echo "  $0 --check                                 # Dry run"
-    echo "  $0 --tags common                           # Only run common tasks"
-}
+    echo "💡 Performance tip: Deployment took over 10 minutes."
+    echo "   Consider:"
+    echo "   - Using pre-pulled Docker images"
+    echo "   - Enabling template caching in Proxmox"
+    echo "   - Increasing VM resources during provisioning"
+fi
 
-# Main execution
-main() {
-    print_banner
-    
-    # Parse command line arguments
-    ANSIBLE_ARGS=()
-    
-    while [[ $# -gt 0 ]]; do
-        case $1 in
-            -h|--help)
-                show_help
-                exit 0
-                ;;
-            -c|--csv-file)
-                CSV_FILE="$2"
-                shift 2
-                ;;
-            -v|--verbose)
-                ANSIBLE_ARGS+=("-vvv")
-                shift
-                ;;
-            --check)
-                ANSIBLE_ARGS+=("--check")
-                shift
-                ;;
-            --skip-tags)
-                ANSIBLE_ARGS+=("--skip-tags" "$2")
-                shift 2
-                ;;
-            --tags)
-                ANSIBLE_ARGS+=("--tags" "$2")
-                shift 2
-                ;;
-            *)
-                log_error "Unknown option: $1"
-                show_help
-                exit 1
-                ;;
-        esac
-    done
-    
-    # Execute main workflow
-    check_prerequisites
-    generate_inventory
-    run_playbook "${ANSIBLE_ARGS[@]}"
-}
-
-# Trap for cleanup
-cleanup() {
-    log_info "Cleaning up temporary files..."
-    # Don't remove inventory file as it's needed by show_endpoints.py
-    # [[ -f "$INVENTORY_FILE" ]] && rm -f "$INVENTORY_FILE"
-}
-
-# Disable cleanup trap as we need the inventory file for Jenkins
-# trap cleanup EXIT
-
-# Run main function
-main "$@"
+exit 0

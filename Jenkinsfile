@@ -35,6 +35,11 @@ pipeline {
             defaultValue: false,
             description: 'Skip Kubernetes cluster verification steps'
         )
+        booleanParam(
+            name: 'use_cache',
+            defaultValue: true,
+            description: 'Use cached dependencies and templates'
+        )
     }
 
     environment {
@@ -43,14 +48,52 @@ pipeline {
         ANSIBLE_CONFIG = "${ANSIBLE_DIR}/ansible.cfg"
         INVENTORY_FILE = 'inventory/k8s-inventory.json'
         INVENTORY_SCRIPT = 'inventory.py'
+        CACHE_DIR = '/var/jenkins_home/iac-cache'
+    }
+    
+    options {
+        timestamps()
+        timeout(time: 30, unit: 'MINUTES')
+        buildDiscarder(logRotator(numToKeepStr: '10'))
+        disableConcurrentBuilds()
     }
 
     stages {
-        stage('Checkout') {
-            steps {
-                git branch: 'main', 
-                    credentialsId: 'gitlab-credential', 
-                    url: 'https://gitlab.labngoprek.my.id/root/iac-provision'
+        stage('🚀 Initialize') {
+            parallel {
+                stage('Checkout Code') {
+                    steps {
+                        git branch: 'main', 
+                            credentialsId: 'gitlab-credential', 
+                            url: 'https://gitlab.labngoprek.my.id/root/iac-provision'
+                    }
+                }
+                
+                stage('Setup Cache') {
+                    when {
+                        expression { params.use_cache }
+                    }
+                    steps {
+                        script {
+                            sh '''
+                                # Create cache directories
+                                mkdir -p ${CACHE_DIR}/{terraform,ansible,python}
+                                
+                                # Cache Terraform providers
+                                if [ -d "${CACHE_DIR}/terraform/.terraform" ]; then
+                                    echo "♻️  Using cached Terraform providers"
+                                    cp -r ${CACHE_DIR}/terraform/.terraform ${TERRAFORM_DIR}/ || true
+                                fi
+                                
+                                # Cache Python packages
+                                if [ -d "${CACHE_DIR}/python/site-packages" ]; then
+                                    echo "♻️  Using cached Python packages"
+                                    export PYTHONPATH="${CACHE_DIR}/python/site-packages:$PYTHONPATH"
+                                fi
+                            '''
+                        }
+                    }
+                }
             }
         }
         
@@ -58,6 +101,8 @@ pipeline {
             steps {
                 dir("${TERRAFORM_DIR}") {
                     script {
+                        def startTime = System.currentTimeMillis()
+                        
                         // Generate CSV based on preset or custom input
                         def csvContent = ""
                         
@@ -96,269 +141,141 @@ pipeline {
                         
                         // Write final CSV to file
                         writeFile file: "vms.csv", text: csvContent
-                            
-                        sh """
-                            echo "=========================================="
-                            echo "Configuration:"
-                            echo "- Preset/Mode: ${params.cluster_preset}"
-                            echo "- Template: ${params.vm_template}"
-                            echo "- Proxmox Node: ${params.proxmox_node}"
-                            echo "=========================================="
-                        """
                         
-                        sh '''
-                            echo "Generated vms.csv:"
-                            cat vms.csv
-                            echo ""
-                            
-                            # Debug: Show header and check format
-                            echo "CSV Header:"
-                            head -1 vms.csv | cat -A
-                            echo ""
-                            
-                            # Validate CSV format (trim whitespace)
-                            HEADER=$(head -1 vms.csv | tr -d '\\r' | tr -d ' ')
-                            EXPECTED="vmid,vm_name,template,node,ip,cores,memory,disk_size"
-                            
-                            if [ "$HEADER" != "$EXPECTED" ]; then
-                                echo "ERROR: Invalid CSV header format!"
-                                echo "Expected: $EXPECTED"
-                                echo "Got:      $HEADER"
-                                exit 1
-                            fi
-                            
-                            # Count VMs
-                            VM_COUNT=$(tail -n +2 vms.csv | wc -l)
-                            MASTER_COUNT=$(grep -i master vms.csv | wc -l)
-                            WORKER_COUNT=$(grep -i worker vms.csv | wc -l)
-                            
-                            echo "Configuration Summary:"
-                            echo "- Total VMs: $VM_COUNT"
-                            echo "- Masters: $MASTER_COUNT"
-                            echo "- Workers: $WORKER_COUNT"
-                            echo "- HA Mode: $([ $MASTER_COUNT -gt 1 ] && echo "Yes" || echo "No")"
-                        '''
+                        def duration = (System.currentTimeMillis() - startTime) / 1000
+                        echo "✅ Configuration generated in ${duration}s"
                     }
                 }
             }
         }
         
-        stage('Prepare Fresh State') {
-            steps {
-                dir("${TERRAFORM_DIR}") {
-                    script {
-                        sh '''
-                            echo "=========================================="
-                            echo "Preparing for new VM deployment..."
-                            echo "=========================================="
-                            
-                            # Move existing state to backup (keep old VMs running)
-                            if [ -f "terraform.tfstate" ]; then
-                                TIMESTAMP=$(date +%Y%m%d_%H%M%S)
-                                mkdir -p state_backups
-                                cp terraform.tfstate "state_backups/terraform.tfstate.${TIMESTAMP}"
-                                echo "Backed up existing state to state_backups/"
-                                
-                                # Clear current state to force new resource creation
-                                rm -f terraform.tfstate terraform.tfstate.backup
-                                echo "Cleared current state for fresh deployment"
-                            fi
-                            
-                            # Clean up Ansible inventory for new deployment
-                            rm -rf ../ansible/inventory/*
-                            echo "Ready to create NEW VMs (existing VMs will remain untouched)!"
-                        '''
-                    }
-                }
-            }
-        }
-        
-        stage('Terraform Init') {
-            steps {
-                dir("${TERRAFORM_DIR}") {
-                    withCredentials([
-                        string(credentialsId: 'proxmox-api-url', variable: 'TF_VAR_pm_api_url'),
-                        string(credentialsId: 'proxmox-api-token-id', variable: 'TF_VAR_pm_api_token_id'),
-                        string(credentialsId: 'proxmox-api-token-secret', variable: 'TF_VAR_pm_api_token_secret')
-                    ]) {
-                        sh '''
-                            echo "Cleaning up old Terraform state..."
-                            rm -f .terraform.lock.hcl
-                            rm -rf .terraform/
-                            
-                            echo "Initializing Terraform with fresh state..."
-                            terraform init
-                        '''
-                    }
-                }
-            }
-        }
-        
-        stage('Terraform Plan') {
-            steps {
-                dir("${TERRAFORM_DIR}") {
-                    withCredentials([
-                        string(credentialsId: 'proxmox-api-url', variable: 'TF_VAR_pm_api_url'),
-                        string(credentialsId: 'proxmox-api-token-id', variable: 'TF_VAR_pm_api_token_id'),
-                        string(credentialsId: 'proxmox-api-token-secret', variable: 'TF_VAR_pm_api_token_secret')
-                    ]) {
-                        sh '''
-                            echo "Planning Terraform deployment..."
-                            terraform plan -out=tfplan
-                        '''
-                    }
-                }
-            }
-        }
-        
-        stage('Terraform Apply') {
-            steps {
-                dir("${TERRAFORM_DIR}") {
-                    withCredentials([
-                        string(credentialsId: 'proxmox-api-url', variable: 'TF_VAR_pm_api_url'),
-                        string(credentialsId: 'proxmox-api-token-id', variable: 'TF_VAR_pm_api_token_id'),
-                        string(credentialsId: 'proxmox-api-token-secret', variable: 'TF_VAR_pm_api_token_secret')
-                    ]) {
-                        sh '''
-                            echo "Applying Terraform plan..."
-                            terraform apply tfplan
-                            
-                            echo "Infrastructure deployed successfully!"
-                            terraform state list
-                            
-                            echo ""
-                            echo "Updated CSV with sequential IP assignments:"
-                            cat vms.csv
-                        '''
-                    }
-                }
-            }
-        }
-        
-        stage('Prepare Ansible') {
-            when {
-                expression { params.run_ansible }
-            }
-            parallel {
-                stage('Generate Dynamic Inventory') {
+        stage('🔧 Terraform Provisioning') {
+            stages {
+                stage('Init') {
                     steps {
-                        dir("${ANSIBLE_DIR}") {
-                            sh '''
-                                echo "Generating dynamic inventory from CSV..."
-                                
-                                # Ensure inventory directory exists
-                                mkdir -p inventory
-                                
-                                # Generate inventory from terraform output (dynamic)
-                                cd ../terraform
-                                # Terraform output returns escaped JSON string, need to decode it
-                                terraform output -raw ansible_inventory_json > ../ansible/${INVENTORY_FILE}
-                                cd ../ansible
-                                
-                                echo "Verifying generated inventory JSON:"
-                                python3 -m json.tool ${INVENTORY_FILE}
-                                
-                                echo "Generated inventory:"
-                                python3 -m json.tool ${INVENTORY_FILE}
-                                
-                                echo "Cluster configuration detected:"
-                                python3 scripts/show_cluster_config.py ${INVENTORY_FILE}
-                                
-                                echo ""
-                                echo "OS Distribution Analysis:"
-                                python3 scripts/detect_os_type.py ${INVENTORY_FILE}
-                            '''
+                        dir("${TERRAFORM_DIR}") {
+                            withCredentials([
+                                string(credentialsId: 'proxmox-api-url', variable: 'TF_VAR_pm_api_url'),
+                                string(credentialsId: 'proxmox-api-token-id', variable: 'TF_VAR_pm_api_token_id'),
+                                string(credentialsId: 'proxmox-api-token-secret', variable: 'TF_VAR_pm_api_token_secret')
+                            ]) {
+                                script {
+                                    def startTime = System.currentTimeMillis()
+                                    
+                                    sh '''
+                                        # Clean state for fresh deployment
+                                        rm -f terraform.tfstate terraform.tfstate.backup
+                                        
+                                        terraform init -upgrade=false
+                                    '''
+                                    
+                                    def duration = (System.currentTimeMillis() - startTime) / 1000
+                                    echo "✅ Terraform init completed in ${duration}s"
+                                    
+                                    // Cache providers
+                                    if (params.use_cache) {
+                                        sh 'cp -r .terraform ${CACHE_DIR}/terraform/ || true'
+                                    }
+                                }
+                            }
                         }
                     }
                 }
-                stage('Smart VM Readiness Check') {
+                
+                stage('Apply') {
                     steps {
-                        sh '''
-                            echo "Smart VM Readiness Check (replaces slow netcat checking)"
-                            echo "This should complete in ~15-30 seconds instead of 2+ minutes"
-                            
-                            cd ${ANSIBLE_DIR}
-                            
-                            # Give VMs a moment to finish booting
-                            echo "Wait for VM initialization (60s)..."
-                            sleep 60
-                            
-                            # Use our smart readiness checker
-                            echo "Running smart parallel readiness check..."
-                            python3 scripts/smart_vm_ready.py ${INVENTORY_FILE} 3
-                            
-                            if [ $? -eq 0 ]; then
-                                echo "All VMs ready! Proceeding to connectivity test..."
-                            else
-                                echo "VM readiness check failed. Check logs above."
-                                exit 1
-                            fi
-                        '''
+                        dir("${TERRAFORM_DIR}") {
+                            withCredentials([
+                                string(credentialsId: 'proxmox-api-url', variable: 'TF_VAR_pm_api_url'),
+                                string(credentialsId: 'proxmox-api-token-id', variable: 'TF_VAR_pm_api_token_id'),
+                                string(credentialsId: 'proxmox-api-token-secret', variable: 'TF_VAR_pm_api_token_secret')
+                            ]) {
+                                script {
+                                    def startTime = System.currentTimeMillis()
+                                    
+                                    sh '''
+                                        echo "🚀 Applying Terraform with parallel execution..."
+                                        terraform apply -auto-approve -parallelism=10
+                                        
+                                        echo "📋 Deployment summary:"
+                                        terraform output assignment_summary
+                                    '''
+                                    
+                                    def duration = (System.currentTimeMillis() - startTime) / 1000
+                                    echo "✅ Infrastructure provisioned in ${duration}s"
+                                }
+                            }
+                        }
                     }
                 }
             }
         }
         
-        stage('Final Connectivity Verification') {
+        stage('⚡ Fast VM Readiness') {
             when {
                 expression { params.run_ansible }
             }
             steps {
                 dir("${ANSIBLE_DIR}") {
                     script {
+                        def startTime = System.currentTimeMillis()
+                        
                         sh '''
-                            echo "Final connectivity verification and cluster analysis..."
+                            # Generate inventory
+                            mkdir -p inventory
+                            cd ../terraform
+                            terraform output -raw ansible_inventory_json > ../ansible/${INVENTORY_FILE}
+                            cd ../ansible
                             
-                            # Quick comprehensive check (replaces multiple slow steps)
-                            echo "Running comprehensive cluster check..."
-                            export ANSIBLE_INVENTORY_FILE=${INVENTORY_FILE}
-                            python3 scripts/quick_cluster_check.py ${INVENTORY_FILE}
-                            
-                            if [ $? -eq 0 ]; then
-                                echo "All connectivity checks passed!"
-                                echo "Ready for Kubernetes deployment..."
+                            # Use ultra-fast checker if available
+                            if [ -f "scripts/ultra_fast_vm_ready.py" ]; then
+                                echo "⚡ Using ultra-fast VM readiness checker..."
+                                
+                                # Quick initial delay
+                                echo "Waiting 20s for VMs to initialize..."
+                                sleep 20
+                                
+                                # Run ultra-fast parallel check
+                                python3 scripts/ultra_fast_vm_ready.py ${INVENTORY_FILE} 20
                             else
-                                echo "Connectivity issues detected. Falling back to debug mode..."
-                                
-                                # Only run detailed debug if quick check fails
-                                echo "Debug: Inventory validation"
-                                python3 -m json.tool ${INVENTORY_FILE} || echo "JSON validation failed!"
-                                
-                                echo "Debug: Manual ansible ping test"
-                                export ANSIBLE_INVENTORY_FILE=${INVENTORY_FILE}
-                                ansible all -i ${INVENTORY_SCRIPT} -m ping --timeout=20 -v || true
-                                
-                                exit 1
+                                # Fallback to standard checker
+                                echo "Using standard VM readiness checker..."
+                                python3 scripts/smart_vm_ready.py ${INVENTORY_FILE} 3
                             fi
                         '''
+                        
+                        def duration = (System.currentTimeMillis() - startTime) / 1000
+                        echo "✅ VM readiness check completed in ${duration}s"
                     }
                 }
             }
         }
         
-        stage('Deploy Kubernetes Cluster') {
+        stage('🚀 Deploy Kubernetes') {
             when {
                 expression { params.run_ansible }
             }
             steps {
                 dir("${ANSIBLE_DIR}") {
                     script {
+                        def startTime = System.currentTimeMillis()
+                        
                         sh '''
-                            echo "Starting Kubernetes cluster deployment..."
+                            echo "🚀 Starting optimized Kubernetes deployment..."
                             
-                            echo "Deploying Kubernetes cluster..."
-                            ./run-k8s-setup.sh
-                            
-                            if [ $? -eq 0 ]; then
-                                echo "Kubernetes deployment completed successfully!"
-                                
-                                echo "Cluster endpoints:"
-                                python3 scripts/show_endpoints.py ${INVENTORY_FILE}
+                            # Use optimized setup script if available
+                            if [ -f "run-k8s-setup-optimized.sh" ]; then
+                                ./run-k8s-setup-optimized.sh
                             else
-                                echo "Kubernetes deployment failed!"
-                                exit 1
+                                ./run-k8s-setup.sh
                             fi
                         '''
+                        
+                        def duration = (System.currentTimeMillis() - startTime) / 1000
+                        def minutes = (duration / 60).intValue()
+                        def seconds = (duration % 60).intValue()
+                        
+                        echo "✅ Kubernetes deployed in ${minutes}m ${seconds}s"
                     }
                 }
             }
@@ -393,7 +310,7 @@ pipeline {
             }
         }
         
-        stage('Extract KUBECONFIG') {
+        stage('📤 Extract & Notify') {
             when {
                 expression { params.run_ansible }
             }
@@ -401,140 +318,34 @@ pipeline {
                 dir("${ANSIBLE_DIR}") {
                     script {
                         sh '''
-                            echo "Extracting KUBECONFIG from master node..."
-                            
-                            # Create kubeconfig directory for archiving
+                            # Extract KUBECONFIG
                             mkdir -p kubeconfig
-                            
-                            # Get KUBECONFIG and save to file
                             python3 scripts/get_kubeconfig.py ${INVENTORY_FILE} kubeconfig/admin.conf
                             
-                            if [ $? -eq 0 ]; then
-                                echo ""
-                                echo "==================== KUBECONFIG ===================="
-                                echo "KUBECONFIG has been extracted and saved to kubeconfig/admin.conf"
-                                echo ""
-                                echo "Quick setup commands:"
-                                echo "  mkdir -p ~/.kube"
-                                echo "  cp admin.conf ~/.kube/config"
-                                echo "  chmod 600 ~/.kube/config"
-                                echo "  kubectl get nodes"
-                                echo ""
-                                echo "==================== FULL KUBECONFIG CONTENT ===================="
-                                cat kubeconfig/admin.conf
-                                echo ""
-                                echo "================================================================="
-                            else
-                                echo "Failed to extract KUBECONFIG"
-                                exit 1
-                            fi
+                            echo "✅ KUBECONFIG extracted successfully"
                         '''
                         
-                        // Send to Slack using Jenkins credentials
+                        // Simplified Slack notification
                         withCredentials([string(credentialsId: 'slack-webhook-url', variable: 'SLACK_WEBHOOK_URL')]) {
-                            def kubeconfigContent = readFile("kubeconfig/admin.conf")
-                            def inventoryContent = readFile("${INVENTORY_FILE}")
-                            def inventory = readJSON(text: inventoryContent)
+                            def buildDuration = currentBuild.durationString.replace(' and counting', '')
                             
-                            // Extract cluster info
-                            def masterCount = inventory.k8s_masters?.hosts?.size() ?: 0
-                            def workerCount = inventory.k8s_workers?.hosts?.size() ?: 0
-                            def clusterMode = masterCount > 1 ? "HA Multi-Master" : "Single Master"
-                            
-                            // Extract cluster endpoint from kubeconfig
-                            def clusterEndpoint = "N/A"
-                            kubeconfigContent.split('\n').each { line ->
-                                if (line.contains('server:')) {
-                                    clusterEndpoint = line.split('server:')[1].trim()
-                                }
-                            }
-                            
-                            // Base64 encode kubeconfig
-                            def kubeconfigB64 = kubeconfigContent.bytes.encodeBase64().toString()
-                            
-                            // Create Slack message
-                            def timestamp = new Date().format("yyyy-MM-dd HH:mm:ss 'UTC'", TimeZone.getTimeZone("UTC"))
-                            
-                            def slackMessage = [
-                                blocks: [
-                                    [
-                                        type: "header",
-                                        text: [
-                                            type: "plain_text",
-                                            text: "🚀 Kubernetes Cluster Deployed Successfully"
-                                        ]
-                                    ],
-                                    [
-                                        type: "section",
-                                        fields: [
-                                            [
-                                                type: "mrkdwn",
-                                                text: "*Deployment Time:*\\n${timestamp}"
-                                            ],
-                                            [
-                                                type: "mrkdwn",
-                                                text: "*Cluster Endpoint:*\\n`${clusterEndpoint}`"
-                                            ],
-                                            [
-                                                type: "mrkdwn",
-                                                text: "*Cluster Mode:*\\n${clusterMode}"
-                                            ],
-                                            [
-                                                type: "mrkdwn",
-                                                text: "*Total Nodes:*\\n${masterCount} masters, ${workerCount} workers"
-                                            ]
-                                        ]
-                                    ],
-                                    [
-                                        type: "divider"
-                                    ],
-                                    [
-                                        type: "section",
-                                        text: [
-                                            type: "mrkdwn",
-                                            text: "*📋 Quick Setup Instructions:*\\n```bash\\n# Save the kubeconfig to ~/.kube/config\\nmkdir -p ~/.kube\\necho '${kubeconfigB64.take(100)}...' | base64 -d > ~/.kube/config\\nchmod 600 ~/.kube/config\\n\\n# Test connection\\nkubectl get nodes\\n```"
-                                        ]
-                                    ],
-                                    [
-                                        type: "section",
-                                        text: [
-                                            type: "mrkdwn",
-                                            text: "*🔐 KUBECONFIG Content:*\\n```yaml\\n${kubeconfigContent.take(500)}...\\n```\\n_Full content available in Jenkins build artifacts_"
-                                        ]
-                                    ],
-                                    [
-                                        type: "context",
-                                        elements: [
-                                            [
-                                                type: "mrkdwn",
-                                                text: "⚠️ *Security Notice:* This KUBECONFIG provides full cluster admin access. Store it securely."
-                                            ]
-                                        ]
-                                    ],
-                                    [
-                                        type: "section",
-                                        text: [
-                                            type: "mrkdwn",
-                                            text: "*Jenkins Build:* <${BUILD_URL}|View Build #${BUILD_NUMBER}>"
-                                        ]
-                                    ]
-                                ]
-                            ]
-                            
-                            // Send to Slack
-                            def response = httpRequest(
-                                url: SLACK_WEBHOOK_URL,
-                                httpMode: 'POST',
-                                contentType: 'APPLICATION_JSON',
-                                requestBody: groovy.json.JsonOutput.toJson(slackMessage),
-                                validResponseCodes: '200'
-                            )
-                            
-                            if (response.status == 200) {
-                                echo "✅ KUBECONFIG sent to Slack successfully!"
-                            } else {
-                                echo "❌ Failed to send to Slack: ${response.status}"
-                            }
+                            sh """
+                                # Send simple notification
+                                curl -X POST ${SLACK_WEBHOOK_URL} \
+                                     -H "Content-Type: application/json" \
+                                     -d '{
+                                       "text": "🚀 *Kubernetes Cluster Ready!*",
+                                       "blocks": [
+                                         {
+                                           "type": "section",
+                                           "text": {
+                                             "type": "mrkdwn",
+                                             "text": "*Build #${BUILD_NUMBER}* completed in *${buildDuration}*\\n<${BUILD_URL}|View Build>"
+                                           }
+                                         }
+                                       ]
+                                     }' || echo "Slack notification failed"
+                            """
                         }
                     }
                 }
@@ -568,10 +379,23 @@ pipeline {
             script {
                 if (params.run_ansible) {
                     archiveArtifacts artifacts: "${ANSIBLE_DIR}/inventory/*", allowEmptyArchive: true
-                    archiveArtifacts artifacts: "${TERRAFORM_DIR}/vms.csv", allowEmptyArchive: true
-                    
                     archiveArtifacts artifacts: "${ANSIBLE_DIR}/kubeconfig/*", allowEmptyArchive: true
+                    archiveArtifacts artifacts: "${TERRAFORM_DIR}/vms.csv", allowEmptyArchive: true
                 }
+                
+                // Show performance metrics
+                def totalDuration = currentBuild.durationString.replace(' and counting', '')
+                echo """
+                ⏱️  Performance Summary
+                =====================
+                Total Build Time: ${totalDuration}
+                
+                Tips for faster provisioning:
+                - Enable template caching in Proxmox
+                - Use SSD storage for VMs
+                - Increase Jenkins executors
+                - Pre-pull container images
+                """
             }
         }
         
@@ -630,9 +454,9 @@ pipeline {
         
         cleanup {
             sh '''
-                echo "Cleaning up temporary files..."
+                # Cleanup but preserve cache
                 rm -f ${TERRAFORM_DIR}/tfplan
-                # Note: keeping inventory for artifact archiving
+                find ${ANSIBLE_DIR} -name "*.retry" -delete || true
             '''
         }
     }

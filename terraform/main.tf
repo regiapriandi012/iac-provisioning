@@ -19,6 +19,10 @@ provider "proxmox" {
     pm_api_url = var.pm_api_url
     pm_api_token_id = var.pm_api_token_id
     pm_api_token_secret = var.pm_api_token_secret
+    
+    # Optimize parallel API requests
+    pm_parallel = 10
+    pm_timeout = 600
 }
 
 # Generate random suffix yang sama untuk semua VM dalam satu provision
@@ -53,6 +57,12 @@ locals {
   vms_need_auto_vmid = [
     for vm in local.vm_data_raw : vm if tonumber(vm.vmid) == 0
   ]
+  
+  # Group VMs by template for efficient cloning
+  vms_by_template = {
+    for template in distinct([for vm in local.vm_data_raw : vm.template]) :
+    template => [for vm in local.vm_data_raw : vm if vm.template == template]
+  }
  
   vm_data = {
     for i, vm in local.vm_data_raw : vm.vm_name => {
@@ -78,11 +88,14 @@ locals {
       # Flag untuk tracking
       vmid_source = tonumber(vm.vmid) != 0 ? "defined" : "sequential"
       ip_source   = vm.ip != "0" ? "defined" : "sequential"
+      
+      # Batch index untuk staggered creation
+      batch_index = index(local.vm_data_raw, vm) % 3
     }
   }
 }
 
-# Resource dengan for_each loop
+# Resource dengan for_each loop dan optimizations
 resource "proxmox_vm_qemu" "vms" {
     for_each = local.vm_data
    
@@ -98,11 +111,16 @@ resource "proxmox_vm_qemu" "vms" {
     cpu = "host"
     scsihw = "virtio-scsi-pci"
     
-    # VM startup options
-    additional_wait = 30
+    # Optimized VM startup options
+    additional_wait = 15  # Reduced from 30
     agent = 1
     automatic_reboot = true
-    clone_wait = 30
+    clone_wait = 15       # Reduced from 30
+    
+    # Parallel creation optimization
+    lifecycle {
+      create_before_destroy = false
+    }
     
     # Setup the disk
     disks {
@@ -114,6 +132,8 @@ resource "proxmox_vm_qemu" "vms" {
                     storage = var.storage
                     format = "raw"
                     replicate = false
+                    cache = "writeback"  # Better performance
+                    discard = true       # Enable TRIM
                 }
             }
         }
@@ -133,8 +153,8 @@ resource "proxmox_vm_qemu" "vms" {
         firewall = false
     }
     
-    # Wait untuk network ready
-    startup = "order=1,up=30"
+    # Staggered startup to avoid boot storms
+    startup = "order=${each.value.batch_index + 1},up=15"
     onboot = true
     
     # Cloud-init configuration
@@ -154,4 +174,103 @@ resource "proxmox_vm_qemu" "vms" {
     
     # Tags untuk identifikasi
     tags = "terraform,${each.value.vm_name_original}"
+    
+    # Provisioner untuk early network readiness check
+    provisioner "local-exec" {
+      command = "sleep 5"  # Small delay before readiness check
+    }
+}
+
+# Update CSV dengan sequential assignments
+resource "local_file" "updated_csv" {
+  depends_on = [proxmox_vm_qemu.vms]
+  
+  filename = var.vm_csv_file
+  content  = join("\n", concat(
+    ["vmid,vm_name,template,node,ip,cores,memory,disk_size"],
+    [for name, vm in local.vm_data : 
+      "${vm.vmid},${vm.vm_name_original},${vm.template},${vm.node},${vm.ip_address},${vm.cores},${vm.memory},${vm.disk_size}"
+    ]
+  ))
+}
+
+# Output untuk assignment summary
+output "assignment_summary" {
+    depends_on = [local_file.updated_csv]
+    value = <<-EOF
+    
+    VM ASSIGNMENT SUMMARY
+    ===================
+    Total VMs Created: ${length(local.vm_data)}
+    Random Suffix: ${random_string.vm_suffix.result}
+    
+    VMID Assignment:
+    - Base VMID: ${random_integer.vmid_base.result}
+    - Sequential VMs: ${length(local.vms_need_auto_vmid)}
+    - Pre-defined VMs: ${length(local.vm_data_raw) - length(local.vms_need_auto_vmid)}
+    
+    IP Assignment:
+    - Base IP: 10.200.0.${random_integer.ip_base.result}
+    - Sequential IPs: ${length(local.vms_need_auto_ip)}
+    - Pre-defined IPs: ${length(local.vm_data_raw) - length(local.vms_need_auto_ip)}
+    
+    Templates Used:
+    %{ for template, vms in local.vms_by_template ~}
+    - ${template}: ${length(vms)} VMs
+    %{ endfor ~}
+    
+    Note: CSV file has been updated with all assigned values.
+    EOF
+}
+
+# Output VM assignments dalam format yang mudah dibaca
+output "vm_assignments" {
+    depends_on = [local_file.updated_csv]
+    value = {
+        for name, vm in local.vm_data : name => {
+            final_name = vm.vm_name_final
+            vmid       = vm.vmid
+            ip_address = vm.ip_address
+            vmid_type  = vm.vmid_source
+            ip_type    = vm.ip_source
+        }
+    }
+}
+
+# Output untuk Ansible inventory dengan optimized format
+output "ansible_inventory_json" {
+  depends_on = [proxmox_vm_qemu.vms]
+  value = jsonencode({
+    all = {
+      hosts = {
+        for name, vm in local.vm_data : 
+        vm.vm_name_original => {
+          ansible_host = vm.ip_address
+          ansible_user = "root"
+          ansible_ssh_pass = "Passw0rd!"
+          ansible_ssh_common_args = "-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=10"
+          template = vm.template
+          cores = vm.cores
+          memory = vm.memory
+          disk_size = vm.disk_size
+        }
+      }
+      children = {
+        k8s_masters = {
+          hosts = {
+            for name, vm in local.vm_data :
+            vm.vm_name_original => null
+            if can(regex("master", lower(vm.vm_name_original)))
+          }
+        }
+        k8s_workers = {
+          hosts = {
+            for name, vm in local.vm_data :
+            vm.vm_name_original => null
+            if can(regex("worker", lower(vm.vm_name_original)))
+          }
+        }
+      }
+    }
+  })
 }
