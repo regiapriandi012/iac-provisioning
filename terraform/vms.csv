@@ -1,4 +1,4 @@
 vmid,vm_name,template,node,ip,cores,memory,disk_size
-17117,kube-master,t-centos9-86,thinkcentre,10.200.0.46,2,4096,32G
-17118,kube-worker01,t-centos9-86,thinkcentre,10.200.0.47,2,4096,32G
-17119,kube-worker02,t-centos9-86,thinkcentre,10.200.0.48,2,4096,32G
+0,kube-master,t-centos9-86,thinkcentre,0,2,4096,32G
+0,kube-worker01,t-centos9-86,thinkcentre,0,2,4096,32G
+0,kube-worker02,t-centos9-86,thinkcentre,0,2,4096,32G
