@@ -54,9 +54,7 @@ cd ../ansible
      - `custom`: Use your own CSV configuration
    - `vm_template`: Select VM template
      - `t-debian-12`: Debian 12 (Bookworm)
-     - `t-ubuntu-22.04`: Ubuntu 22.04 LTS
      - `t-centos9-86`: CentOS 9 Stream
-     - `t-rocky-9`: Rocky Linux 9
    - `proxmox_node`: Proxmox node name (default: thinkcentre)
    - `vm_csv_content`: Custom CSV content (when preset is 'custom')
    - `run_ansible`: true (deploy Kubernetes)
