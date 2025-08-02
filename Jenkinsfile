@@ -116,8 +116,9 @@ pipeline {
                         
                         # Setup Mitogen for Ansible (ULTRA-FAST performance)
                         cd ${ANSIBLE_DIR}
-                        if [ -f "mitogen_ansible_cfg.py" ]; then
-                            echo "Configuring Mitogen for ULTRA-FAST Ansible performance..."
+                        if [ -f "setup_mitogen.py" ]; then
+                            echo "Setting up Mitogen for ULTRA-FAST Ansible performance..."
+                            python3 setup_mitogen.py || true
                             python3 mitogen_ansible_cfg.py || true
                         fi
                         cd ${WORKSPACE}

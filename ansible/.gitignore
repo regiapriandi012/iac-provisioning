@@ -1,0 +1,57 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+.venv/
+
+# Ansible
+*.retry
+/tmp/
+/cache/
+/logs/
+*.log
+
+# Inventory
+inventory/*.json
+inventory/*.ini
+!inventory/.gitkeep
+
+# Kubeconfig
+kubeconfig/
+*.kubeconfig
+*.conf
+
+# Facts cache
+/tmp/ansible_facts/
+
+# SSH keys
+*.pem
+*.key
+id_rsa*
+id_ed25519*
+
+# Backup files
+*.backup
+*.bak
+*~
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Terraform state (if accidentally placed here)
+*.tfstate
+*.tfstate.*
+
+# Mitogen temp files
+mitogen.tar.gz
+plugins/mitogen_lib/
+plugins/strategy/
+plugins/connection/
