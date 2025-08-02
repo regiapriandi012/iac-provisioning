@@ -437,17 +437,17 @@ pipeline {
                             
                             // Get cluster info
                             def masterCount = sh(
-                                script: "cd ${ANSIBLE_DIR} && python3 scripts/count_inventory_hosts.py ${INVENTORY_FILE} --details | grep k8s_masters | wc -l",
+                                script: "python3 scripts/count_inventory_hosts.py ${INVENTORY_FILE} --details | grep k8s_masters | wc -l",
                                 returnStdout: true
                             ).trim()
                             
                             def workerCount = sh(
-                                script: "cd ${ANSIBLE_DIR} && python3 scripts/count_inventory_hosts.py ${INVENTORY_FILE} --details | grep k8s_workers | wc -l",
+                                script: "python3 scripts/count_inventory_hosts.py ${INVENTORY_FILE} --details | grep k8s_workers | wc -l",
                                 returnStdout: true
                             ).trim()
                             
                             def clusterEndpoint = sh(
-                                script: "cd ${ANSIBLE_DIR} && grep 'server:' kubeconfig/admin.conf | awk '{print \$2}' | head -1",
+                                script: "grep 'server:' kubeconfig/admin.conf | awk '{print \$2}' | head -1",
                                 returnStdout: true
                             ).trim()
                             
@@ -517,11 +517,9 @@ with open('slack_message.json', 'w') as f:
     json.dump(message, f)
 '''
                             
-                            writeFile file: "${ANSIBLE_DIR}/format_slack.py", text: pythonScript
+                            writeFile file: "format_slack.py", text: pythonScript
                             
                             sh """#!/bin/bash
-                                cd ${ANSIBLE_DIR}
-                                
                                 # Run Python script to format the message
                                 python3 format_slack.py "${BUILD_NUMBER}" "${buildDuration}" "${clusterEndpoint}" "${masterCount}" "${workerCount}" "${BUILD_URL}"
                                 
