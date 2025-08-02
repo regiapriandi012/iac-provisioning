@@ -176,14 +176,20 @@ pipeline {
         stage('Terraform Init') {
             steps {
                 dir("${TERRAFORM_DIR}") {
-                    sh '''
-                        echo "Cleaning up old Terraform state..."
-                        rm -f .terraform.lock.hcl
-                        rm -rf .terraform/
-                        
-                        echo "Initializing Terraform with fresh state..."
-                        terraform init
-                    '''
+                    withCredentials([
+                        string(credentialsId: 'proxmox-api-url', variable: 'TF_VAR_pm_api_url'),
+                        string(credentialsId: 'proxmox-api-token-id', variable: 'TF_VAR_pm_api_token_id'),
+                        string(credentialsId: 'proxmox-api-token-secret', variable: 'TF_VAR_pm_api_token_secret')
+                    ]) {
+                        sh '''
+                            echo "Cleaning up old Terraform state..."
+                            rm -f .terraform.lock.hcl
+                            rm -rf .terraform/
+                            
+                            echo "Initializing Terraform with fresh state..."
+                            terraform init
+                        '''
+                    }
                 }
             }
         }
@@ -191,10 +197,16 @@ pipeline {
         stage('Terraform Plan') {
             steps {
                 dir("${TERRAFORM_DIR}") {
-                    sh '''
-                        echo "Planning Terraform deployment..."
-                        terraform plan -out=tfplan
-                    '''
+                    withCredentials([
+                        string(credentialsId: 'proxmox-api-url', variable: 'TF_VAR_pm_api_url'),
+                        string(credentialsId: 'proxmox-api-token-id', variable: 'TF_VAR_pm_api_token_id'),
+                        string(credentialsId: 'proxmox-api-token-secret', variable: 'TF_VAR_pm_api_token_secret')
+                    ]) {
+                        sh '''
+                            echo "Planning Terraform deployment..."
+                            terraform plan -out=tfplan
+                        '''
+                    }
                 }
             }
         }
@@ -202,17 +214,23 @@ pipeline {
         stage('Terraform Apply') {
             steps {
                 dir("${TERRAFORM_DIR}") {
-                    sh '''
-                        echo "Applying Terraform plan..."
-                        terraform apply tfplan
-                        
-                        echo "Infrastructure deployed successfully!"
-                        terraform state list
-                        
-                        echo ""
-                        echo "Updated CSV with sequential IP assignments:"
-                        cat vms.csv
-                    '''
+                    withCredentials([
+                        string(credentialsId: 'proxmox-api-url', variable: 'TF_VAR_pm_api_url'),
+                        string(credentialsId: 'proxmox-api-token-id', variable: 'TF_VAR_pm_api_token_id'),
+                        string(credentialsId: 'proxmox-api-token-secret', variable: 'TF_VAR_pm_api_token_secret')
+                    ]) {
+                        sh '''
+                            echo "Applying Terraform plan..."
+                            terraform apply tfplan
+                            
+                            echo "Infrastructure deployed successfully!"
+                            terraform state list
+                            
+                            echo ""
+                            echo "Updated CSV with sequential IP assignments:"
+                            cat vms.csv
+                        '''
+                    }
                 }
             }
         }
@@ -526,14 +544,20 @@ pipeline {
         stage('Show Summary') {
             steps {
                 dir("${TERRAFORM_DIR}") {
-                    sh '''
-                        echo "==================== DEPLOYMENT SUMMARY ===================="
-                        terraform output assignment_summary
-                        
-                        echo ""
-                        echo "==================== INFRASTRUCTURE DETAILS ===================="
-                        terraform output vm_assignments
-                    '''
+                    withCredentials([
+                        string(credentialsId: 'proxmox-api-url', variable: 'TF_VAR_pm_api_url'),
+                        string(credentialsId: 'proxmox-api-token-id', variable: 'TF_VAR_pm_api_token_id'),
+                        string(credentialsId: 'proxmox-api-token-secret', variable: 'TF_VAR_pm_api_token_secret')
+                    ]) {
+                        sh '''
+                            echo "==================== DEPLOYMENT SUMMARY ===================="
+                            terraform output assignment_summary
+                            
+                            echo ""
+                            echo "==================== INFRASTRUCTURE DETAILS ===================="
+                            terraform output vm_assignments
+                        '''
+                    }
                 }
             }
         }

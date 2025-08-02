@@ -26,6 +26,11 @@ Jenkins Pipeline
   - Terraform installed
   - Ansible installed
   - Git credentials configured
+  - Required credentials configured (see SECURITY.md):
+    - `proxmox-api-url`: Proxmox API URL
+    - `proxmox-api-token-id`: API Token ID
+    - `proxmox-api-token-secret`: API Token Secret
+    - `slack-webhook-url`: Slack webhook for notifications
 - Network connectivity to Proxmox API
 
 ### Manual Deployment

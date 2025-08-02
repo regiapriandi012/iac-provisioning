@@ -1,13 +1,30 @@
 # Security Configuration
 
-## Slack Webhook Setup
+## Required Jenkins Credentials
 
-### Jenkins Credentials Setup
+### Proxmox API Credentials
 
 1. In Jenkins, go to "Manage Jenkins" > "Manage Credentials"
-2. Add a new "Secret text" credential with ID: `slack-webhook-url`
-3. Paste your Slack webhook URL as the secret value
-4. The pipeline will automatically use this credential to send notifications
+2. Add the following credentials as "Secret text":
+   
+   **Credential 1: Proxmox API URL**
+   - ID: `proxmox-api-url`
+   - Secret: Your Proxmox API URL (e.g., `https://pve.example.com:8006/api2/json`)
+   
+   **Credential 2: Proxmox API Token ID**
+   - ID: `proxmox-api-token-id`
+   - Secret: Your token ID (e.g., `root@pam!terraform`)
+   
+   **Credential 3: Proxmox API Token Secret**
+   - ID: `proxmox-api-token-secret`
+   - Secret: Your API token secret
+
+### Slack Webhook Setup
+
+1. Add a new "Secret text" credential:
+   - ID: `slack-webhook-url`
+   - Secret: Your Slack webhook URL
+2. The pipeline will automatically use this credential to send notifications
 
 ## Security Best Practices
 
@@ -27,10 +44,22 @@ The KUBECONFIG file provides full admin access to your Kubernetes cluster. Handl
 4. **Rotate certificates** - Periodically regenerate cluster certificates
 5. **Monitor access** - Enable audit logging in your cluster
 
+## Creating Proxmox API Token
+
+1. Log into Proxmox VE web interface
+2. Go to Datacenter > API Tokens
+3. Click "Add" to create a new token
+4. Fill in:
+   - User: Select user (e.g., root@pam)
+   - Token ID: Give it a name (e.g., terraform)
+   - Privilege Separation: Uncheck if you want full privileges
+5. Copy the Token ID and Secret (shown only once!)
+6. The Token ID format will be: `user@realm!tokenid` (e.g., `root@pam!terraform`)
+
 ## Creating a New Slack Webhook
 
 1. Go to https://api.slack.com/apps
 2. Create a new app or select existing
 3. Add "Incoming Webhooks" feature
 4. Create webhook for your desired channel
-5. Copy the webhook URL to Jenkins or .env file
+5. Copy the webhook URL to Jenkins credentials

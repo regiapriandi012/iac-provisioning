@@ -4,5 +4,7 @@ terraform/.terraform/
 terraform/.terraform.lock.hcl
 terraform/state_backups/
 terraform/vms.csv
+terraform/terraform.tfvars
+terraform/*.tfvars
 ansible/inventory/
 ansible/kubeconfig/
