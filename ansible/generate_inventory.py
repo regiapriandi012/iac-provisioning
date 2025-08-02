@@ -41,7 +41,8 @@ def generate_inventory_from_csv(csv_file):
                     
                 ip = row.get('ip', '0')
                 if ip == '0' or not ip:
-                    ip = f"192.168.1.{len(masters + workers + lb_nodes) + 10}"
+                    # Use sequential IP based on 10.200.0.x network 
+                    ip = f"10.200.0.{30 + len(masters + workers + lb_nodes)}"
                 else:
                     # Strip subnet mask if present (e.g., 10.200.0.30/24 -> 10.200.0.30)
                     ip = ip.split('/')[0]
@@ -89,8 +90,8 @@ def generate_inventory_from_csv(csv_file):
     if master_count > 1:
         # HA cluster setup
         cluster_vars.update({
-            'control_plane_endpoint': '192.168.1.100:6443',  # HAProxy VIP
-            'haproxy_vip': '192.168.1.100',
+            'control_plane_endpoint': '10.200.0.100:6443',  # HAProxy VIP
+            'haproxy_vip': '10.200.0.100',
             'haproxy_port': '6443',
             'etcd_cluster': True
         })

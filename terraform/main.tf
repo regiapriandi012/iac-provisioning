@@ -109,6 +109,12 @@ resource "proxmox_vm_qemu" "vms" {
     cpu = "host"
     scsihw = "virtio-scsi-pci"
     
+    # VM startup options
+    additional_wait = 30
+    agent = 1
+    automatic_reboot = true
+    clone_wait = 30
+    
     # Setup the disk
     disks {
         # Disk utama (virtio)
@@ -135,7 +141,12 @@ resource "proxmox_vm_qemu" "vms" {
     network {
         model = "virtio"
         bridge = "vmbr0"
+        firewall = false
     }
+    
+    # Wait untuk network ready
+    startup = "order=1,up=30"
+    onboot = true
     
     # Cloud-init configuration
     ipconfig0  = each.value.ip
