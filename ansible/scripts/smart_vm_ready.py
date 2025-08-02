@@ -106,7 +106,7 @@ class UltraFastVMChecker:
             print("No hosts found in inventory")
             return False
         
-        print(f"🚀 Ultra-fast checking {len(all_hosts)} VMs with {self.max_workers} workers...")
+        print(f"Ultra-fast checking {len(all_hosts)} VMs with {self.max_workers} workers...")
         start_time = time.time()
         
         # Split hosts into batches
@@ -133,10 +133,10 @@ class UltraFastVMChecker:
                     
                     # Show progress
                     ready_count = sum(1 for r in self.results.values() if r['ssh'])
-                    print(f"  ✓ Batch {batch_idx + 1}/{len(batches)} complete. "
+                    print(f"  [OK] Batch {batch_idx + 1}/{len(batches)} complete. "
                           f"Ready: {ready_count}/{len(all_hosts)}")
                 except Exception as e:
-                    print(f"  ✗ Batch {batch_idx + 1} failed: {e}")
+                    print(f"  [FAIL] Batch {batch_idx + 1} failed: {e}")
                     all_ready = False
         
         # Final report
@@ -144,18 +144,18 @@ class UltraFastVMChecker:
         ready_vms = [vm for vm, status in self.results.items() if status['ssh']]
         not_ready = [vm for vm, status in self.results.items() if not status['ssh']]
         
-        print(f"\n⏱️  Completed in {elapsed:.1f} seconds")
-        print(f"✅ Ready VMs ({len(ready_vms)}/{len(all_hosts)}): {', '.join(ready_vms)}")
+        print(f"\nCompleted in {elapsed:.1f} seconds")
+        print(f"Ready VMs ({len(ready_vms)}/{len(all_hosts)}): {', '.join(ready_vms)}")
         
         if not_ready:
-            print(f"❌ Not ready ({len(not_ready)}): {', '.join(not_ready)}")
+            print(f"Not ready ({len(not_ready)}): {', '.join(not_ready)}")
             
             # Detailed status for debugging
             print("\nDetailed status:")
             for vm in not_ready:
                 status = self.results.get(vm, {})
-                print(f"  - {vm}: Port 22={'✓' if status.get('port_22') else '✗'}, "
-                      f"SSH={'✓' if status.get('ssh') else '✗'}")
+                print(f"  - {vm}: Port 22={'OK' if status.get('port_22') else 'FAIL'}, "
+                      f"SSH={'OK' if status.get('ssh') else 'FAIL'}")
         
         return len(ready_vms) == len(all_hosts)
 
@@ -172,10 +172,10 @@ def main():
     
     try:
         if checker.run_parallel_checks():
-            print("\n🎉 All VMs are ready!")
+            print("\nAll VMs are ready!")
             sys.exit(0)
         else:
-            print("\n⚠️  Some VMs are not ready yet")
+            print("\nWARNING: Some VMs are not ready yet")
             sys.exit(1)
     except Exception as e:
         print(f"Error: {e}")

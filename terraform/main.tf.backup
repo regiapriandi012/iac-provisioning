@@ -19,10 +19,6 @@ provider "proxmox" {
     pm_api_url = var.pm_api_url
     pm_api_token_id = var.pm_api_token_id
     pm_api_token_secret = var.pm_api_token_secret
-    
-    # Optimize parallel API requests
-    pm_parallel = 10
-    pm_timeout = 600
 }
 
 # Generate random suffix yang sama untuk semua VM dalam satu provision
@@ -57,12 +53,6 @@ locals {
   vms_need_auto_vmid = [
     for vm in local.vm_data_raw : vm if tonumber(vm.vmid) == 0
   ]
-  
-  # Group VMs by template for efficient cloning
-  vms_by_template = {
-    for template in distinct([for vm in local.vm_data_raw : vm.template]) :
-    template => [for vm in local.vm_data_raw : vm if vm.template == template]
-  }
  
   vm_data = {
     for i, vm in local.vm_data_raw : vm.vm_name => {
@@ -88,14 +78,11 @@ locals {
       # Flag untuk tracking
       vmid_source = tonumber(vm.vmid) != 0 ? "defined" : "sequential"
       ip_source   = vm.ip != "0" ? "defined" : "sequential"
-      
-      # Batch index untuk staggered creation
-      batch_index = index(local.vm_data_raw, vm) % 3
     }
   }
 }
 
-# Resource dengan for_each loop dan optimizations
+# Resource dengan for_each loop
 resource "proxmox_vm_qemu" "vms" {
     for_each = local.vm_data
    
@@ -111,16 +98,11 @@ resource "proxmox_vm_qemu" "vms" {
     cpu = "host"
     scsihw = "virtio-scsi-pci"
     
-    # Optimized VM startup options
-    additional_wait = 15  # Reduced from 30
+    # VM startup options
+    additional_wait = 30
     agent = 1
     automatic_reboot = true
-    clone_wait = 15       # Reduced from 30
-    
-    # Parallel creation optimization
-    lifecycle {
-      create_before_destroy = false
-    }
+    clone_wait = 30
     
     # Setup the disk
     disks {
@@ -132,8 +114,6 @@ resource "proxmox_vm_qemu" "vms" {
                     storage = var.storage
                     format = "raw"
                     replicate = false
-                    cache = "writeback"  # Better performance
-                    discard = true       # Enable TRIM
                 }
             }
         }
@@ -153,8 +133,8 @@ resource "proxmox_vm_qemu" "vms" {
         firewall = false
     }
     
-    # Staggered startup to avoid boot storms
-    startup = "order=${each.value.batch_index + 1},up=15"
+    # Wait untuk network ready
+    startup = "order=1,up=30"
     onboot = true
     
     # Cloud-init configuration
@@ -174,23 +154,4 @@ resource "proxmox_vm_qemu" "vms" {
     
     # Tags untuk identifikasi
     tags = "terraform,${each.value.vm_name_original}"
-    
-    # Provisioner untuk early network readiness check
-    provisioner "local-exec" {
-      command = "sleep 5"  # Small delay before readiness check
-    }
 }
-
-# Update CSV dengan sequential assignments
-resource "local_file" "updated_csv" {
-  depends_on = [proxmox_vm_qemu.vms]
-  
-  filename = var.vm_csv_file
-  content  = join("\n", concat(
-    ["vmid,vm_name,template,node,ip,cores,memory,disk_size"],
-    [for name, vm in local.vm_data : 
-      "${vm.vmid},${vm.vm_name_original},${vm.template},${vm.node},${vm.ip_address},${vm.cores},${vm.memory},${vm.disk_size}"
-    ]
-  ))
-}
-

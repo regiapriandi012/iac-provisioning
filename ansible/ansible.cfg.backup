@@ -1,0 +1,19 @@
+[defaults]
+host_key_checking = False
+timeout = 120
+gather_timeout = 120
+forks = 10
+inventory = ./inventory/
+roles_path = ./roles/
+retry_files_enabled = False
+stdout_callback = yaml
+bin_ansible_callbacks = True
+
+[inventory]
+enable_plugins = ini, yaml, json, auto, script
+
+[ssh_connection]
+ssh_args = -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=60
+pipelining = True
+control_path = /tmp/ansible-ssh-%%h-%%p-%%r
+retries = 5

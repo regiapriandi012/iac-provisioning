@@ -81,16 +81,16 @@ pipeline {
                         if [ -d "${TERRAFORM_DIR}" ]; then
                             # Cache Terraform providers
                             if [ -d "${CACHE_DIR}/terraform/.terraform" ]; then
-                                echo "♻️  Using cached Terraform providers"
+                                echo "Using cached Terraform providers"
                                 cp -r ${CACHE_DIR}/terraform/.terraform ${TERRAFORM_DIR}/ || true
                             fi
                         else
-                            echo "⚠️  Terraform directory not found, skipping cache restore"
+                            echo "WARNING: Terraform directory not found, skipping cache restore"
                         fi
                         
                         # Cache Python packages
                         if [ -d "${CACHE_DIR}/python/site-packages" ]; then
-                            echo "♻️  Using cached Python packages"
+                            echo "Using cached Python packages"
                             export PYTHONPATH="${CACHE_DIR}/python/site-packages:$PYTHONPATH"
                         fi
                     '''
@@ -144,13 +144,13 @@ pipeline {
                         writeFile file: "vms.csv", text: csvContent
                         
                         def duration = (System.currentTimeMillis() - startTime) / 1000
-                        echo "✅ Configuration generated in ${duration}s"
+                        echo "Configuration generated in ${duration}s"
                     }
                 }
             }
         }
         
-        stage('🔧 Terraform Provisioning') {
+        stage('Terraform Provisioning') {
             stages {
                 stage('Init') {
                     steps {
@@ -171,7 +171,7 @@ pipeline {
                                     '''
                                     
                                     def duration = (System.currentTimeMillis() - startTime) / 1000
-                                    echo "✅ Terraform init completed in ${duration}s"
+                                    echo "Terraform init completed in ${duration}s"
                                     
                                     // Cache providers
                                     if (params.use_cache) {
@@ -195,15 +195,15 @@ pipeline {
                                     def startTime = System.currentTimeMillis()
                                     
                                     sh '''
-                                        echo "🚀 Applying Terraform with parallel execution..."
+                                        echo "Applying Terraform with parallel execution..."
                                         terraform apply -auto-approve -parallelism=10
                                         
-                                        echo "📋 Deployment summary:"
+                                        echo "Deployment summary:"
                                         terraform output assignment_summary
                                     '''
                                     
                                     def duration = (System.currentTimeMillis() - startTime) / 1000
-                                    echo "✅ Infrastructure provisioned in ${duration}s"
+                                    echo "Infrastructure provisioned in ${duration}s"
                                 }
                             }
                         }
@@ -212,7 +212,7 @@ pipeline {
             }
         }
         
-        stage('⚡ Fast VM Readiness') {
+        stage('Fast VM Readiness') {
             when {
                 expression { params.run_ansible }
             }
@@ -230,7 +230,7 @@ pipeline {
                             
                             # Use ultra-fast checker if available
                             if [ -f "scripts/ultra_fast_vm_ready.py" ]; then
-                                echo "⚡ Using ultra-fast VM readiness checker..."
+                                echo "Using ultra-fast VM readiness checker..."
                                 
                                 # Quick initial delay
                                 echo "Waiting 20s for VMs to initialize..."
@@ -246,13 +246,13 @@ pipeline {
                         '''
                         
                         def duration = (System.currentTimeMillis() - startTime) / 1000
-                        echo "✅ VM readiness check completed in ${duration}s"
+                        echo "VM readiness check completed in ${duration}s"
                     }
                 }
             }
         }
         
-        stage('🚀 Deploy Kubernetes') {
+        stage('Deploy Kubernetes') {
             when {
                 expression { params.run_ansible }
             }
@@ -262,7 +262,7 @@ pipeline {
                         def startTime = System.currentTimeMillis()
                         
                         sh '''
-                            echo "🚀 Starting optimized Kubernetes deployment..."
+                            echo "Starting optimized Kubernetes deployment..."
                             
                             # Use optimized setup script if available
                             if [ -f "run-k8s-setup-optimized.sh" ]; then
@@ -276,7 +276,7 @@ pipeline {
                         def minutes = (duration / 60).intValue()
                         def seconds = (duration % 60).intValue()
                         
-                        echo "✅ Kubernetes deployed in ${minutes}m ${seconds}s"
+                        echo "Kubernetes deployed in ${minutes}m ${seconds}s"
                     }
                 }
             }
@@ -311,7 +311,7 @@ pipeline {
             }
         }
         
-        stage('📤 Extract & Notify') {
+        stage('Extract & Notify') {
             when {
                 expression { params.run_ansible }
             }
@@ -323,7 +323,7 @@ pipeline {
                             mkdir -p kubeconfig
                             python3 scripts/get_kubeconfig.py ${INVENTORY_FILE} kubeconfig/admin.conf
                             
-                            echo "✅ KUBECONFIG extracted successfully"
+                            echo "KUBECONFIG extracted successfully"
                         '''
                         
                         // Simplified Slack notification
@@ -335,7 +335,7 @@ pipeline {
                                 curl -X POST ${SLACK_WEBHOOK_URL} \
                                      -H "Content-Type: application/json" \
                                      -d '{
-                                       "text": "🚀 *Kubernetes Cluster Ready!*",
+                                       "text": "*Kubernetes Cluster Ready!*",
                                        "blocks": [
                                          {
                                            "type": "section",
@@ -387,7 +387,7 @@ pipeline {
                 // Show performance metrics
                 def totalDuration = currentBuild.durationString.replace(' and counting', '')
                 echo """
-                ⏱️  Performance Summary
+                Performance Summary
                 =====================
                 Total Build Time: ${totalDuration}
                 

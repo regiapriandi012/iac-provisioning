@@ -1,7 +1,7 @@
 #!/bin/bash
 set -e
 
-echo "🚀 Starting OPTIMIZED Kubernetes cluster deployment..."
+echo "Starting OPTIMIZED Kubernetes cluster deployment..."
 echo "=================================================="
 
 INVENTORY_FILE="inventory/k8s-inventory.json"
@@ -14,7 +14,7 @@ run_playbook() {
     local extra_args="${3:-}"
     
     echo ""
-    echo "▶️  Running: $description"
+    echo "Running: $description"
     echo "   Playbook: $playbook"
     START_TIME=$(date +%s)
     
@@ -28,7 +28,7 @@ run_playbook() {
     
     END_TIME=$(date +%s)
     DURATION=$((END_TIME - START_TIME))
-    echo "   ✅ Completed in ${DURATION} seconds"
+    echo "   Completed in ${DURATION} seconds"
     
     return 0
 }
@@ -36,7 +36,7 @@ run_playbook() {
 # Function to run playbooks in parallel where possible
 run_parallel_playbooks() {
     echo ""
-    echo "🔄 Running parallel playbooks..."
+    echo "Running parallel playbooks..."
     
     # Run non-dependent playbooks in parallel
     (
@@ -52,19 +52,19 @@ run_parallel_playbooks() {
 }
 
 # Pre-flight checks
-echo "🔍 Pre-flight checks..."
+echo "Pre-flight checks..."
 if [ ! -f "$INVENTORY_FILE" ]; then
-    echo "❌ Inventory file not found: $INVENTORY_FILE"
+    echo "ERROR: Inventory file not found: $INVENTORY_FILE"
     exit 1
 fi
 
 # Optimize fact gathering
-echo "🎯 Pre-gathering facts in parallel..."
+echo "Pre-gathering facts in parallel..."
 ansible all -i inventory.py -m setup -a "gather_subset=!all,!hardware,network,virtual" --forks 50 &>/dev/null || true
 
 # Main deployment sequence
 echo ""
-echo "📋 Starting deployment sequence..."
+echo "Starting deployment sequence..."
 TOTAL_START=$(date +%s)
 
 # Phase 1: Parallel preparation
@@ -72,7 +72,7 @@ run_parallel_playbooks
 
 # Phase 2: Sequential Kubernetes setup (must be in order)
 echo ""
-echo "🔧 Kubernetes setup phase..."
+echo "Kubernetes setup phase..."
 
 # Run critical playbooks in sequence with monitoring
 run_playbook "02-kubernetes-prereq.yml" "Kubernetes prerequisites"
@@ -82,7 +82,7 @@ run_playbook "05-kubernetes-workers.yml" "Worker nodes join"
 
 # Phase 3: Parallel post-setup
 echo ""
-echo "🔌 Running post-setup tasks in parallel..."
+echo "Running post-setup tasks in parallel..."
 (
     run_playbook "06-kubernetes-addons.yml" "Kubernetes addons" &
     PID1=$!
@@ -98,7 +98,7 @@ echo "🔌 Running post-setup tasks in parallel..."
 
 # Final verification
 echo ""
-echo "✅ Running final verification..."
+echo "Running final verification..."
 FIRST_MASTER=$(python3 scripts/get_first_master.py $INVENTORY_FILE)
 
 if [ -n "$FIRST_MASTER" ]; then
@@ -112,7 +112,7 @@ if [ -n "$FIRST_MASTER" ]; then
     READY_COUNT=$(ansible $FIRST_MASTER -i inventory.py -m shell -a "kubectl get nodes -o json | jq '[.items[] | select(.status.conditions[] | select(.type==\"Ready\" and .status==\"True\"))] | length'" -o | tail -1 | tr -d '\r\n')
     
     echo ""
-    echo "📊 Cluster Status:"
+    echo "Cluster Status:"
     echo "   - Total Nodes: $NODE_COUNT"
     echo "   - Ready Nodes: $READY_COUNT"
 fi
@@ -125,10 +125,10 @@ SECONDS=$((TOTAL_DURATION % 60))
 
 echo ""
 echo "=================================================="
-echo "🎉 Kubernetes cluster deployment completed!"
-echo "⏱️  Total time: ${MINUTES}m ${SECONDS}s"
+echo "Kubernetes cluster deployment completed!"
+echo "Total time: ${MINUTES}m ${SECONDS}s"
 echo ""
-echo "📋 Quick commands:"
+echo "Quick commands:"
 echo "   kubectl get nodes"
 echo "   kubectl get pods -A"
 echo "   kubectl cluster-info"
@@ -137,7 +137,7 @@ echo "=================================================="
 # Performance tips
 if [ $TOTAL_DURATION -gt 600 ]; then
     echo ""
-    echo "💡 Performance tip: Deployment took over 10 minutes."
+    echo "Performance tip: Deployment took over 10 minutes."
     echo "   Consider:"
     echo "   - Using pre-pulled Docker images"
     echo "   - Enabling template caching in Proxmox"
