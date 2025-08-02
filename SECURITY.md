@@ -2,21 +2,12 @@
 
 ## Slack Webhook Setup
 
-### Option 1: Jenkins Credentials (Recommended)
+### Jenkins Credentials Setup
 
 1. In Jenkins, go to "Manage Jenkins" > "Manage Credentials"
 2. Add a new "Secret text" credential with ID: `slack-webhook-url`
 3. Paste your Slack webhook URL as the secret value
-4. The pipeline will automatically use this credential
-
-### Option 2: Local .env File
-
-1. Copy `.env.example` to `.env`
-2. Add your Slack webhook URL:
-   ```
-   SLACK_WEBHOOK_URL=https://hooks.slack.com/services/YOUR/WEBHOOK/HERE
-   ```
-3. The `.env` file is gitignored and will not be committed
+4. The pipeline will automatically use this credential to send notifications
 
 ## Security Best Practices
 

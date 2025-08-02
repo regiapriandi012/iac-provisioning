@@ -382,86 +382,141 @@ pipeline {
             steps {
                 dir("${ANSIBLE_DIR}") {
                     script {
-                        // Try with Jenkins credentials, fallback to .env
-                        try {
-                            withCredentials([
-                                string(credentialsId: 'slack-webhook-url', variable: 'SLACK_WEBHOOK_URL')
-                            ]) {
-                                sh '''
-                                    echo "Extracting KUBECONFIG from master node..."
-                                    
-                                    # Create kubeconfig directory for archiving
-                                    mkdir -p kubeconfig
-                                    
-                                    # Get KUBECONFIG and save to file
-                                    python3 scripts/get_kubeconfig.py ${INVENTORY_FILE} kubeconfig/admin.conf
-                                    
-                                    if [ $? -eq 0 ]; then
-                                        echo ""
-                                        echo "==================== KUBECONFIG ===================="
-                                        echo "KUBECONFIG has been extracted and saved to kubeconfig/admin.conf"
-                                        echo ""
-                                        echo "Quick setup commands:"
-                                        echo "  mkdir -p ~/.kube"
-                                        echo "  cp admin.conf ~/.kube/config"
-                                        echo "  chmod 600 ~/.kube/config"
-                                        echo "  kubectl get nodes"
-                                        echo ""
-                                        echo "==================== FULL KUBECONFIG CONTENT ===================="
-                                        cat kubeconfig/admin.conf
-                                        echo ""
-                                        echo "================================================================="
-                                        
-                                        # Send to Slack if webhook is configured
-                                        if [ -n "$SLACK_WEBHOOK_URL" ]; then
-                                            echo ""
-                                            echo "Sending KUBECONFIG to Slack..."
-                                            python3 scripts/send_kubeconfig_to_slack.py kubeconfig/admin.conf ${INVENTORY_FILE}
-                                        fi
-                                    else
-                                        echo "Failed to extract KUBECONFIG"
-                                        exit 1
-                                    fi
-                                '''
+                        sh '''
+                            echo "Extracting KUBECONFIG from master node..."
+                            
+                            # Create kubeconfig directory for archiving
+                            mkdir -p kubeconfig
+                            
+                            # Get KUBECONFIG and save to file
+                            python3 scripts/get_kubeconfig.py ${INVENTORY_FILE} kubeconfig/admin.conf
+                            
+                            if [ $? -eq 0 ]; then
+                                echo ""
+                                echo "==================== KUBECONFIG ===================="
+                                echo "KUBECONFIG has been extracted and saved to kubeconfig/admin.conf"
+                                echo ""
+                                echo "Quick setup commands:"
+                                echo "  mkdir -p ~/.kube"
+                                echo "  cp admin.conf ~/.kube/config"
+                                echo "  chmod 600 ~/.kube/config"
+                                echo "  kubectl get nodes"
+                                echo ""
+                                echo "==================== FULL KUBECONFIG CONTENT ===================="
+                                cat kubeconfig/admin.conf
+                                echo ""
+                                echo "================================================================="
+                            else
+                                echo "Failed to extract KUBECONFIG"
+                                exit 1
+                            fi
+                        '''
+                        
+                        // Send to Slack using Jenkins credentials
+                        withCredentials([string(credentialsId: 'slack-webhook-url', variable: 'SLACK_WEBHOOK_URL')]) {
+                            def kubeconfigContent = readFile("kubeconfig/admin.conf")
+                            def inventoryContent = readFile("${INVENTORY_FILE}")
+                            def inventory = readJSON(text: inventoryContent)
+                            
+                            // Extract cluster info
+                            def masterCount = inventory.k8s_masters?.hosts?.size() ?: 0
+                            def workerCount = inventory.k8s_workers?.hosts?.size() ?: 0
+                            def clusterMode = masterCount > 1 ? "HA Multi-Master" : "Single Master"
+                            
+                            // Extract cluster endpoint from kubeconfig
+                            def clusterEndpoint = "N/A"
+                            kubeconfigContent.split('\n').each { line ->
+                                if (line.contains('server:')) {
+                                    clusterEndpoint = line.split('server:')[1].trim()
+                                }
                             }
-                        } catch (Exception e) {
-                            // Fallback without credentials
-                            sh '''
-                                echo "Extracting KUBECONFIG from master node..."
-                                
-                                # Create kubeconfig directory for archiving
-                                mkdir -p kubeconfig
-                                
-                                # Get KUBECONFIG and save to file
-                                python3 scripts/get_kubeconfig.py ${INVENTORY_FILE} kubeconfig/admin.conf
-                                
-                                if [ $? -eq 0 ]; then
-                                    echo ""
-                                    echo "==================== KUBECONFIG ===================="
-                                    echo "KUBECONFIG has been extracted and saved to kubeconfig/admin.conf"
-                                    echo ""
-                                    echo "Quick setup commands:"
-                                    echo "  mkdir -p ~/.kube"
-                                    echo "  cp admin.conf ~/.kube/config"
-                                    echo "  chmod 600 ~/.kube/config"
-                                    echo "  kubectl get nodes"
-                                    echo ""
-                                    echo "==================== FULL KUBECONFIG CONTENT ===================="
-                                    cat kubeconfig/admin.conf
-                                    echo ""
-                                    echo "================================================================="
-                                    
-                                    # Try to send to Slack using .env file
-                                    if [ -f ../../.env ]; then
-                                        echo ""
-                                        echo "Sending KUBECONFIG to Slack (using .env)..."
-                                        python3 scripts/send_kubeconfig_to_slack.py kubeconfig/admin.conf ${INVENTORY_FILE}
-                                    fi
-                                else
-                                    echo "Failed to extract KUBECONFIG"
-                                    exit 1
-                                fi
-                            '''
+                            
+                            // Base64 encode kubeconfig
+                            def kubeconfigB64 = kubeconfigContent.bytes.encodeBase64().toString()
+                            
+                            // Create Slack message
+                            def timestamp = new Date().format("yyyy-MM-dd HH:mm:ss 'UTC'", TimeZone.getTimeZone("UTC"))
+                            
+                            def slackMessage = [
+                                blocks: [
+                                    [
+                                        type: "header",
+                                        text: [
+                                            type: "plain_text",
+                                            text: "🚀 Kubernetes Cluster Deployed Successfully"
+                                        ]
+                                    ],
+                                    [
+                                        type: "section",
+                                        fields: [
+                                            [
+                                                type: "mrkdwn",
+                                                text: "*Deployment Time:*\\n${timestamp}"
+                                            ],
+                                            [
+                                                type: "mrkdwn",
+                                                text: "*Cluster Endpoint:*\\n`${clusterEndpoint}`"
+                                            ],
+                                            [
+                                                type: "mrkdwn",
+                                                text: "*Cluster Mode:*\\n${clusterMode}"
+                                            ],
+                                            [
+                                                type: "mrkdwn",
+                                                text: "*Total Nodes:*\\n${masterCount} masters, ${workerCount} workers"
+                                            ]
+                                        ]
+                                    ],
+                                    [
+                                        type: "divider"
+                                    ],
+                                    [
+                                        type: "section",
+                                        text: [
+                                            type: "mrkdwn",
+                                            text: "*📋 Quick Setup Instructions:*\\n```bash\\n# Save the kubeconfig to ~/.kube/config\\nmkdir -p ~/.kube\\necho '${kubeconfigB64.take(100)}...' | base64 -d > ~/.kube/config\\nchmod 600 ~/.kube/config\\n\\n# Test connection\\nkubectl get nodes\\n```"
+                                        ]
+                                    ],
+                                    [
+                                        type: "section",
+                                        text: [
+                                            type: "mrkdwn",
+                                            text: "*🔐 KUBECONFIG Content:*\\n```yaml\\n${kubeconfigContent.take(500)}...\\n```\\n_Full content available in Jenkins build artifacts_"
+                                        ]
+                                    ],
+                                    [
+                                        type: "context",
+                                        elements: [
+                                            [
+                                                type: "mrkdwn",
+                                                text: "⚠️ *Security Notice:* This KUBECONFIG provides full cluster admin access. Store it securely."
+                                            ]
+                                        ]
+                                    ],
+                                    [
+                                        type: "section",
+                                        text: [
+                                            type: "mrkdwn",
+                                            text: "*Jenkins Build:* <${BUILD_URL}|View Build #${BUILD_NUMBER}>"
+                                        ]
+                                    ]
+                                ]
+                            ]
+                            
+                            // Send to Slack
+                            def response = httpRequest(
+                                url: SLACK_WEBHOOK_URL,
+                                httpMode: 'POST',
+                                contentType: 'APPLICATION_JSON',
+                                requestBody: groovy.json.JsonOutput.toJson(slackMessage),
+                                validResponseCodes: '200'
+                            )
+                            
+                            if (response.status == 200) {
+                                echo "✅ KUBECONFIG sent to Slack successfully!"
+                            } else {
+                                echo "❌ Failed to send to Slack: ${response.status}"
+                            }
                         }
                     }
                 }
