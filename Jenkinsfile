@@ -3,11 +3,6 @@ pipeline {
     
     parameters {
         booleanParam(
-            name: 'clean_deployment',
-            defaultValue: true,
-            description: 'Destroy existing VMs before creating new ones (always create fresh VMs)'
-        )
-        booleanParam(
             name: 'run_ansible',
             defaultValue: true,
             description: 'Run Ansible after Terraform apply'
@@ -36,40 +31,30 @@ pipeline {
             }
         }
         
-        stage('Clean Previous Deployment') {
-            when {
-                expression { params.clean_deployment }
-            }
+        stage('Prepare Fresh State') {
             steps {
                 dir("${TERRAFORM_DIR}") {
                     script {
                         sh '''
                             echo "=========================================="
-                            echo "Destroying existing VMs for clean deployment..."
+                            echo "Preparing for new VM deployment..."
                             echo "=========================================="
                             
-                            # Check if terraform is initialized
-                            if [ -d ".terraform" ]; then
-                                # Check if there are any resources to destroy
-                                if terraform state list 2>/dev/null | grep -q "proxmox_vm_qemu"; then
-                                    echo "Found existing VMs, destroying..."
-                                    terraform destroy -auto-approve || true
-                                    
-                                    # Clean up state files for fresh start
-                                    rm -f terraform.tfstate terraform.tfstate.backup
-                                    echo "Terraform cleanup completed!"
-                                    
-                                    # Also clean up Ansible inventory
-                                    rm -rf ../ansible/inventory/*
-                                    echo "Ansible inventory cleaned!"
-                                else
-                                    echo "No existing VMs found in state"
-                                fi
-                            else
-                                echo "Terraform not initialized, skipping destroy"
+                            # Move existing state to backup (keep old VMs running)
+                            if [ -f "terraform.tfstate" ]; then
+                                TIMESTAMP=$(date +%Y%m%d_%H%M%S)
+                                mkdir -p state_backups
+                                cp terraform.tfstate "state_backups/terraform.tfstate.${TIMESTAMP}"
+                                echo "Backed up existing state to state_backups/"
+                                
+                                # Clear current state to force new resource creation
+                                rm -f terraform.tfstate terraform.tfstate.backup
+                                echo "Cleared current state for fresh deployment"
                             fi
                             
-                            echo "Ready for fresh deployment!"
+                            # Clean up Ansible inventory for new deployment
+                            rm -rf ../ansible/inventory/*
+                            echo "Ready to create NEW VMs (existing VMs will remain untouched)!"
                         '''
                     }
                 }
@@ -351,11 +336,12 @@ pipeline {
             ==================== SUCCESS ====================
             Infrastructure deployment completed successfully!
             
-            Deployment Type: ${params.clean_deployment ? 'CLEAN (Fresh VMs)' : 'INCREMENTAL (Existing VMs)'}
+            Deployment Type: NEW VMs (Previous VMs remain untouched)
             
             What was deployed:
-            - VMs provisioned with Terraform ${params.clean_deployment ? '(all new)' : '(reused)'}
-            - Kubernetes cluster configured with Ansible
+            - Brand NEW VMs provisioned with Terraform
+            - Previous VMs still running (not destroyed)
+            - Kubernetes cluster configured on new VMs
             - Dynamic inventory generated automatically"""
             
                 successMessage += """

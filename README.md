@@ -47,11 +47,14 @@ cd ../ansible
 1. Create Jenkins pipeline job
 2. Point to this repository
 3. Run pipeline with parameters:
-   - `clean_deployment`: true (destroy old VMs, create fresh ones) - **Default: true**
    - `run_ansible`: true (deploy Kubernetes)
    - `skip_verification`: false (verify cluster)
 
-**Note**: By default, Jenkins will always create new VMs and destroy old ones for clean deployment.
+**Important**: 
+- Each Jenkins run creates **NEW VMs** without destroying previous ones
+- Old VMs remain running (useful for testing multiple clusters)
+- Terraform state is backed up to `terraform/state_backups/` with timestamp
+- To remove old VMs, manually run `terraform destroy` with the backed-up state
 
 ## 📁 Project Structure
 
@@ -218,14 +221,33 @@ python3 scripts/show_endpoints.py inventory/k8s-inventory.json
 3. Run Ansible playbook
 4. New workers auto-join existing cluster
 
-### Destroying Infrastructure
+### Managing Multiple Deployments
 
+Since each Jenkins run creates new VMs:
+
+#### View All Running VMs
+```bash
+# Check current deployment
+cd terraform
+terraform state list
+
+# Check previous deployments (in Proxmox UI or via API)
+```
+
+#### Destroy Current Deployment
 ```bash
 cd terraform
 terraform destroy --auto-approve
 ```
 
-**Warning**: This permanently deletes all VMs!
+#### Destroy Previous Deployments
+```bash
+cd terraform/state_backups
+# Find the state file you want
+terraform destroy --state=terraform.tfstate.20240102_143022 --auto-approve
+```
+
+**Warning**: Destroy commands permanently delete VMs!
 
 ## 🤝 Contributing
 
