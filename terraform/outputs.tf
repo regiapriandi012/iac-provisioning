@@ -73,12 +73,32 @@ EOT
 # Generate JSON inventory untuk flexibility
 output "ansible_inventory_json" {
   description = "Ansible inventory in JSON format"
+  
+  locals {
+    masters = [for k, v in local.vm_data : v if can(regex("master", lower(v.vm_name_original)))]
+    master_count = length(local.masters)
+    first_master_ip = length(local.masters) > 0 ? replace(local.masters[0].ip_address, "/.*", "") : ""
+  }
+  
   value = jsonencode({
     all = {
-      vars = {
+      vars = merge({
         ansible_user = "root"
         ansible_ssh_common_args = "-o StrictHostKeyChecking=no"
-      }
+        master_count = local.master_count
+        is_ha_cluster = local.master_count > 1
+        pod_network_cidr = "10.244.0.0/16"
+        service_cidr = "10.96.0.0/12"
+        kubernetes_version = "1.28.0"
+        container_runtime = "containerd"
+      }, local.master_count > 1 ? {
+        control_plane_endpoint = "10.200.0.100:6443"
+        haproxy_vip = "10.200.0.100"
+        haproxy_port = "6443"
+        etcd_cluster = true
+      } : {
+        control_plane_endpoint = "${local.first_master_ip}:6443"
+      })
     }
     kube_masters = {
       hosts = {
