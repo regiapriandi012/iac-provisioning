@@ -103,11 +103,11 @@ def quick_cluster_analysis(inventory_file):
                 all_hosts.update(group_data['hosts'])
         
         if not all_hosts:
-            safe_print("❌ No hosts found in inventory")
+            safe_print("ERROR: No hosts found in inventory")
             return False
         
-        safe_print("🔍 Quick Cluster Analysis")
-        safe_print(f"📊 Checking {len(all_hosts)} nodes...")
+        safe_print("Quick Cluster Analysis")
+        safe_print(f"Checking {len(all_hosts)} nodes...")
         safe_print("")
         
         start_time = time.time()
@@ -129,26 +129,26 @@ def quick_cluster_analysis(inventory_file):
         elapsed = time.time() - start_time
         
         # Display results
-        safe_print("📋 Cluster Status Report:")
+        safe_print("Cluster Status Report:")
         safe_print("=" * 60)
         
         ready_count = 0
         for host, checks in results.items():
-            status = "✅" if checks['connectivity'] else "❌"
-            safe_print(f"{status} {host:<20} {checks['os_info']:<25}")
-            safe_print(f"   🕒 {checks['uptime']}")
-            safe_print(f"   💾 {checks['resources']}")
+            status = "OK" if checks['connectivity'] else "FAIL"
+            safe_print(f"{status:<4} {host:<20} {checks['os_info']:<25}")
+            safe_print(f"     Uptime: {checks['uptime']}")
+            safe_print(f"     Memory: {checks['resources']}")
             safe_print("")
             
             if checks['connectivity']:
                 ready_count += 1
         
         safe_print("=" * 60)
-        safe_print(f"✅ Ready nodes: {ready_count}/{len(all_hosts)}")
-        safe_print(f"⏱️  Analysis time: {elapsed:.1f} seconds")
+        safe_print(f"Ready nodes: {ready_count}/{len(all_hosts)}")
+        safe_print(f"Analysis time: {elapsed:.1f} seconds")
         
         # OS Distribution Analysis
-        safe_print("\n🖥️  OS Distribution Analysis:")
+        safe_print("\nOS Distribution Analysis:")
         os_count = {}
         for host, checks in results.items():
             os_info = checks['os_info']
@@ -165,14 +165,14 @@ def quick_cluster_analysis(inventory_file):
             safe_print(f"   {os_family}: {count} nodes")
         
         if len(os_count) == 1:
-            safe_print("✅ Homogeneous cluster detected")
+            safe_print("SUCCESS: Homogeneous cluster detected")
         else:
-            safe_print("⚠️  Mixed OS detected - consider homogeneous deployment")
+            safe_print("WARNING: Mixed OS detected - consider homogeneous deployment")
         
         return ready_count == len(all_hosts)
         
     except Exception as e:
-        safe_print(f"❌ Error during analysis: {e}")
+        safe_print(f"ERROR: Error during analysis: {e}")
         return False
 
 if __name__ == '__main__':

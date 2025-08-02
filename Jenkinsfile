@@ -107,23 +107,23 @@ pipeline {
                 stage('Smart VM Readiness Check') {
                     steps {
                         sh '''
-                            echo "🚀 Smart VM Readiness Check (replaces slow netcat checking)"
-                            echo "⏱️  This should complete in ~15-30 seconds instead of 2+ minutes"
+                            echo "Smart VM Readiness Check (replaces slow netcat checking)"
+                            echo "This should complete in ~15-30 seconds instead of 2+ minutes"
                             
                             cd ${ANSIBLE_DIR}
                             
                             # Give VMs a moment to finish booting (much shorter than before)
-                            echo "📡 Brief wait for VM initialization (20s)..."
+                            echo "Brief wait for VM initialization (20s)..."
                             sleep 20
                             
                             # Use our smart readiness checker
-                            echo "🔍 Running smart parallel readiness check..."
+                            echo "Running smart parallel readiness check..."
                             python3 scripts/smart_vm_ready.py ${INVENTORY_FILE} 3
                             
                             if [ $? -eq 0 ]; then
-                                echo "✅ All VMs ready! Proceeding to connectivity test..."
+                                echo "All VMs ready! Proceeding to connectivity test..."
                             else
-                                echo "❌ VM readiness check failed. Check logs above."
+                                echo "VM readiness check failed. Check logs above."
                                 exit 1
                             fi
                         '''
@@ -140,23 +140,23 @@ pipeline {
                 dir("${ANSIBLE_DIR}") {
                     script {
                         sh '''
-                            echo "🔍 Final connectivity verification and cluster analysis..."
+                            echo "Final connectivity verification and cluster analysis..."
                             
                             # Quick comprehensive check (replaces multiple slow steps)
-                            echo "🚀 Running comprehensive cluster check..."
+                            echo "Running comprehensive cluster check..."
                             python3 scripts/quick_cluster_check.py ${INVENTORY_FILE}
                             
                             if [ $? -eq 0 ]; then
-                                echo "✅ All connectivity checks passed!"
-                                echo "🎯 Ready for Kubernetes deployment..."
+                                echo "All connectivity checks passed!"
+                                echo "Ready for Kubernetes deployment..."
                             else
-                                echo "❌ Connectivity issues detected. Falling back to debug mode..."
+                                echo "Connectivity issues detected. Falling back to debug mode..."
                                 
                                 # Only run detailed debug if quick check fails
-                                echo "📋 Debug: Inventory validation"
+                                echo "Debug: Inventory validation"
                                 python3 -m json.tool ${INVENTORY_FILE} || echo "JSON validation failed!"
                                 
-                                echo "📋 Debug: Manual ansible ping test"
+                                echo "Debug: Manual ansible ping test"
                                 ansible all -i ${INVENTORY_FILE} -m ping --timeout=20 -v || true
                                 
                                 exit 1

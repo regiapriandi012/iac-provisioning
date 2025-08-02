@@ -65,15 +65,15 @@ def fast_vm_readiness_check(inventory_file, max_retries=3, retry_delay=15):
                         hosts_to_check.append((host, host_vars['ansible_host']))
         
         if not hosts_to_check:
-            safe_print("❌ No hosts found in inventory")
+            safe_print("ERROR: No hosts found in inventory")
             return False
         
-        safe_print(f"🚀 Smart VM Readiness Check")
-        safe_print(f"📊 Checking {len(hosts_to_check)} VMs: {', '.join([f'{h}({ip})' for h, ip in hosts_to_check])}")
+        safe_print(f"Smart VM Readiness Check")
+        safe_print(f"Checking {len(hosts_to_check)} VMs: {', '.join([f'{h}({ip})' for h, ip in hosts_to_check])}")
         safe_print("")
         
         for attempt in range(1, max_retries + 1):
-            safe_print(f"🔄 Attempt {attempt}/{max_retries}")
+            safe_print(f"Attempt {attempt}/{max_retries}")
             start_time = time.time()
             
             # Check all hosts in parallel - MUCH faster
@@ -91,32 +91,32 @@ def fast_vm_readiness_check(inventory_file, max_retries=3, retry_delay=15):
                     
                     if is_ready:
                         ready_hosts.append((host, ip))
-                        safe_print(f"✅ {host} ({ip}): {message}")
+                        safe_print(f"OK {host} ({ip}): {message}")
                     else:
                         failed_hosts.append((host, ip))
-                        safe_print(f"❌ {host} ({ip}): {message}")
+                        safe_print(f"FAIL {host} ({ip}): {message}")
             
             elapsed = time.time() - start_time
-            safe_print(f"⏱️  Parallel check completed in {elapsed:.1f}s")
+            safe_print(f"Parallel check completed in {elapsed:.1f}s")
             
             if len(ready_hosts) == len(hosts_to_check):
-                safe_print(f"\n🎉 All {len(hosts_to_check)} VMs are ready!")
-                safe_print(f"🕒 Total time: {elapsed:.1f}s (attempt {attempt})")
+                safe_print(f"\nAll {len(hosts_to_check)} VMs are ready!")
+                safe_print(f"Total time: {elapsed:.1f}s (attempt {attempt})")
                 return True
             
             if attempt < max_retries:
-                safe_print(f"\n⏳ {len(failed_hosts)} VMs not ready. Retrying in {retry_delay}s...")
+                safe_print(f"\n{len(failed_hosts)} VMs not ready. Retrying in {retry_delay}s...")
                 # Only update the list to check failed hosts
                 hosts_to_check = failed_hosts
                 time.sleep(retry_delay)
             else:
-                safe_print(f"\n❌ Timeout: {len(ready_hosts)}/{len(hosts_to_check) + len(ready_hosts)} VMs ready")
+                safe_print(f"\nTimeout: {len(ready_hosts)}/{len(hosts_to_check) + len(ready_hosts)} VMs ready")
                 return False
         
         return False
         
     except Exception as e:
-        safe_print(f"❌ Error during readiness check: {e}")
+        safe_print(f"ERROR: Error during readiness check: {e}")
         return False
 
 if __name__ == '__main__':
@@ -126,8 +126,8 @@ if __name__ == '__main__':
     success = fast_vm_readiness_check(inventory_file, max_retries)
     
     if success:
-        print("\n✅ ALL VMs are ready for Ansible operations!")
+        print("\nSUCCESS: ALL VMs are ready for Ansible operations!")
         sys.exit(0)
     else:
-        print("\n❌ Some VMs are not ready. Check the logs above.")
+        print("\nFAILED: Some VMs are not ready. Check the logs above.")
         sys.exit(1)
