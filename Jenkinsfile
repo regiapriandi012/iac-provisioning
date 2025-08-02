@@ -437,92 +437,110 @@ pipeline {
                             
                             // Get cluster info
                             def masterCount = sh(
-                                script: "python3 scripts/count_inventory_hosts.py ${INVENTORY_FILE} --details | grep k8s_masters | wc -l",
+                                script: "cd ${ANSIBLE_DIR} && python3 scripts/count_inventory_hosts.py ${INVENTORY_FILE} --details | grep k8s_masters | wc -l",
                                 returnStdout: true
                             ).trim()
                             
                             def workerCount = sh(
-                                script: "python3 scripts/count_inventory_hosts.py ${INVENTORY_FILE} --details | grep k8s_workers | wc -l",
+                                script: "cd ${ANSIBLE_DIR} && python3 scripts/count_inventory_hosts.py ${INVENTORY_FILE} --details | grep k8s_workers | wc -l",
                                 returnStdout: true
                             ).trim()
                             
                             def clusterEndpoint = sh(
-                                script: "grep 'server:' kubeconfig/admin.conf | awk '{print \$2}'",
+                                script: "cd ${ANSIBLE_DIR} && grep 'server:' kubeconfig/admin.conf | awk '{print \$2}' | head -1",
                                 returnStdout: true
                             ).trim()
                             
-                            // Write kubeconfig to temp file
-                            writeFile file: "kubeconfig_temp.txt", text: kubeconfigContent
+                            // Debug output
+                            echo "Master Count: ${masterCount}"
+                            echo "Worker Count: ${workerCount}"
+                            echo "Cluster Endpoint: ${clusterEndpoint}"
+                            echo "KUBECONFIG length: ${kubeconfigContent.length()}"
                             
-                            sh '''#!/bin/bash
-                                # Read kubeconfig and escape it for JSON
-                                KUBECONFIG_CONTENT=$(cat kubeconfig_temp.txt | sed 's/\\/\\\\/g' | sed 's/"/\\\\"/g' | awk '{printf "%s\\\\n", $0}' | sed 's/\\\\n$//')
-                                
-                                # Create Slack message with KUBECONFIG
-                                cat > slack_kubeconfig.json << EOF
-{
-  "text": "Kubernetes Cluster Ready!",
-  "blocks": [
-    {
-      "type": "header",
-      "text": {
-        "type": "plain_text",
-        "text": "Kubernetes Cluster Deployed Successfully"
-      }
-    },
-    {
-      "type": "section",
-      "fields": [
+                            // Create a Python script to properly format the message
+                            def pythonScript = '''
+import json
+import sys
+
+# Read inputs
+build_num = sys.argv[1]
+duration = sys.argv[2]
+endpoint = sys.argv[3]
+masters = sys.argv[4]
+workers = sys.argv[5]
+build_url = sys.argv[6]
+
+# Read kubeconfig
+with open('kubeconfig/admin.conf', 'r') as f:
+    kubeconfig = f.read()
+
+# Create the Slack message
+message = {
+    "text": "Kubernetes Cluster Ready!",
+    "blocks": [
         {
-          "type": "mrkdwn",
-          "text": "*Build:* #''' + env.BUILD_NUMBER + '''"
+            "type": "header",
+            "text": {
+                "type": "plain_text",
+                "text": "Kubernetes Cluster Deployed Successfully"
+            }
         },
         {
-          "type": "mrkdwn",
-          "text": "*Duration:* ''' + buildDuration + '''"
+            "type": "section",
+            "fields": [
+                {"type": "mrkdwn", "text": f"*Build:* #{build_num}"},
+                {"type": "mrkdwn", "text": f"*Duration:* {duration}"},
+                {"type": "mrkdwn", "text": f"*Cluster Endpoint:* `{endpoint}`"},
+                {"type": "mrkdwn", "text": f"*Nodes:* {masters} masters, {workers} workers"}
+            ]
+        },
+        {"type": "divider"},
+        {
+            "type": "section",
+            "text": {
+                "type": "mrkdwn",
+                "text": f"*KUBECONFIG Setup Instructions:*\\n```bash\\nmkdir -p ~/.kube\\ncat > ~/.kube/config << 'EOF'\\n{kubeconfig}\\nEOF\\nchmod 600 ~/.kube/config\\nkubectl get nodes```"
+            }
         },
         {
-          "type": "mrkdwn",
-          "text": "*Cluster Endpoint:* `''' + clusterEndpoint + '''`"
-        },
-        {
-          "type": "mrkdwn",
-          "text": "*Nodes:* ''' + masterCount + ''' masters, ''' + workerCount + ''' workers"
+            "type": "section",
+            "text": {
+                "type": "mrkdwn",
+                "text": f"*Jenkins Build:* <{build_url}|View Details>"
+            }
         }
-      ]
-    },
-    {
-      "type": "divider"
-    },
-    {
-      "type": "section",
-      "text": {
-        "type": "mrkdwn",
-        "text": "*KUBECONFIG Setup Instructions:*\\n```bash\\nmkdir -p ~/.kube\\ncat > ~/.kube/config << 'KUBECONFIG_EOF'\\n${KUBECONFIG_CONTENT}\\nKUBECONFIG_EOF\\nchmod 600 ~/.kube/config\\nkubectl get nodes```"
-      }
-    },
-    {
-      "type": "section",
-      "text": {
-        "type": "mrkdwn",
-        "text": "*Jenkins Build:* <''' + env.BUILD_URL + '''|View Details>"
-      }
-    }
-  ]
+    ]
 }
-EOF
+
+# Write to file
+with open('slack_message.json', 'w') as f:
+    json.dump(message, f)
+'''
+                            
+                            writeFile file: "${ANSIBLE_DIR}/format_slack.py", text: pythonScript
+                            
+                            sh """#!/bin/bash
+                                cd ${ANSIBLE_DIR}
+                                
+                                # Run Python script to format the message
+                                python3 format_slack.py "${BUILD_NUMBER}" "${buildDuration}" "${clusterEndpoint}" "${masterCount}" "${workerCount}" "${BUILD_URL}"
+                                
+                                # Debug: Check the generated JSON
+                                echo "Generated Slack message:"
+                                cat slack_message.json | head -c 500
+                                echo "..."
                                 
                                 # Send to Slack
                                 curl -X POST ${SLACK_WEBHOOK_URL} \
                                      -H "Content-Type: application/json" \
-                                     -d @slack_kubeconfig.json \
+                                     -d @slack_message.json \
                                      --silent --show-error --fail \
                                 && echo "KUBECONFIG sent to Slack successfully!" \
                                 || echo "Failed to send to Slack"
                                 
                                 # Cleanup
-                                rm -f slack_kubeconfig.json kubeconfig_temp.txt
-                            '''
+                                rm -f slack_message.json format_slack.py
+                            """
                         }
                     }
                 }
