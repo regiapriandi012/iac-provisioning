@@ -173,7 +173,7 @@ pipeline {
                         // Write final CSV to file
                         writeFile file: "vms.csv", text: csvContent
                         
-                        def duration = (System.currentTimeMillis() - startTime) / 1000
+                        def duration = ((System.currentTimeMillis() - startTime) / 1000).intValue()
                         echo "Configuration generated in ${duration}s"
                     }
                 }
@@ -200,7 +200,7 @@ pipeline {
                                         terraform init -upgrade=false
                                     '''
                                     
-                                    def duration = (System.currentTimeMillis() - startTime) / 1000
+                                    def duration = ((System.currentTimeMillis() - startTime) / 1000).intValue()
                                     echo "Terraform init completed in ${duration}s"
                                     
                                     // Cache providers
@@ -240,7 +240,7 @@ pipeline {
                                         terraform state list || echo "No resources in state"
                                     '''
                                     
-                                    def duration = (System.currentTimeMillis() - startTime) / 1000
+                                    def duration = ((System.currentTimeMillis() - startTime) / 1000).intValue()
                                     echo "Infrastructure provisioned in ${duration}s"
                                 }
                             }
@@ -308,7 +308,7 @@ pipeline {
                             ${WORKSPACE}/venv/bin/python scripts/smart_vm_ready.py ${INVENTORY_FILE} 20
                         '''
                         
-                        def duration = (System.currentTimeMillis() - startTime) / 1000
+                        def duration = ((System.currentTimeMillis() - startTime) / 1000).intValue()
                         echo "VM readiness check completed in ${duration}s"
                     }
                 }
@@ -359,9 +359,9 @@ pipeline {
                             fi
                         '''
                         
-                        def duration = (System.currentTimeMillis() - startTime) / 1000
-                        def minutes = (duration / 60).intValue()
-                        def seconds = (duration % 60).intValue()
+                        def duration = ((System.currentTimeMillis() - startTime) / 1000).intValue()
+                        def minutes = duration / 60
+                        def seconds = duration % 60
                         
                         echo "Kubernetes deployed in ${minutes}m ${seconds}s"
                     }
