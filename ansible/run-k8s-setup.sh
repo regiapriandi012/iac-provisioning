@@ -96,9 +96,9 @@ if [ -n "$FIRST_MASTER" ]; then
     # Quick cluster health check
     ansible $FIRST_MASTER -i inventory.py -m shell -a "kubectl get nodes -o wide && echo '---' && kubectl get pods -A | grep -v Running | head -20" || true
     
-    # Get cluster info
-    NODE_COUNT=$(ansible $FIRST_MASTER -i inventory.py -m shell -a "kubectl get nodes -o json | jq '.items | length'" -o | tail -1 | tr -d '\r\n')
-    READY_COUNT=$(ansible $FIRST_MASTER -i inventory.py -m shell -a "kubectl get nodes -o json | jq '[.items[] | select(.status.conditions[] | select(.type==\"Ready\" and .status==\"True\"))] | length'" -o | tail -1 | tr -d '\r\n')
+    # Get cluster info without jq
+    NODE_COUNT=$(ansible $FIRST_MASTER -i inventory.py -m shell -a "kubectl get nodes --no-headers | wc -l" -o | tail -1 | tr -d '\r\n' | grep -o '[0-9]*' || echo "0")
+    READY_COUNT=$(ansible $FIRST_MASTER -i inventory.py -m shell -a "kubectl get nodes --no-headers | grep ' Ready' | wc -l" -o | tail -1 | tr -d '\r\n' | grep -o '[0-9]*' || echo "0")
     
     echo ""
     echo "Cluster Status:"
