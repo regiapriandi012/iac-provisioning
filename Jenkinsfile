@@ -416,26 +416,95 @@ pipeline {
                             echo "KUBECONFIG extracted successfully"
                         '''
                         
-                        // Simplified Slack notification
+                        // Send KUBECONFIG to Slack
                         withCredentials([string(credentialsId: 'slack-webhook-url', variable: 'SLACK_WEBHOOK_URL')]) {
                             def buildDuration = currentBuild.durationString.replace(' and counting', '')
+                            def kubeconfigContent = readFile("kubeconfig/admin.conf")
                             
-                            sh """
-                                # Send simple notification
+                            // Get cluster info
+                            def masterCount = sh(
+                                script: "python3 scripts/count_inventory_hosts.py ${INVENTORY_FILE} --details | grep k8s_masters | wc -l",
+                                returnStdout: true
+                            ).trim()
+                            
+                            def workerCount = sh(
+                                script: "python3 scripts/count_inventory_hosts.py ${INVENTORY_FILE} --details | grep k8s_workers | wc -l",
+                                returnStdout: true
+                            ).trim()
+                            
+                            def clusterEndpoint = sh(
+                                script: "grep 'server:' kubeconfig/admin.conf | awk '{print \$2}'",
+                                returnStdout: true
+                            ).trim()
+                            
+                            // Create escaped content for JSON
+                            def kubeconfigEscaped = kubeconfigContent.replaceAll('"', '\\\\"').replaceAll('\n', '\\\\n')
+                            
+                            sh """#!/bin/bash
+                                # Create Slack message with KUBECONFIG
+                                cat > slack_kubeconfig.json << 'SLACK_EOF'
+{
+  "text": "Kubernetes Cluster Ready!",
+  "blocks": [
+    {
+      "type": "header",
+      "text": {
+        "type": "plain_text",
+        "text": "Kubernetes Cluster Deployed Successfully"
+      }
+    },
+    {
+      "type": "section",
+      "fields": [
+        {
+          "type": "mrkdwn",
+          "text": "*Build:* #${BUILD_NUMBER}"
+        },
+        {
+          "type": "mrkdwn",
+          "text": "*Duration:* ${buildDuration}"
+        },
+        {
+          "type": "mrkdwn",
+          "text": "*Cluster Endpoint:* \`${clusterEndpoint}\`"
+        },
+        {
+          "type": "mrkdwn",
+          "text": "*Nodes:* ${masterCount} masters, ${workerCount} workers"
+        }
+      ]
+    },
+    {
+      "type": "divider"
+    },
+    {
+      "type": "section",
+      "text": {
+        "type": "mrkdwn",
+        "text": "*KUBECONFIG Setup Instructions:*\\n\`\`\`bash\\nmkdir -p ~/.kube\\ncat > ~/.kube/config << 'EOF'\\n${kubeconfigEscaped}\\nEOF\\nchmod 600 ~/.kube/config\\nkubectl get nodes\`\`\`"
+      }
+    },
+    {
+      "type": "section",
+      "text": {
+        "type": "mrkdwn",
+        "text": "*Jenkins Build:* <${BUILD_URL}|View Details>"
+      }
+    }
+  ]
+}
+SLACK_EOF
+                                
+                                # Send to Slack
                                 curl -X POST ${SLACK_WEBHOOK_URL} \
                                      -H "Content-Type: application/json" \
-                                     -d '{
-                                       "text": "*Kubernetes Cluster Ready!*",
-                                       "blocks": [
-                                         {
-                                           "type": "section",
-                                           "text": {
-                                             "type": "mrkdwn",
-                                             "text": "*Build #${BUILD_NUMBER}* completed in *${buildDuration}*\\n<${BUILD_URL}|View Build>"
-                                           }
-                                         }
-                                       ]
-                                     }' || echo "Slack notification failed"
+                                     -d @slack_kubeconfig.json \
+                                     --silent --show-error --fail \
+                                && echo "KUBECONFIG sent to Slack successfully!" \
+                                || echo "Failed to send to Slack"
+                                
+                                # Cleanup
+                                rm -f slack_kubeconfig.json
                             """
                         }
                     }
