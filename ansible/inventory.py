@@ -40,8 +40,11 @@ def main():
                 for group_name, group_data in inventory.items():
                     if group_name == 'all':
                         # Handle global vars
+                        all_vars = group_data.get('vars', {}).copy()
+                        # Remove SSH args to avoid conflict with ansible.cfg
+                        all_vars.pop('ansible_ssh_common_args', None)
                         output['all'] = {
-                            'vars': group_data.get('vars', {})
+                            'vars': all_vars
                         }
                     elif isinstance(group_data, dict):
                         if 'hosts' in group_data:

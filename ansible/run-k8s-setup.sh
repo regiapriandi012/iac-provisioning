@@ -127,8 +127,7 @@ run_playbook() {
     
     # Test basic connectivity with proper timeout (exclude phantom hosts)
     log_info "Testing connectivity to all hosts..."
-    ansible k8s_masters:k8s_workers -i "$INVENTORY_SCRIPT" -m ping --timeout=30 -o \
-        -e ansible_ssh_common_args="-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null" || {
+    ansible k8s_masters:k8s_workers -i "$INVENTORY_SCRIPT" -m ping --timeout=30 -o || {
         log_warning "Some hosts may not be reachable yet, continuing anyway..."
     }
     
@@ -137,7 +136,6 @@ run_playbook() {
         -i "$INVENTORY_SCRIPT" \
         "$PLAYBOOK" \
         -v \
-        -e ansible_ssh_common_args="-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null" \
         "$@"
     
     if [[ $? -eq 0 ]]; then
