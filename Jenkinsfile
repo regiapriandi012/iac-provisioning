@@ -9,7 +9,7 @@ pipeline {
         )
         choice(
             name: 'vm_template',
-            choices: ['t-debian-12', 't-centos9-86'],
+            choices: ['t-debian12-86', 't-centos9-86'],
             description: 'VM template to use for all nodes'
         )
         string(
