@@ -25,7 +25,18 @@ def analyze_cluster_os(inventory_file):
     """Analyze OS distribution across cluster"""
     try:
         with open(inventory_file, 'r') as f:
-            inv = json.load(f)
+            content = f.read().strip()
+            
+            # Handle case where terraform output is JSON string (escaped)
+            if content.startswith('"') and content.endswith('"'):
+                # Remove quotes and unescape
+                content = json.loads(content)
+            
+            # Parse the actual JSON
+            if isinstance(content, str):
+                inv = json.loads(content)
+            else:
+                inv = content
         
         os_distribution = {}
         total_nodes = 0
