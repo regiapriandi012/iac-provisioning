@@ -1,3 +1,10 @@
+# Local variables for inventory generation
+locals {
+  masters = [for k, v in local.vm_data : v if can(regex("master", lower(v.vm_name_original)))]
+  master_count = length(local.masters)
+  first_master_ip = length(local.masters) > 0 ? replace(local.masters[0].ip_address, "/.*", "") : ""
+}
+
 output "vm_assignments" {
   description = "VM assignments with source information"
   value = {
@@ -73,13 +80,6 @@ EOT
 # Generate JSON inventory untuk flexibility
 output "ansible_inventory_json" {
   description = "Ansible inventory in JSON format"
-  
-  locals {
-    masters = [for k, v in local.vm_data : v if can(regex("master", lower(v.vm_name_original)))]
-    master_count = length(local.masters)
-    first_master_ip = length(local.masters) > 0 ? replace(local.masters[0].ip_address, "/.*", "") : ""
-  }
-  
   value = jsonencode({
     all = {
       vars = merge({
