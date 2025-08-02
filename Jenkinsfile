@@ -48,7 +48,7 @@ pipeline {
         ANSIBLE_CONFIG = "${ANSIBLE_DIR}/ansible.cfg"
         INVENTORY_FILE = 'inventory/k8s-inventory.json'
         INVENTORY_SCRIPT = 'inventory.py'
-        CACHE_DIR = '/var/jenkins_home/iac-cache'
+        CACHE_DIR = "${WORKSPACE}/.iac-cache"
     }
     
     options {
