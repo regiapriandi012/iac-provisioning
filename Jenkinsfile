@@ -2,6 +2,19 @@ pipeline {
     agent any
     
     parameters {
+        choice(
+            name: 'cluster_preset',
+            choices: ['custom', 'small-single-master', 'medium-single-master', 'ha-3-masters'],
+            description: 'Choose a preset or select custom to use vm_csv_content'
+        )
+        text(
+            name: 'vm_csv_content',
+            defaultValue: '''vmid,vm_name,template,node,ip,cores,memory,disk_size
+0,kube-master,t-centos9-86,thinkcentre,0,2,4096,32G
+0,kube-worker01,t-centos9-86,thinkcentre,0,2,4096,32G
+0,kube-worker02,t-centos9-86,thinkcentre,0,2,4096,32G''',
+            description: 'VM specifications in CSV format (used when cluster_preset is "custom")'
+        )
         booleanParam(
             name: 'run_ansible',
             defaultValue: true,
@@ -28,6 +41,82 @@ pipeline {
                 git branch: 'main', 
                     credentialsId: 'gitlab-credential', 
                     url: 'https://gitlab.labngoprek.my.id/root/iac-provision'
+            }
+        }
+        
+        stage('Generate VM Configuration') {
+            steps {
+                dir("${TERRAFORM_DIR}") {
+                    script {
+                        // Generate CSV based on preset or custom input
+                        if (params.cluster_preset == 'custom') {
+                            sh '''
+                                echo "=========================================="
+                                echo "Using custom VM configuration..."
+                                echo "=========================================="
+                                
+                                # Create vms.csv from Jenkins parameter
+                                cat > vms.csv << 'EOF'
+${params.vm_csv_content}
+EOF
+                            '''
+                        } else {
+                            // Use preset configurations
+                            def presetConfigs = [
+                                'small-single-master': '''vmid,vm_name,template,node,ip,cores,memory,disk_size
+0,kube-master,t-centos9-86,thinkcentre,0,2,4096,50G
+0,kube-worker01,t-centos9-86,thinkcentre,0,2,4096,50G
+0,kube-worker02,t-centos9-86,thinkcentre,0,2,4096,50G''',
+                                
+                                'medium-single-master': '''vmid,vm_name,template,node,ip,cores,memory,disk_size
+0,kube-master,t-centos9-86,thinkcentre,0,4,8192,100G
+0,kube-worker01,t-centos9-86,thinkcentre,0,4,8192,100G
+0,kube-worker02,t-centos9-86,thinkcentre,0,4,8192,100G
+0,kube-worker03,t-centos9-86,thinkcentre,0,4,8192,100G''',
+                                
+                                'ha-3-masters': '''vmid,vm_name,template,node,ip,cores,memory,disk_size
+0,kube-master01,t-centos9-86,thinkcentre,0,4,8192,50G
+0,kube-master02,t-centos9-86,thinkcentre,0,4,8192,50G
+0,kube-master03,t-centos9-86,thinkcentre,0,4,8192,50G
+0,kube-worker01,t-centos9-86,thinkcentre,0,4,8192,100G
+0,kube-worker02,t-centos9-86,thinkcentre,0,4,8192,100G
+0,kube-worker03,t-centos9-86,thinkcentre,0,4,8192,100G'''
+                            ]
+                            
+                            def selectedConfig = presetConfigs[params.cluster_preset]
+                            writeFile file: "${TERRAFORM_DIR}/vms.csv", text: selectedConfig
+                            
+                            sh """
+                                echo "=========================================="
+                                echo "Using preset: ${params.cluster_preset}"
+                                echo "=========================================="
+                            """
+                        }
+                        
+                        sh '''
+                            echo "Generated vms.csv:"
+                            cat vms.csv
+                            echo ""
+                            
+                            # Validate CSV format
+                            if ! head -1 vms.csv | grep -q "vmid,vm_name,template,node,ip,cores,memory,disk_size"; then
+                                echo "ERROR: Invalid CSV header format!"
+                                exit 1
+                            fi
+                            
+                            # Count VMs
+                            VM_COUNT=$(tail -n +2 vms.csv | wc -l)
+                            MASTER_COUNT=$(grep -i master vms.csv | wc -l)
+                            WORKER_COUNT=$(grep -i worker vms.csv | wc -l)
+                            
+                            echo "Configuration Summary:"
+                            echo "- Total VMs: $VM_COUNT"
+                            echo "- Masters: $MASTER_COUNT"
+                            echo "- Workers: $WORKER_COUNT"
+                            echo "- HA Mode: $([ $MASTER_COUNT -gt 1 ] && echo "Yes" || echo "No")"
+                        '''
+                    }
+                }
             }
         }
         

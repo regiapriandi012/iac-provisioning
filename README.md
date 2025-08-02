@@ -47,8 +47,19 @@ cd ../ansible
 1. Create Jenkins pipeline job
 2. Point to this repository
 3. Run pipeline with parameters:
+   - `cluster_preset`: Choose from presets or 'custom'
+     - `small-single-master`: 1 master + 2 workers (2 cores, 4GB RAM)
+     - `medium-single-master`: 1 master + 3 workers (4 cores, 8GB RAM)
+     - `ha-3-masters`: 3 masters + 3 workers (4 cores, 8GB RAM) - HA setup
+     - `custom`: Use your own CSV configuration
+   - `vm_csv_content`: Custom CSV content (when preset is 'custom')
    - `run_ansible`: true (deploy Kubernetes)
    - `skip_verification`: false (verify cluster)
+
+**Dynamic VM Configuration**: 
+- Select a preset for quick deployment
+- Or choose 'custom' and paste your own CSV configuration
+- CSV format must include: vmid,vm_name,template,node,ip,cores,memory,disk_size
 
 **Important**: 
 - Each Jenkins run creates **NEW VMs** without destroying previous ones
