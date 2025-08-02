@@ -59,40 +59,41 @@ pipeline {
     }
 
     stages {
-        stage('🚀 Initialize') {
-            parallel {
-                stage('Checkout Code') {
-                    steps {
-                        git branch: 'main', 
-                            credentialsId: 'gitlab-credential', 
-                            url: 'https://gitlab.labngoprek.my.id/root/iac-provision'
-                    }
-                }
-                
-                stage('Setup Cache') {
-                    when {
-                        expression { params.use_cache }
-                    }
-                    steps {
-                        script {
-                            sh '''
-                                # Create cache directories
-                                mkdir -p ${CACHE_DIR}/{terraform,ansible,python}
-                                
-                                # Cache Terraform providers
-                                if [ -d "${CACHE_DIR}/terraform/.terraform" ]; then
-                                    echo "♻️  Using cached Terraform providers"
-                                    cp -r ${CACHE_DIR}/terraform/.terraform ${TERRAFORM_DIR}/ || true
-                                fi
-                                
-                                # Cache Python packages
-                                if [ -d "${CACHE_DIR}/python/site-packages" ]; then
-                                    echo "♻️  Using cached Python packages"
-                                    export PYTHONPATH="${CACHE_DIR}/python/site-packages:$PYTHONPATH"
-                                fi
-                            '''
-                        }
-                    }
+        stage('Checkout') {
+            steps {
+                git branch: 'main', 
+                    credentialsId: 'gitlab-credential', 
+                    url: 'https://gitlab.labngoprek.my.id/root/iac-provision'
+            }
+        }
+        
+        stage('Setup Cache') {
+            when {
+                expression { params.use_cache }
+            }
+            steps {
+                script {
+                    sh '''
+                        # Create cache directories
+                        mkdir -p ${CACHE_DIR}/{terraform,ansible,python}
+                        
+                        # Check if terraform directory exists
+                        if [ -d "${TERRAFORM_DIR}" ]; then
+                            # Cache Terraform providers
+                            if [ -d "${CACHE_DIR}/terraform/.terraform" ]; then
+                                echo "♻️  Using cached Terraform providers"
+                                cp -r ${CACHE_DIR}/terraform/.terraform ${TERRAFORM_DIR}/ || true
+                            fi
+                        else
+                            echo "⚠️  Terraform directory not found, skipping cache restore"
+                        fi
+                        
+                        # Cache Python packages
+                        if [ -d "${CACHE_DIR}/python/site-packages" ]; then
+                            echo "♻️  Using cached Python packages"
+                            export PYTHONPATH="${CACHE_DIR}/python/site-packages:$PYTHONPATH"
+                        fi
+                    '''
                 }
             }
         }
