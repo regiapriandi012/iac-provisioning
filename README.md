@@ -52,18 +52,18 @@ cd ../ansible
 1. Create Jenkins pipeline job
 2. Point to this repository
 3. Run pipeline with parameters:
+   - `run_ansible`: Deploy Kubernetes cluster after VM provisioning (default: true)
    - `cluster_preset`: Choose from presets or 'custom'
-     - `small-single-master`: 1 master + 2 workers (2 cores, 4GB RAM)
-     - `medium-single-master`: 1 master + 3 workers (4 cores, 8GB RAM)
-     - `ha-3-masters`: 3 masters + 3 workers (4 cores, 8GB RAM) - HA setup
+     - `small-single-master`: 1 master + 2 workers (2 cores, 2GB RAM, 50GB disk)
+     - `medium-single-master`: 1 master + 3 workers (4 cores, 8GB RAM, 100GB disk)
+     - `ha-3-masters`: 3 masters + 3 workers (4 cores, 8GB RAM, 50-100GB disk) - HA setup
      - `custom`: Use your own CSV configuration
    - `vm_template`: Select VM template
      - `t-debian12-86`: Debian 12 (Bookworm)
      - `t-centos9-86`: CentOS 9 Stream
    - `proxmox_node`: Proxmox node name (default: thinkcentre)
    - `vm_csv_content`: Custom CSV content (when preset is 'custom')
-   - `run_ansible`: true (deploy Kubernetes)
-   - `skip_verification`: false (verify cluster)
+   - `use_cache`: Enable caching for faster subsequent runs (default: true)
 
 **Dynamic VM Configuration**: 
 - Select a preset for quick deployment
@@ -73,8 +73,7 @@ cd ../ansible
 **Important**: 
 - Each Jenkins run creates **NEW VMs** without destroying previous ones
 - Old VMs remain running (useful for testing multiple clusters)
-- Terraform state is backed up to `terraform/state_backups/` with timestamp
-- To remove old VMs, manually run `terraform destroy` with the backed-up state
+- To remove old VMs, manually run `terraform destroy` in the terraform directory
 
 ## 📁 Project Structure
 
@@ -251,20 +250,13 @@ Since each Jenkins run creates new VMs:
 cd terraform
 terraform state list
 
-# Check previous deployments (in Proxmox UI or via API)
+# Check all VMs in Proxmox UI or via API
 ```
 
 #### Destroy Current Deployment
 ```bash
 cd terraform
 terraform destroy --auto-approve
-```
-
-#### Destroy Previous Deployments
-```bash
-cd terraform/state_backups
-# Find the state file you want
-terraform destroy --state=terraform.tfstate.20240102_143022 --auto-approve
 ```
 
 **Warning**: Destroy commands permanently delete VMs!

@@ -2,10 +2,18 @@ pipeline {
     agent any
     
     parameters {
+        separator(name: 'ansible_separator', sectionHeader: 'Ansible Configuration')
+        booleanParam(
+            name: 'run_ansible',
+            defaultValue: true,
+            description: 'Deploy Kubernetes cluster using Ansible after VM provisioning'
+        )
+        
+        separator(name: 'provision_separator', sectionHeader: 'Provision Kubernetes')
         choice(
             name: 'cluster_preset',
-            choices: ['custom', 'small-single-master', 'medium-single-master', 'ha-3-masters'],
-            description: 'Choose a preset or select custom to use vm_csv_content'
+            choices: ['small-single-master', 'medium-single-master', 'ha-3-masters', 'custom'],
+            description: 'Cluster size preset configuration'
         )
         choice(
             name: 'vm_template',
@@ -15,30 +23,22 @@ pipeline {
         string(
             name: 'proxmox_node',
             defaultValue: 'thinkcentre',
-            description: 'Proxmox node where VMs will be created'
+            description: 'Target Proxmox node for VM deployment'
         )
         text(
             name: 'vm_csv_content',
             defaultValue: '''vmid,vm_name,template,node,ip,cores,memory,disk_size
-0,kube-master,TEMPLATE_PLACEHOLDER,NODE_PLACEHOLDER,0,2,4096,32G
-0,kube-worker01,TEMPLATE_PLACEHOLDER,NODE_PLACEHOLDER,0,2,4096,32G
-0,kube-worker02,TEMPLATE_PLACEHOLDER,NODE_PLACEHOLDER,0,2,4096,32G''',
-            description: 'VM specifications in CSV format (used when cluster_preset is "custom"). TEMPLATE_PLACEHOLDER and NODE_PLACEHOLDER will be replaced with selected values.'
+0,kube-master,TEMPLATE_PLACEHOLDER,NODE_PLACEHOLDER,0,2,2048,32G
+0,kube-worker01,TEMPLATE_PLACEHOLDER,NODE_PLACEHOLDER,0,2,2048,32G
+0,kube-worker02,TEMPLATE_PLACEHOLDER,NODE_PLACEHOLDER,0,2,2048,32G''',
+            description: 'Custom VM specifications (CSV format) - used when cluster_preset is "custom"'
         )
-        booleanParam(
-            name: 'run_ansible',
-            defaultValue: true,
-            description: 'Run Ansible after Terraform apply'
-        )
-        booleanParam(
-            name: 'skip_verification',
-            defaultValue: false,
-            description: 'Skip Kubernetes cluster verification steps'
-        )
+        
+        separator(name: 'advanced_separator', sectionHeader: 'Advanced Options')
         booleanParam(
             name: 'use_cache',
             defaultValue: true,
-            description: 'Use cached dependencies and templates'
+            description: 'Enable caching for faster subsequent runs'
         )
     }
 
@@ -144,9 +144,9 @@ pipeline {
                             // Use preset configurations with placeholders
                             def presetConfigs = [
                                 'small-single-master': '''vmid,vm_name,template,node,ip,cores,memory,disk_size
-0,kube-master,TEMPLATE_PLACEHOLDER,NODE_PLACEHOLDER,0,2,4096,50G
-0,kube-worker01,TEMPLATE_PLACEHOLDER,NODE_PLACEHOLDER,0,2,4096,50G
-0,kube-worker02,TEMPLATE_PLACEHOLDER,NODE_PLACEHOLDER,0,2,4096,50G''',
+0,kube-master,TEMPLATE_PLACEHOLDER,NODE_PLACEHOLDER,0,2,2048,50G
+0,kube-worker01,TEMPLATE_PLACEHOLDER,NODE_PLACEHOLDER,0,2,2048,50G
+0,kube-worker02,TEMPLATE_PLACEHOLDER,NODE_PLACEHOLDER,0,2,2048,50G''',
                                 
                                 'medium-single-master': '''vmid,vm_name,template,node,ip,cores,memory,disk_size
 0,kube-master,TEMPLATE_PLACEHOLDER,NODE_PLACEHOLDER,0,4,8192,100G
@@ -371,10 +371,7 @@ pipeline {
         
         stage('Verify Kubernetes Cluster') {
             when {
-                allOf {
-                    expression { params.run_ansible }
-                    expression { !params.skip_verification }
-                }
+                expression { params.run_ansible }
             }
             steps {
                 dir("${ANSIBLE_DIR}") {
