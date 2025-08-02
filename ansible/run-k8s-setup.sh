@@ -18,6 +18,7 @@ CSV_FILE="${CSV_FILE:-../terraform/vms.csv}"
 INVENTORY_SCRIPT="./generate_inventory.py"
 PLAYBOOK="./playbooks/k8s-cluster-setup.yml"
 INVENTORY_FILE="inventory/k8s-inventory.json"
+INVENTORY_SCRIPT="./inventory.py"
 
 # Functions
 log_info() {
@@ -115,22 +116,25 @@ run_playbook() {
     
     log_info "Testing inventory and connectivity first..."
     
+    # Set environment variable for dynamic inventory script
+    export ANSIBLE_INVENTORY_FILE="$INVENTORY_FILE"
+    
     # Test inventory parsing
-    ansible-inventory -i "$INVENTORY_FILE" --list > /dev/null || {
+    ansible-inventory -i "$INVENTORY_SCRIPT" --list > /dev/null || {
         log_error "Failed to parse inventory file"
         exit 1
     }
     
     # Test basic connectivity with proper timeout (exclude phantom hosts)
     log_info "Testing connectivity to all hosts..."
-    ansible k8s_masters:k8s_workers -i "$INVENTORY_FILE" -m ping --timeout=30 -o \
+    ansible k8s_masters:k8s_workers -i "$INVENTORY_SCRIPT" -m ping --timeout=30 -o \
         -e ansible_ssh_common_args="-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null" || {
         log_warning "Some hosts may not be reachable yet, continuing anyway..."
     }
     
     # Run the playbook with generated inventory
     ansible-playbook \
-        -i "$INVENTORY_FILE" \
+        -i "$INVENTORY_SCRIPT" \
         "$PLAYBOOK" \
         -v \
         -e ansible_ssh_common_args="-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null" \

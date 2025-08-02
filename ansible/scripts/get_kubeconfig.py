@@ -33,9 +33,13 @@ def get_kubeconfig(inventory_file, output_file=None):
             print(f"Retrieving KUBECONFIG from {first_master} ({master_ip})...")
             
             # Use ansible to get the kubeconfig content
+            # Set environment variable for dynamic inventory
+            import os
+            os.environ['ANSIBLE_INVENTORY_FILE'] = inventory_file
+            
             cmd = [
                 'ansible', first_master, 
-                '-i', inventory_file,
+                '-i', '../inventory.py',
                 '-m', 'shell',
                 '-a', 'cat /root/.kube/config',
                 '--timeout=30'

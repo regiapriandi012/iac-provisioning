@@ -19,6 +19,7 @@ pipeline {
         ANSIBLE_DIR = 'ansible'
         ANSIBLE_CONFIG = "${ANSIBLE_DIR}/ansible.cfg"
         INVENTORY_FILE = 'inventory/k8s-inventory.json'
+        INVENTORY_SCRIPT = 'inventory.py'
     }
 
     stages {
@@ -150,6 +151,7 @@ pipeline {
                             
                             # Quick comprehensive check (replaces multiple slow steps)
                             echo "Running comprehensive cluster check..."
+                            export ANSIBLE_INVENTORY_FILE=${INVENTORY_FILE}
                             python3 scripts/quick_cluster_check.py ${INVENTORY_FILE}
                             
                             if [ $? -eq 0 ]; then
@@ -163,7 +165,8 @@ pipeline {
                                 python3 -m json.tool ${INVENTORY_FILE} || echo "JSON validation failed!"
                                 
                                 echo "Debug: Manual ansible ping test"
-                                ansible all -i ${INVENTORY_FILE} -m ping --timeout=20 -v || true
+                                export ANSIBLE_INVENTORY_FILE=${INVENTORY_FILE}
+                                ansible all -i ${INVENTORY_SCRIPT} -m ping --timeout=20 -v || true
                                 
                                 exit 1
                             fi
@@ -218,8 +221,9 @@ pipeline {
                         
                         if [ -n "$FIRST_MASTER" ]; then
                             echo "Testing kubectl on $FIRST_MASTER..."
-                            ansible $FIRST_MASTER -i ${INVENTORY_FILE} -m shell -a "kubectl get nodes" --timeout=30
-                            ansible $FIRST_MASTER -i ${INVENTORY_FILE} -m shell -a "kubectl get pods --all-namespaces" --timeout=30
+                            export ANSIBLE_INVENTORY_FILE=${INVENTORY_FILE}
+                            ansible $FIRST_MASTER -i ${INVENTORY_SCRIPT} -m shell -a "kubectl get nodes" --timeout=30
+                            ansible $FIRST_MASTER -i ${INVENTORY_SCRIPT} -m shell -a "kubectl get pods --all-namespaces" --timeout=30
                         else
                             echo "No master nodes found in inventory"
                             exit 1
