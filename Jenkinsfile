@@ -50,15 +50,13 @@ pipeline {
                     script {
                         // Generate CSV based on preset or custom input
                         if (params.cluster_preset == 'custom') {
+                            // Write custom CSV content to file
+                            writeFile file: "vms.csv", text: params.vm_csv_content
+                            
                             sh '''
                                 echo "=========================================="
                                 echo "Using custom VM configuration..."
                                 echo "=========================================="
-                                
-                                # Create vms.csv from Jenkins parameter
-                                cat > vms.csv << 'EOF'
-${params.vm_csv_content}
-EOF
                             '''
                         } else {
                             // Use preset configurations
@@ -84,7 +82,7 @@ EOF
                             ]
                             
                             def selectedConfig = presetConfigs[params.cluster_preset]
-                            writeFile file: "${TERRAFORM_DIR}/vms.csv", text: selectedConfig
+                            writeFile file: "vms.csv", text: selectedConfig
                             
                             sh """
                                 echo "=========================================="
@@ -98,9 +96,19 @@ EOF
                             cat vms.csv
                             echo ""
                             
-                            # Validate CSV format
-                            if ! head -1 vms.csv | grep -q "vmid,vm_name,template,node,ip,cores,memory,disk_size"; then
+                            # Debug: Show header and check format
+                            echo "CSV Header:"
+                            head -1 vms.csv | cat -A
+                            echo ""
+                            
+                            # Validate CSV format (trim whitespace)
+                            HEADER=$(head -1 vms.csv | tr -d '\\r' | tr -d ' ')
+                            EXPECTED="vmid,vm_name,template,node,ip,cores,memory,disk_size"
+                            
+                            if [ "$HEADER" != "$EXPECTED" ]; then
                                 echo "ERROR: Invalid CSV header format!"
+                                echo "Expected: $EXPECTED"
+                                echo "Got:      $HEADER"
                                 exit 1
                             fi
                             
