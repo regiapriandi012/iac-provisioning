@@ -1,61 +1,26 @@
 #!/bin/bash
 set -e
 
-echo "Starting OPTIMIZED Kubernetes cluster deployment..."
+echo "Starting Kubernetes cluster deployment..."
 echo "=================================================="
 
 INVENTORY_FILE="inventory/k8s-inventory.json"
 export ANSIBLE_CONFIG="./ansible.cfg"
-
-# Function to run playbook with performance monitoring
-run_playbook() {
-    local playbook=$1
-    local description=$2
-    local extra_args="${3:-}"
-    
-    echo ""
-    echo "Running: $description"
-    echo "   Playbook: $playbook"
-    START_TIME=$(date +%s)
-    
-    # Run with optimized settings
-    ansible-playbook \
-        -i inventory.py \
-        playbooks/$playbook \
-        --forks 50 \
-        --timeout 30 \
-        $extra_args
-    
-    END_TIME=$(date +%s)
-    DURATION=$((END_TIME - START_TIME))
-    echo "   Completed in ${DURATION} seconds"
-    
-    return 0
-}
-
-# Function to run playbooks in parallel where possible
-run_parallel_playbooks() {
-    echo ""
-    echo "Running parallel playbooks..."
-    
-    # Run non-dependent playbooks in parallel
-    (
-        run_playbook "01-common.yml" "Common setup (parallel)" &
-        PID1=$!
-        
-        run_playbook "07-docker.yml" "Docker installation (parallel)" &
-        PID2=$!
-        
-        # Wait for parallel tasks
-        wait $PID1 $PID2
-    )
-}
 
 # Pre-flight checks
 echo "Pre-flight checks..."
 if [ ! -f "$INVENTORY_FILE" ]; then
     echo "ERROR: Inventory file not found: $INVENTORY_FILE"
     exit 1
+fi
+
+# Check if we have the single playbook or multiple playbooks
+if [ -f "playbooks/k8s-cluster-setup.yml" ]; then
+    echo "Using single comprehensive playbook..."
+    SINGLE_PLAYBOOK=true
+else
+    echo "Using multiple playbooks..."
+    SINGLE_PLAYBOOK=false
 fi
 
 # Optimize fact gathering
@@ -67,34 +32,58 @@ echo ""
 echo "Starting deployment sequence..."
 TOTAL_START=$(date +%s)
 
-# Phase 1: Parallel preparation
-run_parallel_playbooks
-
-# Phase 2: Sequential Kubernetes setup (must be in order)
-echo ""
-echo "Kubernetes setup phase..."
-
-# Run critical playbooks in sequence with monitoring
-run_playbook "02-kubernetes-prereq.yml" "Kubernetes prerequisites"
-run_playbook "03-kubernetes-install.yml" "Kubernetes installation"
-run_playbook "04-kubernetes-master.yml" "Master node configuration"
-run_playbook "05-kubernetes-workers.yml" "Worker nodes join"
-
-# Phase 3: Parallel post-setup
-echo ""
-echo "Running post-setup tasks in parallel..."
-(
-    run_playbook "06-kubernetes-addons.yml" "Kubernetes addons" &
-    PID1=$!
+if [ "$SINGLE_PLAYBOOK" = "true" ]; then
+    # Run the single comprehensive playbook
+    echo "Running Kubernetes cluster setup playbook..."
+    START_TIME=$(date +%s)
     
-    # Network plugin with retry logic
-    echo "   Installing Cilium network plugin..."
-    ansible-playbook -i inventory.py playbooks/08-cilium.yml --forks 50 || \
-    ansible-playbook -i inventory.py playbooks/08-cilium.yml --forks 50 &
-    PID2=$!
+    ansible-playbook \
+        -i inventory.py \
+        playbooks/k8s-cluster-setup.yml \
+        --forks 50 \
+        --timeout 30
     
-    wait $PID1 $PID2
-)
+    END_TIME=$(date +%s)
+    DURATION=$((END_TIME - START_TIME))
+    echo "Playbook completed in ${DURATION} seconds"
+else
+    # Original multi-playbook logic (kept for compatibility)
+    # Function to run playbook with performance monitoring
+    run_playbook() {
+        local playbook=$1
+        local description=$2
+        local extra_args="${3:-}"
+        
+        echo ""
+        echo "Running: $description"
+        echo "   Playbook: $playbook"
+        START_TIME=$(date +%s)
+        
+        # Run with optimized settings
+        ansible-playbook \
+            -i inventory.py \
+            playbooks/$playbook \
+            --forks 50 \
+            --timeout 30 \
+            $extra_args
+        
+        END_TIME=$(date +%s)
+        DURATION=$((END_TIME - START_TIME))
+        echo "   Completed in ${DURATION} seconds"
+        
+        return 0
+    }
+    
+    # Run playbooks in sequence
+    run_playbook "01-common.yml" "Common setup"
+    run_playbook "02-kubernetes-prereq.yml" "Kubernetes prerequisites"
+    run_playbook "03-kubernetes-install.yml" "Kubernetes installation"
+    run_playbook "04-kubernetes-master.yml" "Master node configuration"
+    run_playbook "05-kubernetes-workers.yml" "Worker nodes join"
+    run_playbook "06-kubernetes-addons.yml" "Kubernetes addons"
+    run_playbook "07-docker.yml" "Docker installation"
+    run_playbook "08-cilium.yml" "Cilium network plugin"
+fi
 
 # Final verification
 echo ""
