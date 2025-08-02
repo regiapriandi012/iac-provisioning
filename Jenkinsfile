@@ -97,14 +97,30 @@ pipeline {
                         # Activate venv and install required packages
                         . ${WORKSPACE}/venv/bin/activate
                         
-                        # Check if asyncssh is already installed
+                        # Check if packages are already installed
+                        NEED_INSTALL=false
                         if ! python3 -c "import asyncssh" 2>/dev/null; then
+                            NEED_INSTALL=true
+                        fi
+                        if ! python3 -c "import mitogen" 2>/dev/null; then
+                            NEED_INSTALL=true
+                        fi
+                        
+                        if [ "$NEED_INSTALL" = "true" ]; then
                             echo "Installing required Python packages..."
                             pip install --upgrade pip
-                            pip install asyncssh paramiko
+                            pip install asyncssh paramiko mitogen
                         else
                             echo "Python packages already installed"
                         fi
+                        
+                        # Setup Mitogen for Ansible (ULTRA-FAST performance)
+                        cd ${ANSIBLE_DIR}
+                        if [ -f "mitogen_ansible_cfg.py" ]; then
+                            echo "Configuring Mitogen for ULTRA-FAST Ansible performance..."
+                            python3 mitogen_ansible_cfg.py || true
+                        fi
+                        cd ${WORKSPACE}
                         
                         # Cache the venv for future use
                         if [ "$USE_CACHE" = "true" ]; then
