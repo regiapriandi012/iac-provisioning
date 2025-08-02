@@ -97,10 +97,52 @@
         - { name: 'net.bridge.bridge-nf-call-ip6tables', value: '1' }
         - { name: 'net.ipv4.ip_forward', value: '1' }
 
+    - name: Install prerequisites for Docker repo (RedHat-based)
+      yum:
+        name:
+          - yum-utils
+          - device-mapper-persistent-data
+          - lvm2
+        state: present
+      when: detected_os_family == "RedHat"
+
+    - name: Add Docker repository (RedHat-based)
+      yum_repository:
+        name: docker-ce-stable
+        description: Docker CE Stable - $basearch
+        baseurl: https://download.docker.com/linux/centos/$releasever/$basearch/stable
+        gpgcheck: yes
+        gpgkey: https://download.docker.com/linux/centos/gpg
+        enabled: yes
+      when: detected_os_family == "RedHat"
+
     - name: Update package cache (RedHat-based)
       yum:
         update_cache: yes
       when: detected_os_family == "RedHat"
+
+    - name: Install prerequisites for Docker repo (Debian-based)
+      apt:
+        name:
+          - apt-transport-https
+          - ca-certificates
+          - curl
+          - gnupg
+          - lsb-release
+        state: present
+      when: detected_os_family == "Debian"
+
+    - name: Add Docker GPG key (Debian-based)
+      apt_key:
+        url: https://download.docker.com/linux/debian/gpg
+        state: present
+      when: detected_os_family == "Debian"
+
+    - name: Add Docker repository (Debian-based)
+      apt_repository:
+        repo: "deb [arch=amd64] https://download.docker.com/linux/debian {{ ansible_distribution_release }} stable"
+        state: present
+      when: detected_os_family == "Debian"
 
     - name: Update package cache (Debian-based)
       apt:
