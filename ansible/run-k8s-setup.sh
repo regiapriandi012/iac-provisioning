@@ -15,7 +15,7 @@ NC='\033[0m' # No Color
 
 # Configuration
 CSV_FILE="${CSV_FILE:-../terraform/vms.csv}"
-INVENTORY_SCRIPT="./generate_inventory.py"
+# Removed - not used anymore
 PLAYBOOK="./playbooks/k8s-cluster-setup.yml"
 INVENTORY_FILE="inventory/k8s-inventory.json"
 INVENTORY_SCRIPT="./inventory.py"
