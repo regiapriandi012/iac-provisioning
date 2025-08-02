@@ -2,14 +2,14 @@ pipeline {
     agent any
     
     parameters {
-        separator(name: 'ansible_separator', sectionHeader: 'Ansible Configuration')
+        // ===== Ansible Configuration =====
         booleanParam(
             name: 'run_ansible',
             defaultValue: true,
             description: 'Deploy Kubernetes cluster using Ansible after VM provisioning'
         )
         
-        separator(name: 'provision_separator', sectionHeader: 'Provision Kubernetes')
+        // ===== Provision Kubernetes =====
         choice(
             name: 'cluster_preset',
             choices: ['small-single-master', 'medium-single-master', 'ha-3-masters', 'custom'],
@@ -34,7 +34,7 @@ pipeline {
             description: 'Custom VM specifications (CSV format) - used when cluster_preset is "custom"'
         )
         
-        separator(name: 'advanced_separator', sectionHeader: 'Advanced Options')
+        // ===== Advanced Options =====
         booleanParam(
             name: 'use_cache',
             defaultValue: true,
