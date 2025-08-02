@@ -52,7 +52,18 @@ def fast_vm_readiness_check(inventory_file, max_retries=3, retry_delay=15):
     """Fast VM readiness check with smart retry logic"""
     try:
         with open(inventory_file, 'r') as f:
-            inv = json.load(f)
+            content = f.read().strip()
+            
+            # Handle case where terraform output is JSON string (escaped)
+            if content.startswith('"') and content.endswith('"'):
+                # Remove quotes and unescape
+                content = json.loads(content)
+            
+            # Parse the actual JSON
+            if isinstance(content, str):
+                inv = json.loads(content)
+            else:
+                inv = content
         
         # Extract all hosts and IPs
         hosts_to_check = []
