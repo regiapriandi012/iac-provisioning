@@ -461,6 +461,7 @@ pipeline {
                             def pythonScript = '''
 import json
 import sys
+import os
 
 # Read inputs
 build_num = sys.argv[1]
@@ -470,9 +471,30 @@ masters = sys.argv[4]
 workers = sys.argv[5]
 build_url = sys.argv[6]
 
+print(f"Debug - Build: {build_num}")
+print(f"Debug - Duration: {duration}")
+print(f"Debug - Endpoint: {endpoint}")
+print(f"Debug - Masters: {masters}")
+print(f"Debug - Workers: {workers}")
+
 # Read kubeconfig
-with open('kubeconfig/admin.conf', 'r') as f:
+kubeconfig_path = 'kubeconfig/admin.conf'
+if not os.path.exists(kubeconfig_path):
+    print(f"ERROR: {kubeconfig_path} does not exist!")
+    print(f"Current directory: {os.getcwd()}")
+    print(f"Directory contents: {os.listdir('.')}")
+    if os.path.exists('kubeconfig'):
+        print(f"Kubeconfig dir contents: {os.listdir('kubeconfig')}")
+    sys.exit(1)
+
+with open(kubeconfig_path, 'r') as f:
     kubeconfig = f.read()
+
+print(f"Debug - KUBECONFIG length: {len(kubeconfig)}")
+print(f"Debug - KUBECONFIG first 100 chars: {kubeconfig[:100]}")
+
+# For Slack, we need to escape the content properly
+# But since we're using json.dump, it should handle it automatically
 
 # Create the Slack message
 message = {
@@ -490,7 +512,7 @@ message = {
             "fields": [
                 {"type": "mrkdwn", "text": f"*Build:* #{build_num}"},
                 {"type": "mrkdwn", "text": f"*Duration:* {duration}"},
-                {"type": "mrkdwn", "text": f"*Cluster Endpoint:* `{endpoint}`"},
+                {"type": "mrkdwn", "text": f"*Cluster Endpoint:* `{endpoint}`" if endpoint else "*Cluster Endpoint:* Not found"},
                 {"type": "mrkdwn", "text": f"*Nodes:* {masters} masters, {workers} workers"}
             ]
         },
@@ -515,18 +537,38 @@ message = {
 # Write to file
 with open('slack_message.json', 'w') as f:
     json.dump(message, f)
+
+print("Debug - Slack message written to slack_message.json")
+
+# Also write a debug version to see what's happening
+with open('debug_kubeconfig.txt', 'w') as f:
+    f.write(kubeconfig)
+print("Debug - KUBECONFIG written to debug_kubeconfig.txt")
 '''
                             
                             writeFile file: "format_slack.py", text: pythonScript
                             
                             sh """#!/bin/bash
+                                # Debug: Check if kubeconfig exists
+                                echo "Checking kubeconfig file:"
+                                ls -la kubeconfig/admin.conf || echo "Kubeconfig file not found!"
+                                echo ""
+                                echo "First 5 lines of kubeconfig:"
+                                head -5 kubeconfig/admin.conf || echo "Cannot read kubeconfig!"
+                                echo ""
+                                
                                 # Run Python script to format the message
                                 python3 format_slack.py "${BUILD_NUMBER}" "${buildDuration}" "${clusterEndpoint}" "${masterCount}" "${workerCount}" "${BUILD_URL}"
                                 
                                 # Debug: Check the generated JSON
-                                echo "Generated Slack message:"
-                                cat slack_message.json | head -c 500
-                                echo "..."
+                                echo ""
+                                echo "Generated Slack message (first 1000 chars):"
+                                cat slack_message.json | head -c 1000
+                                echo ""
+                                echo ""
+                                echo "Debug kubeconfig content:"
+                                cat debug_kubeconfig.txt | head -20 || echo "No debug kubeconfig"
+                                echo ""
                                 
                                 # Send to Slack
                                 curl -X POST ${SLACK_WEBHOOK_URL} \
@@ -537,7 +579,7 @@ with open('slack_message.json', 'w') as f:
                                 || echo "Failed to send to Slack"
                                 
                                 # Cleanup
-                                rm -f slack_message.json format_slack.py
+                                rm -f slack_message.json format_slack.py debug_kubeconfig.txt
                             """
                         }
                     }
