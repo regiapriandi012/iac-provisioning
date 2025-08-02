@@ -498,7 +498,7 @@ pipeline {
       "type": "section",
       "text": {
         "type": "mrkdwn",
-        "text": "*KUBECONFIG Setup Instructions:*\\n\`\`\`bash\\nmkdir -p ~/.kube\\ncat > ~/.kube/config << 'KUBECONFIG_EOF'\\n${KUBECONFIG_CONTENT}\\nKUBECONFIG_EOF\\nchmod 600 ~/.kube/config\\nkubectl get nodes\`\`\`"
+        "text": "*KUBECONFIG Setup Instructions:*\\n```bash\\nmkdir -p ~/.kube\\ncat > ~/.kube/config << 'KUBECONFIG_EOF'\\n${KUBECONFIG_CONTENT}\\nKUBECONFIG_EOF\\nchmod 600 ~/.kube/config\\nkubectl get nodes```"
       }
     },
     {
