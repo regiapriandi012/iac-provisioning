@@ -480,7 +480,7 @@ pipeline {
         },
         {
           "type": "mrkdwn",
-          "text": "*Cluster Endpoint:* \`${clusterEndpoint}\`"
+          "text": "*Cluster Endpoint:* `${clusterEndpoint}`"
         },
         {
           "type": "mrkdwn",
@@ -495,7 +495,7 @@ pipeline {
       "type": "section",
       "text": {
         "type": "mrkdwn",
-        "text": "*KUBECONFIG Setup Instructions:*\\n\`\`\`bash\\nmkdir -p ~/.kube\\ncat > ~/.kube/config << 'EOF'\\n${kubeconfigEscaped}\\nEOF\\nchmod 600 ~/.kube/config\\nkubectl get nodes\`\`\`"
+        "text": "*KUBECONFIG Setup Instructions:*\\n```bash\\nmkdir -p ~/.kube\\ncat > ~/.kube/config << 'EOF'\\n${kubeconfigEscaped}\\nEOF\\nchmod 600 ~/.kube/config\\nkubectl get nodes```"
       }
     },
     {
