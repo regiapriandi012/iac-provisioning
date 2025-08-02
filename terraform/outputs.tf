@@ -100,24 +100,32 @@ output "ansible_inventory_json" {
         control_plane_endpoint = "${local.first_master_ip}:6443"
       })
     }
-    kube_masters = {
+    k8s_masters = {
       hosts = {
         for k, v in local.vm_data : v.vm_name_final => {
           ansible_host = replace(v.ip_address, "/.*", "")
           vmid = v.vmid
           node = v.node
           original_name = v.vm_name_original
+          template = "t-centos9-86"
         } if can(regex("master", lower(v.vm_name_original)))
       }
     }
-    kube_workers = {
+    k8s_workers = {
       hosts = {
         for k, v in local.vm_data : v.vm_name_final => {
           ansible_host = replace(v.ip_address, "/.*", "")
           vmid = v.vmid
           node = v.node
           original_name = v.vm_name_original
+          template = "t-centos9-86"
         } if can(regex("worker", lower(v.vm_name_original)))
+      }
+    }
+    k8s_cluster = {
+      children = {
+        k8s_masters = {}
+        k8s_workers = {}
       }
     }
   })
