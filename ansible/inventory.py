@@ -52,9 +52,12 @@ def main():
                             # Add host vars to _meta
                             for host, host_vars in group_data['hosts'].items():
                                 output['_meta']['hostvars'][host] = host_vars
-                                # Also inherit all vars
+                                # Also inherit all vars EXCEPT ansible_ssh_common_args (handled in ansible.cfg)
                                 if 'all' in inventory and 'vars' in inventory['all']:
-                                    output['_meta']['hostvars'][host].update(inventory['all']['vars'])
+                                    all_vars = inventory['all']['vars'].copy()
+                                    # Remove SSH args to avoid conflict with ansible.cfg
+                                    all_vars.pop('ansible_ssh_common_args', None)
+                                    output['_meta']['hostvars'][host].update(all_vars)
                         elif 'children' in group_data:
                             # Parent group with children
                             output[group_name] = {
