@@ -90,7 +90,8 @@ pipeline {
                                 
                                 # Generate inventory from terraform output (dynamic)
                                 cd ../terraform
-                                terraform output ansible_inventory_json > ../ansible/${INVENTORY_FILE}
+                                # Terraform output returns escaped JSON string, need to decode it
+                                terraform output -raw ansible_inventory_json > ../ansible/${INVENTORY_FILE}
                                 cd ../ansible
                                 
                                 echo "Verifying generated inventory JSON:"
