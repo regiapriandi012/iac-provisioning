@@ -88,8 +88,10 @@ pipeline {
                                 # Ensure inventory directory exists
                                 mkdir -p inventory
                                 
-                                # Generate inventory directly using our simple generator
-                                python3 generate_simple_inventory.py ../terraform/vms.csv > ${INVENTORY_FILE}
+                                # Generate inventory from terraform output (dynamic)
+                                cd ../terraform
+                                terraform output ansible_inventory_json > ../ansible/${INVENTORY_FILE}
+                                cd ../ansible
                                 
                                 echo "Verifying generated inventory JSON:"
                                 python3 -m json.tool ${INVENTORY_FILE}
