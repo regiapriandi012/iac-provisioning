@@ -256,11 +256,25 @@
   vars:
     haproxy_stats_port: 8404
   tasks:
-    - name: Install HAProxy (only for HA clusters)
+    - name: Install packages for VIP management (only for HA clusters)
       package:
-        name: haproxy
+        name:
+          - haproxy
+          - keepalived
         state: present
       when: is_ha_cluster
+
+    - name: Configure VIP on primary interface
+      shell: |
+        # Get primary network interface
+        PRIMARY_IF=$(ip route | grep default | awk '{print $5}' | head -n1)
+        # Add VIP as secondary IP if not exists
+        if ! ip addr show $PRIMARY_IF | grep -q "{{ haproxy_vip }}/32"; then
+          ip addr add {{ haproxy_vip }}/32 dev $PRIMARY_IF
+        fi
+      when: 
+        - is_ha_cluster
+        - inventory_hostname == groups['k8s_masters'][0]
 
     - name: Configure HAProxy for Kubernetes API
       template:

@@ -83,6 +83,7 @@ storage_pool    = "local-lvm"
 
 ### VM Specifications (terraform/vms.csv)
 
+**Single Master Setup:**
 ```csv
 vmid,vm_name,template,node,ip,cores,memory,disk_size
 0,kube-master,debian-12,node1,0,4,8192,50G
@@ -90,7 +91,20 @@ vmid,vm_name,template,node,ip,cores,memory,disk_size
 0,kube-worker02,debian-12,node1,0,4,8192,100G
 ```
 
-**Note**: Use `0` for auto-assignment of VMID and IP addresses
+**Multi-Master HA Setup:**
+```csv
+vmid,vm_name,template,node,ip,cores,memory,disk_size
+0,kube-master01,debian-12,node1,0,4,8192,50G
+0,kube-master02,debian-12,node1,0,4,8192,50G
+0,kube-master03,debian-12,node1,0,4,8192,50G
+0,kube-worker01,debian-12,node1,0,4,8192,100G
+0,kube-worker02,debian-12,node1,0,4,8192,100G
+```
+
+**Note**: 
+- Use `0` for auto-assignment of VMID and IP addresses
+- For HA setup, the first IP (base-1) is reserved for HAProxy VIP
+- Example: If base IP is 10, then VIP=9, master1=10, master2=11, etc.
 
 ## 🔄 Workflow
 
