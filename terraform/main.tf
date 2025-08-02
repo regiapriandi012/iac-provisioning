@@ -26,30 +26,18 @@ resource "random_string" "vm_suffix" {
   length  = 12
   special = false
   upper   = false
-  
-  keepers = {
-    vm_count = length(csvdecode(file(var.vm_csv_file)))
-  }
 }
 
 # Generate base VMID untuk sequential assignment
 resource "random_integer" "vmid_base" {
   min = 10000
   max = 19000
-  
-  keepers = {
-    vm_count = length([for vm in csvdecode(file(var.vm_csv_file)) : vm if tonumber(vm.vmid) == 0])
-  }
 }
 
 # Generate base IP untuk sequential assignment
 resource "random_integer" "ip_base" {
   min = 30
   max = 200
-  
-  keepers = {
-    vm_count = length([for vm in csvdecode(file(var.vm_csv_file)) : vm if vm.ip == "0"])
-  }
 }
 
 # Local untuk memproses data VM dengan hybrid approach
