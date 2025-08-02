@@ -329,17 +329,25 @@ pipeline {
                             
                             # Check if inventory has hosts
                             if [ -f "${INVENTORY_FILE}" ]; then
-                                HOST_COUNT=$(python3 -c "import json; data=json.load(open('${INVENTORY_FILE}')); print(len(data.get('all', {}).get('hosts', {})))" 2>/dev/null || echo "0")
+                                # Use the count script to check hosts
+                                HOST_COUNT=$(python3 scripts/count_inventory_hosts.py ${INVENTORY_FILE} 2>/dev/null || echo "0")
                                 
                                 if [ "$HOST_COUNT" = "0" ]; then
                                     echo "ERROR: No hosts found in inventory. Cannot deploy Kubernetes."
                                     echo "Please check that VMs were successfully created by Terraform."
+                                    echo ""
+                                    echo "Inventory details:"
+                                    python3 scripts/count_inventory_hosts.py ${INVENTORY_FILE} --details || cat ${INVENTORY_FILE}
                                     exit 1
                                 fi
                                 
-                                echo "Found $HOST_COUNT hosts in inventory. Proceeding with deployment..."
+                                echo "Found $HOST_COUNT hosts in inventory:"
+                                python3 scripts/count_inventory_hosts.py ${INVENTORY_FILE} --details
+                                echo ""
+                                echo "Proceeding with deployment..."
                             else
                                 echo "ERROR: Inventory file not found at ${INVENTORY_FILE}"
+                                ls -la inventory/
                                 exit 1
                             fi
                             
