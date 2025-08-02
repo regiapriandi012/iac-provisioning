@@ -153,10 +153,33 @@ class UltraFastVMChecker:
     def run_parallel_checks(self):
         """Run checks in parallel batches"""
         inventory = self.load_inventory()
-        all_hosts = inventory.get('all', {}).get('hosts', {})
+        
+        # Try different inventory structures
+        all_hosts = {}
+        
+        # First try standard structure (all.hosts)
+        if 'all' in inventory and 'hosts' in inventory['all']:
+            all_hosts.update(inventory['all']['hosts'])
+        
+        # Also check k8s_masters and k8s_workers
+        if 'k8s_masters' in inventory and 'hosts' in inventory['k8s_masters']:
+            all_hosts.update(inventory['k8s_masters']['hosts'])
+            
+        if 'k8s_workers' in inventory and 'hosts' in inventory['k8s_workers']:
+            all_hosts.update(inventory['k8s_workers']['hosts'])
+        
+        # Debug: show what we found
+        print(f"Found hosts in: all={len(inventory.get('all', {}).get('hosts', {}))}, "
+              f"k8s_masters={len(inventory.get('k8s_masters', {}).get('hosts', {}))}, "
+              f"k8s_workers={len(inventory.get('k8s_workers', {}).get('hosts', {}))}")
         
         if not all_hosts:
             print("No hosts found in inventory")
+            print("Inventory structure:")
+            for key in inventory:
+                print(f"  {key}: {type(inventory[key])}")
+                if isinstance(inventory[key], dict) and 'hosts' in inventory[key]:
+                    print(f"    - has 'hosts' with {len(inventory[key]['hosts'])} entries")
             return False
         
         method = "async SSH (asyncssh)" if HAS_ASYNCSSH else "sync SSH (sshpass)"
