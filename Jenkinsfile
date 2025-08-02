@@ -104,34 +104,35 @@ pipeline {
                         }
                     }
                 }
-                stage('Wait for VMs') {
+                stage('Smart VM Readiness Check') {
                     steps {
                         sh '''
-                            echo "Waiting for VMs to be ready..."
-                            echo "Initial wait: 60 seconds for VM boot and SSH service startup"
-                            sleep 60
+                            echo "🚀 Smart VM Readiness Check (replaces slow netcat checking)"
+                            echo "⏱️  This should complete in ~15-30 seconds instead of 2+ minutes"
                             
-                            echo "Testing VM readiness..."
                             cd ${ANSIBLE_DIR}
-                            python3 scripts/get_host_ips.py ${INVENTORY_FILE} | while read ip; do
-                                echo "Waiting for SSH on $ip..."
-                                for i in 1 2 3 4 5 6 7 8 9 10 11 12; do
-                                    if timeout 5 nc -z $ip 22 2>/dev/null; then
-                                        echo "  SSH ready on $ip"
-                                        break
-                                    else
-                                        echo "  Attempt $i/12: SSH not ready on $ip, waiting 10s..."
-                                        sleep 10
-                                    fi
-                                done
-                            done
+                            
+                            # Give VMs a moment to finish booting (much shorter than before)
+                            echo "📡 Brief wait for VM initialization (20s)..."
+                            sleep 20
+                            
+                            # Use our smart readiness checker
+                            echo "🔍 Running smart parallel readiness check..."
+                            python3 scripts/smart_vm_ready.py ${INVENTORY_FILE} 3
+                            
+                            if [ $? -eq 0 ]; then
+                                echo "✅ All VMs ready! Proceeding to connectivity test..."
+                            else
+                                echo "❌ VM readiness check failed. Check logs above."
+                                exit 1
+                            fi
                         '''
                     }
                 }
             }
         }
         
-        stage('Test Connectivity') {
+        stage('Final Connectivity Verification') {
             when {
                 expression { params.run_ansible }
             }
@@ -139,49 +140,27 @@ pipeline {
                 dir("${ANSIBLE_DIR}") {
                     script {
                         sh '''
-                            echo "Testing VM connectivity..."
+                            echo "🔍 Final connectivity verification and cluster analysis..."
                             
-                            # Debug: Show inventory content
-                            echo "Current inventory content:"
-                            cat ${INVENTORY_FILE}
-                            echo ""
-                            echo "Validating JSON format:"
-                            python3 -m json.tool ${INVENTORY_FILE} || echo "JSON validation failed!"
-                            echo ""
-                            echo "Looking for problematic characters:"
-                            grep -n "{" ${INVENTORY_FILE} | head -10 || echo "No { characters found"
-                            echo ""
+                            # Quick comprehensive check (replaces multiple slow steps)
+                            echo "🚀 Running comprehensive cluster check..."
+                            python3 scripts/quick_cluster_check.py ${INVENTORY_FILE}
                             
-                            # Test ping connectivity
-                            python3 scripts/get_host_ips.py ${INVENTORY_FILE} | while read ip; do
-                                echo "Testing connectivity to $ip..."
-                                timeout 10 ping -c 2 $ip || echo "Warning: $ip not responding"
-                            done
-                            
-                            echo "Testing Ansible connectivity..."
-                            # Retry mechanism for ansible ping
-                            for i in 1 2 3; do
-                                echo "Attempt $i/3: Testing ansible connectivity..."
+                            if [ $? -eq 0 ]; then
+                                echo "✅ All connectivity checks passed!"
+                                echo "🎯 Ready for Kubernetes deployment..."
+                            else
+                                echo "❌ Connectivity issues detected. Falling back to debug mode..."
                                 
-                                # Clean any potential formatting issues
-                                ansible-inventory -i ${INVENTORY_FILE} --list --yaml > /tmp/cleaned-inventory.yml
+                                # Only run detailed debug if quick check fails
+                                echo "📋 Debug: Inventory validation"
+                                python3 -m json.tool ${INVENTORY_FILE} || echo "JSON validation failed!"
                                 
-                                if ansible all -i /tmp/cleaned-inventory.yml -m ping --timeout=15; then
-                                    echo "All hosts are reachable!"
-                                    break
-                                else
-                                    echo "Some hosts not ready, waiting 30s before retry..."
-                                    sleep 30
-                                fi
+                                echo "📋 Debug: Manual ansible ping test"
+                                ansible all -i ${INVENTORY_FILE} -m ping --timeout=20 -v || true
                                 
-                                if [ $i -eq 3 ]; then
-                                    echo "Failed to connect to all hosts after 3 attempts"
-                                    echo "Debug: Listing all hosts from inventory:"
-                                    ansible-inventory -i ${INVENTORY_FILE} --list
-                                    ansible all -i /tmp/cleaned-inventory.yml -m ping --timeout=10 -v || true
-                                    exit 1
-                                fi
-                            done
+                                exit 1
+                            fi
                         '''
                     }
                 }
