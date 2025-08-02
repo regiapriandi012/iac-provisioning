@@ -70,17 +70,20 @@ pipeline {
         stage('Setup Environment') {
             steps {
                 script {
-                    sh '''
+                    // Set use_cache as environment variable for shell script
+                    env.USE_CACHE = params.use_cache.toString()
+                    
+                    sh '''#!/bin/bash
                         # Create cache directories if caching is enabled
-                        if [ "${params.use_cache}" = "true" ]; then
-                            mkdir -p ${CACHE_DIR}/{terraform,ansible,python}
+                        if [ "$USE_CACHE" = "true" ]; then
+                            mkdir -p ${CACHE_DIR}/terraform ${CACHE_DIR}/ansible ${CACHE_DIR}/python
                         fi
                         
                         # Setup Python virtual environment
                         echo "Setting up Python virtual environment..."
                         
                         # Check if venv exists in cache
-                        if [ "${params.use_cache}" = "true" ] && [ -d "${CACHE_DIR}/python/venv" ]; then
+                        if [ "$USE_CACHE" = "true" ] && [ -d "${CACHE_DIR}/python/venv" ]; then
                             echo "Using cached Python venv"
                             cp -r ${CACHE_DIR}/python/venv ${WORKSPACE}/venv || true
                         fi
@@ -104,13 +107,13 @@ pipeline {
                         fi
                         
                         # Cache the venv for future use
-                        if [ "${params.use_cache}" = "true" ]; then
+                        if [ "$USE_CACHE" = "true" ]; then
                             echo "Caching Python venv..."
                             cp -r ${WORKSPACE}/venv ${CACHE_DIR}/python/ || true
                         fi
                         
                         # Check Terraform cache
-                        if [ "${params.use_cache}" = "true" ] && [ -d "${TERRAFORM_DIR}" ]; then
+                        if [ "$USE_CACHE" = "true" ] && [ -d "${TERRAFORM_DIR}" ]; then
                             if [ -d "${CACHE_DIR}/terraform/.terraform" ]; then
                                 echo "Using cached Terraform providers"
                                 cp -r ${CACHE_DIR}/terraform/.terraform ${TERRAFORM_DIR}/ || true
@@ -248,7 +251,7 @@ pipeline {
                     script {
                         def startTime = System.currentTimeMillis()
                         
-                        sh '''
+                        sh '''#!/bin/bash
                             # Ensure we're using venv
                             . ${WORKSPACE}/venv/bin/activate
                             
@@ -342,7 +345,7 @@ pipeline {
             steps {
                 dir("${ANSIBLE_DIR}") {
                     script {
-                        sh '''
+                        sh '''#!/bin/bash
                             # Ensure we're using venv
                             . ${WORKSPACE}/venv/bin/activate
                             
