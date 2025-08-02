@@ -47,8 +47,11 @@ cd ../ansible
 1. Create Jenkins pipeline job
 2. Point to this repository
 3. Run pipeline with parameters:
+   - `clean_deployment`: true (destroy old VMs, create fresh ones) - **Default: true**
    - `run_ansible`: true (deploy Kubernetes)
    - `skip_verification`: false (verify cluster)
+
+**Note**: By default, Jenkins will always create new VMs and destroy old ones for clean deployment.
 
 ## 📁 Project Structure
 

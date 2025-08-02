@@ -3,6 +3,11 @@ pipeline {
     
     parameters {
         booleanParam(
+            name: 'clean_deployment',
+            defaultValue: true,
+            description: 'Destroy existing VMs before creating new ones (always create fresh VMs)'
+        )
+        booleanParam(
             name: 'run_ansible',
             defaultValue: true,
             description: 'Run Ansible after Terraform apply'
@@ -28,6 +33,46 @@ pipeline {
                 git branch: 'main', 
                     credentialsId: 'gitlab-credential', 
                     url: 'https://gitlab.labngoprek.my.id/root/iac-provision'
+            }
+        }
+        
+        stage('Clean Previous Deployment') {
+            when {
+                expression { params.clean_deployment }
+            }
+            steps {
+                dir("${TERRAFORM_DIR}") {
+                    script {
+                        sh '''
+                            echo "=========================================="
+                            echo "Destroying existing VMs for clean deployment..."
+                            echo "=========================================="
+                            
+                            # Check if terraform is initialized
+                            if [ -d ".terraform" ]; then
+                                # Check if there are any resources to destroy
+                                if terraform state list 2>/dev/null | grep -q "proxmox_vm_qemu"; then
+                                    echo "Found existing VMs, destroying..."
+                                    terraform destroy -auto-approve || true
+                                    
+                                    # Clean up state files for fresh start
+                                    rm -f terraform.tfstate terraform.tfstate.backup
+                                    echo "Terraform cleanup completed!"
+                                    
+                                    # Also clean up Ansible inventory
+                                    rm -rf ../ansible/inventory/*
+                                    echo "Ansible inventory cleaned!"
+                                else
+                                    echo "No existing VMs found in state"
+                                fi
+                            else
+                                echo "Terraform not initialized, skipping destroy"
+                            fi
+                            
+                            echo "Ready for fresh deployment!"
+                        '''
+                    }
+                }
             }
         }
         
@@ -306,8 +351,10 @@ pipeline {
             ==================== SUCCESS ====================
             Infrastructure deployment completed successfully!
             
+            Deployment Type: ${params.clean_deployment ? 'CLEAN (Fresh VMs)' : 'INCREMENTAL (Existing VMs)'}
+            
             What was deployed:
-            - VMs provisioned with Terraform
+            - VMs provisioned with Terraform ${params.clean_deployment ? '(all new)' : '(reused)'}
             - Kubernetes cluster configured with Ansible
             - Dynamic inventory generated automatically"""
             
