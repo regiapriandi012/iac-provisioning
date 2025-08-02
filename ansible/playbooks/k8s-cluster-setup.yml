@@ -136,7 +136,7 @@
     - name: Fix dpkg if interrupted (Debian-based)
       shell: dpkg --configure -a
       when: detected_os_family == "Debian"
-      ignore_errors: yes
+      ignore_errors: true
 
     - name: Install prerequisites for Docker repo (Debian-based)
       apt:
