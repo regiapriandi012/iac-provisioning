@@ -30,7 +30,22 @@ def analyze_cluster_os(inventory_file):
         os_distribution = {}
         total_nodes = 0
         
-        for host, vars in inv['_meta']['hostvars'].items():
+        # Extract host variables from all groups, not just _meta
+        hosts_data = {}
+        
+        # Check if _meta exists (old format)
+        if '_meta' in inv and 'hostvars' in inv['_meta']:
+            hosts_data = inv['_meta']['hostvars']
+        else:
+            # New format: extract from groups
+            for group_name, group_data in inv.items():
+                if group_name == 'all' or not isinstance(group_data, dict):
+                    continue
+                if 'hosts' in group_data:
+                    for host, host_vars in group_data['hosts'].items():
+                        hosts_data[host] = host_vars
+        
+        for host, vars in hosts_data.items():
             template = vars.get('template', 'unknown')
             os_family = detect_os_from_template(template)
             

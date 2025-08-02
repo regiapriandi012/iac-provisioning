@@ -49,7 +49,14 @@
       "service_cidr": "10.96.0.0/12",
       "kubernetes_version": "1.28.0",
       "container_runtime": "containerd",
-      "control_plane_endpoint": "10.200.0.142:6443"
+      "control_plane_endpoint": "10.200.0.142:6443",
+      "ansible_ssh_pipelining": true,
+      "ansible_ssh_retries": 5,
+      "ansible_timeout": 120,
+      "gather_timeout": 120,
+      "gather_facts": true,
+      "fact_caching": "memory",
+      "fact_caching_timeout": 300
     }
   }
 }
