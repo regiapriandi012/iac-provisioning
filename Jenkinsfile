@@ -7,13 +7,23 @@ pipeline {
             choices: ['custom', 'small-single-master', 'medium-single-master', 'ha-3-masters'],
             description: 'Choose a preset or select custom to use vm_csv_content'
         )
+        choice(
+            name: 'vm_template',
+            choices: ['t-debian-12', 't-ubuntu-22.04', 't-centos9-86', 't-rocky-9'],
+            description: 'VM template to use for all nodes'
+        )
+        string(
+            name: 'proxmox_node',
+            defaultValue: 'thinkcentre',
+            description: 'Proxmox node where VMs will be created'
+        )
         text(
             name: 'vm_csv_content',
             defaultValue: '''vmid,vm_name,template,node,ip,cores,memory,disk_size
-0,kube-master,t-centos9-86,thinkcentre,0,2,4096,32G
-0,kube-worker01,t-centos9-86,thinkcentre,0,2,4096,32G
-0,kube-worker02,t-centos9-86,thinkcentre,0,2,4096,32G''',
-            description: 'VM specifications in CSV format (used when cluster_preset is "custom")'
+0,kube-master,TEMPLATE_PLACEHOLDER,NODE_PLACEHOLDER,0,2,4096,32G
+0,kube-worker01,TEMPLATE_PLACEHOLDER,NODE_PLACEHOLDER,0,2,4096,32G
+0,kube-worker02,TEMPLATE_PLACEHOLDER,NODE_PLACEHOLDER,0,2,4096,32G''',
+            description: 'VM specifications in CSV format (used when cluster_preset is "custom"). TEMPLATE_PLACEHOLDER and NODE_PLACEHOLDER will be replaced with selected values.'
         )
         booleanParam(
             name: 'run_ansible',
@@ -49,47 +59,52 @@ pipeline {
                 dir("${TERRAFORM_DIR}") {
                     script {
                         // Generate CSV based on preset or custom input
+                        def csvContent = ""
+                        
                         if (params.cluster_preset == 'custom') {
-                            // Write custom CSV content to file
-                            writeFile file: "vms.csv", text: params.vm_csv_content
-                            
-                            sh '''
-                                echo "=========================================="
-                                echo "Using custom VM configuration..."
-                                echo "=========================================="
-                            '''
+                            // Use custom CSV content
+                            csvContent = params.vm_csv_content
                         } else {
-                            // Use preset configurations
+                            // Use preset configurations with placeholders
                             def presetConfigs = [
                                 'small-single-master': '''vmid,vm_name,template,node,ip,cores,memory,disk_size
-0,kube-master,t-centos9-86,thinkcentre,0,2,4096,50G
-0,kube-worker01,t-centos9-86,thinkcentre,0,2,4096,50G
-0,kube-worker02,t-centos9-86,thinkcentre,0,2,4096,50G''',
+0,kube-master,TEMPLATE_PLACEHOLDER,NODE_PLACEHOLDER,0,2,4096,50G
+0,kube-worker01,TEMPLATE_PLACEHOLDER,NODE_PLACEHOLDER,0,2,4096,50G
+0,kube-worker02,TEMPLATE_PLACEHOLDER,NODE_PLACEHOLDER,0,2,4096,50G''',
                                 
                                 'medium-single-master': '''vmid,vm_name,template,node,ip,cores,memory,disk_size
-0,kube-master,t-centos9-86,thinkcentre,0,4,8192,100G
-0,kube-worker01,t-centos9-86,thinkcentre,0,4,8192,100G
-0,kube-worker02,t-centos9-86,thinkcentre,0,4,8192,100G
-0,kube-worker03,t-centos9-86,thinkcentre,0,4,8192,100G''',
+0,kube-master,TEMPLATE_PLACEHOLDER,NODE_PLACEHOLDER,0,4,8192,100G
+0,kube-worker01,TEMPLATE_PLACEHOLDER,NODE_PLACEHOLDER,0,4,8192,100G
+0,kube-worker02,TEMPLATE_PLACEHOLDER,NODE_PLACEHOLDER,0,4,8192,100G
+0,kube-worker03,TEMPLATE_PLACEHOLDER,NODE_PLACEHOLDER,0,4,8192,100G''',
                                 
                                 'ha-3-masters': '''vmid,vm_name,template,node,ip,cores,memory,disk_size
-0,kube-master01,t-centos9-86,thinkcentre,0,4,8192,50G
-0,kube-master02,t-centos9-86,thinkcentre,0,4,8192,50G
-0,kube-master03,t-centos9-86,thinkcentre,0,4,8192,50G
-0,kube-worker01,t-centos9-86,thinkcentre,0,4,8192,100G
-0,kube-worker02,t-centos9-86,thinkcentre,0,4,8192,100G
-0,kube-worker03,t-centos9-86,thinkcentre,0,4,8192,100G'''
+0,kube-master01,TEMPLATE_PLACEHOLDER,NODE_PLACEHOLDER,0,4,8192,50G
+0,kube-master02,TEMPLATE_PLACEHOLDER,NODE_PLACEHOLDER,0,4,8192,50G
+0,kube-master03,TEMPLATE_PLACEHOLDER,NODE_PLACEHOLDER,0,4,8192,50G
+0,kube-worker01,TEMPLATE_PLACEHOLDER,NODE_PLACEHOLDER,0,4,8192,100G
+0,kube-worker02,TEMPLATE_PLACEHOLDER,NODE_PLACEHOLDER,0,4,8192,100G
+0,kube-worker03,TEMPLATE_PLACEHOLDER,NODE_PLACEHOLDER,0,4,8192,100G'''
                             ]
                             
-                            def selectedConfig = presetConfigs[params.cluster_preset]
-                            writeFile file: "vms.csv", text: selectedConfig
-                            
-                            sh """
-                                echo "=========================================="
-                                echo "Using preset: ${params.cluster_preset}"
-                                echo "=========================================="
-                            """
+                            csvContent = presetConfigs[params.cluster_preset]
                         }
+                        
+                        // Replace placeholders with actual values
+                        csvContent = csvContent.replaceAll('TEMPLATE_PLACEHOLDER', params.vm_template)
+                        csvContent = csvContent.replaceAll('NODE_PLACEHOLDER', params.proxmox_node)
+                        
+                        // Write final CSV to file
+                        writeFile file: "vms.csv", text: csvContent
+                            
+                        sh """
+                            echo "=========================================="
+                            echo "Configuration:"
+                            echo "- Preset/Mode: ${params.cluster_preset}"
+                            echo "- Template: ${params.vm_template}"
+                            echo "- Proxmox Node: ${params.proxmox_node}"
+                            echo "=========================================="
+                        """
                         
                         sh '''
                             echo "Generated vms.csv:"

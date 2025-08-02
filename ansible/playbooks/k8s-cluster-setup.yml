@@ -35,6 +35,18 @@
           {%- else -%}
           {{ ansible_os_family }}
           {%- endif -%}
+        detected_distribution: >-
+          {%- if 'ubuntu' in template.lower() -%}
+          ubuntu
+          {%- elif 'debian' in template.lower() -%}
+          debian
+          {%- elif 'centos' in template.lower() -%}
+          centos
+          {%- elif 'rocky' in template.lower() -%}
+          rocky
+          {%- else -%}
+          {{ ansible_distribution | lower }}
+          {%- endif -%}
         package_manager: >-
           {%- if 'centos' in template.lower() or 'rhel' in template.lower() or 'rocky' in template.lower() or 'alma' in template.lower() -%}
           yum
