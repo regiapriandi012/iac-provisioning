@@ -81,12 +81,8 @@ generate_inventory() {
     log_info "Generating dynamic inventory from CSV (skipping terraform fallback)..."
     
     # Use CSV generator directly to avoid parsing issues
-    python3 "$INVENTORY_SCRIPT" "$CSV_FILE" > "$INVENTORY_FILE"
-    if [[ $? -ne 0 ]]; then
-        log_error "Failed to generate inventory from CSV"
-        exit 1
-    fi
-    log_success "Inventory generated from CSV"
+    if python3 "$INVENTORY_SCRIPT" "$CSV_FILE" > "$INVENTORY_FILE"; then
+        log_success "Inventory generated from CSV"
         
         # Parse and display cluster configuration
         MASTER_COUNT=$(python3 -c "
@@ -109,7 +105,7 @@ with open('$INVENTORY_FILE', 'r') as f:
         echo "  HAProxy LB: $([ "$IS_HA" = "true" ] && echo "Enabled" || echo "Disabled")"
         
     else
-        log_error "Failed to generate inventory"
+        log_error "Failed to generate inventory from CSV"
         exit 1
     fi
 }
