@@ -108,7 +108,7 @@ vmid,vm_name,template,node,ip,cores,memory,disk_size
 - Configures system prerequisites
 - Installs Docker repository and containerd
 - Deploys Kubernetes using kubeadm
-- Configures networking (Flannel CNI)
+- Configures networking (Cilium CNI)
 - Joins worker nodes to cluster
 
 ### 3. Post-Deployment

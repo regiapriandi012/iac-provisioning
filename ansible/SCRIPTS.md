@@ -60,4 +60,4 @@ Main Kubernetes cluster setup playbook that:
 - Installs Kubernetes components
 - Initializes cluster
 - Joins worker nodes
-- Installs CNI (Flannel)
+- Installs CNI (Cilium)

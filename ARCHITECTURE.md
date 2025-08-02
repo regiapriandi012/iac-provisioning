@@ -84,7 +84,9 @@ For each VM in CSV:
 - Join workers to cluster
 
 #### Play 6: Install CNI
-- Deploy Flannel network plugin
+- Install Cilium CLI
+- Deploy Cilium network plugin
+- Wait for Cilium to be ready
 
 #### Play 7: Verify Cluster
 - Display cluster status
@@ -133,7 +135,7 @@ For each VM in CSV:
 
 ### Default Network Setup
 - Management Network: 10.200.0.0/24
-- Pod Network (Flannel): 10.244.0.0/16
+- Pod Network (Cilium): 10.244.0.0/16
 - Service Network: 10.96.0.0/12
 
 ### Port Requirements
