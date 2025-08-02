@@ -8,7 +8,18 @@ import sys
 def show_endpoints(inventory_file):
     try:
         with open(inventory_file, 'r') as f:
-            inv = json.load(f)
+            content = f.read().strip()
+            
+            # Handle case where terraform output is JSON string (escaped)
+            if content.startswith('"') and content.endswith('"'):
+                # Remove quotes and unescape
+                content = json.loads(content)
+            
+            # Parse the actual JSON
+            if isinstance(content, str):
+                inv = json.loads(content)
+            else:
+                inv = content
             for host, vars in inv['_meta']['hostvars'].items():
                 print(f"  - {host}: {vars['ansible_host']}")
     except Exception as e:

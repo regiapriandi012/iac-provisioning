@@ -92,7 +92,18 @@ def quick_cluster_analysis(inventory_file):
     """Quick comprehensive cluster analysis"""
     try:
         with open(inventory_file, 'r') as f:
-            inv = json.load(f)
+            content = f.read().strip()
+            
+            # Handle case where terraform output is JSON string (escaped)
+            if content.startswith('"') and content.endswith('"'):
+                # Remove quotes and unescape
+                content = json.loads(content)
+            
+            # Parse the actual JSON
+            if isinstance(content, str):
+                inv = json.loads(content)
+            else:
+                inv = content
         
         # Extract all hosts
         all_hosts = {}

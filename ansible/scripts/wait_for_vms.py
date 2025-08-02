@@ -48,7 +48,18 @@ def wait_for_cluster_ready(inventory_file, max_wait=300, check_interval=10):
     """Wait for all VMs in cluster to be ready"""
     try:
         with open(inventory_file, 'r') as f:
-            inv = json.load(f)
+            content = f.read().strip()
+            
+            # Handle case where terraform output is JSON string (escaped)
+            if content.startswith('"') and content.endswith('"'):
+                # Remove quotes and unescape
+                content = json.loads(content)
+            
+            # Parse the actual JSON
+            if isinstance(content, str):
+                inv = json.loads(content)
+            else:
+                inv = content
         
         # Extract all hosts
         all_hosts = {}
