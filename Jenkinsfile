@@ -382,33 +382,87 @@ pipeline {
             steps {
                 dir("${ANSIBLE_DIR}") {
                     script {
-                        sh '''
-                            echo "Extracting KUBECONFIG from master node..."
-                            
-                            # Create kubeconfig directory for archiving
-                            mkdir -p kubeconfig
-                            
-                            # Get KUBECONFIG and save to file
-                            python3 scripts/get_kubeconfig.py ${INVENTORY_FILE} kubeconfig/admin.conf
-                            
-                            if [ $? -eq 0 ]; then
-                                echo ""
-                                echo "==================== KUBECONFIG ===================="
-                                echo "KUBECONFIG has been extracted and saved to kubeconfig/admin.conf"
-                                echo ""
-                                echo "Quick setup commands:"
-                                echo "  mkdir -p ~/.kube"
-                                echo "  # Copy the content from the archived kubeconfig/admin.conf"
-                                echo "  kubectl get nodes"
-                                echo ""
-                                echo "Content preview:"
-                                head -20 kubeconfig/admin.conf
-                                echo "... (full content available in archived artifacts)"
-                                echo "====================================================="
-                            else
-                                echo "Failed to extract KUBECONFIG"
-                            fi
-                        '''
+                        // Try with Jenkins credentials, fallback to .env
+                        try {
+                            withCredentials([
+                                string(credentialsId: 'slack-webhook-url', variable: 'SLACK_WEBHOOK_URL')
+                            ]) {
+                                sh '''
+                                    echo "Extracting KUBECONFIG from master node..."
+                                    
+                                    # Create kubeconfig directory for archiving
+                                    mkdir -p kubeconfig
+                                    
+                                    # Get KUBECONFIG and save to file
+                                    python3 scripts/get_kubeconfig.py ${INVENTORY_FILE} kubeconfig/admin.conf
+                                    
+                                    if [ $? -eq 0 ]; then
+                                        echo ""
+                                        echo "==================== KUBECONFIG ===================="
+                                        echo "KUBECONFIG has been extracted and saved to kubeconfig/admin.conf"
+                                        echo ""
+                                        echo "Quick setup commands:"
+                                        echo "  mkdir -p ~/.kube"
+                                        echo "  cp admin.conf ~/.kube/config"
+                                        echo "  chmod 600 ~/.kube/config"
+                                        echo "  kubectl get nodes"
+                                        echo ""
+                                        echo "==================== FULL KUBECONFIG CONTENT ===================="
+                                        cat kubeconfig/admin.conf
+                                        echo ""
+                                        echo "================================================================="
+                                        
+                                        # Send to Slack if webhook is configured
+                                        if [ -n "$SLACK_WEBHOOK_URL" ]; then
+                                            echo ""
+                                            echo "Sending KUBECONFIG to Slack..."
+                                            python3 scripts/send_kubeconfig_to_slack.py kubeconfig/admin.conf ${INVENTORY_FILE}
+                                        fi
+                                    else
+                                        echo "Failed to extract KUBECONFIG"
+                                        exit 1
+                                    fi
+                                '''
+                            }
+                        } catch (Exception e) {
+                            // Fallback without credentials
+                            sh '''
+                                echo "Extracting KUBECONFIG from master node..."
+                                
+                                # Create kubeconfig directory for archiving
+                                mkdir -p kubeconfig
+                                
+                                # Get KUBECONFIG and save to file
+                                python3 scripts/get_kubeconfig.py ${INVENTORY_FILE} kubeconfig/admin.conf
+                                
+                                if [ $? -eq 0 ]; then
+                                    echo ""
+                                    echo "==================== KUBECONFIG ===================="
+                                    echo "KUBECONFIG has been extracted and saved to kubeconfig/admin.conf"
+                                    echo ""
+                                    echo "Quick setup commands:"
+                                    echo "  mkdir -p ~/.kube"
+                                    echo "  cp admin.conf ~/.kube/config"
+                                    echo "  chmod 600 ~/.kube/config"
+                                    echo "  kubectl get nodes"
+                                    echo ""
+                                    echo "==================== FULL KUBECONFIG CONTENT ===================="
+                                    cat kubeconfig/admin.conf
+                                    echo ""
+                                    echo "================================================================="
+                                    
+                                    # Try to send to Slack using .env file
+                                    if [ -f ../../.env ]; then
+                                        echo ""
+                                        echo "Sending KUBECONFIG to Slack (using .env)..."
+                                        python3 scripts/send_kubeconfig_to_slack.py kubeconfig/admin.conf ${INVENTORY_FILE}
+                                    fi
+                                else
+                                    echo "Failed to extract KUBECONFIG"
+                                    exit 1
+                                fi
+                            '''
+                        }
                     }
                 }
             }

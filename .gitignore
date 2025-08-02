@@ -6,3 +6,6 @@ terraform/state_backups/
 terraform/vms.csv
 ansible/inventory/
 ansible/kubeconfig/
+.env
+.env.local
+.env.production
