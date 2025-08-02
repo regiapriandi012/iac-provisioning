@@ -78,10 +78,10 @@ generate_inventory() {
         return 0
     fi
     
-    log_info "Generating dynamic inventory from CSV (skipping terraform fallback)..."
+    log_info "Generating simple inventory from CSV (avoiding phantom host issues)..."
     
-    # Use CSV generator directly to avoid parsing issues
-    if python3 "$INVENTORY_SCRIPT" "$CSV_FILE" > "$INVENTORY_FILE"; then
+    # Use simple generator to avoid parsing issues
+    if python3 generate_simple_inventory.py "$CSV_FILE" > "$INVENTORY_FILE"; then
         log_success "Inventory generated from CSV"
         
         # Parse and display cluster configuration
@@ -121,9 +121,9 @@ run_playbook() {
         exit 1
     }
     
-    # Test basic connectivity with proper timeout
+    # Test basic connectivity with proper timeout (exclude phantom hosts)
     log_info "Testing connectivity to all hosts..."
-    ansible all -i "$INVENTORY_FILE" -m ping --timeout=30 -o \
+    ansible k8s_masters:k8s_workers -i "$INVENTORY_FILE" -m ping --timeout=30 -o \
         -e ansible_ssh_common_args="-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null" || {
         log_warning "Some hosts may not be reachable yet, continuing anyway..."
     }

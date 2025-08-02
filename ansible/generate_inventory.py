@@ -107,15 +107,11 @@ def generate_inventory_from_csv(csv_file):
     
     inventory['all']['vars'].update(cluster_vars)
     
-    # Add performance optimizations
+    # Add performance optimizations (remove conflicting SSH options)
     inventory['all']['vars'].update({
         'ansible_ssh_pipelining': True,
-        'ansible_ssh_retries': 5,
         'ansible_timeout': 120,
-        'gather_timeout': 120,
-        'gather_facts': True,
-        'fact_caching': 'memory',
-        'fact_caching_timeout': 300
+        'gather_timeout': 120
     })
     
     # Remove empty groups but keep essential sections
