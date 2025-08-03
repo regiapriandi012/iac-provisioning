@@ -441,11 +441,43 @@ pipeline {
                             # Ensure we're using venv
                             . ${WORKSPACE}/venv/bin/activate
                             
+                            # Debug: Check current directory and inventory
+                            echo "Current directory: $(pwd)"
+                            echo "Inventory file: ${INVENTORY_FILE}"
+                            echo "Inventory content (first 10 lines):"
+                            head -10 ${INVENTORY_FILE} || echo "Cannot read inventory"
+                            
+                            # Test ansible connectivity first
+                            echo ""
+                            echo "Testing ansible connectivity to masters..."
+                            FIRST_MASTER=$(${WORKSPACE}/venv/bin/python -c "
+import json
+with open('${INVENTORY_FILE}', 'r') as f:
+    inv = json.load(f)
+    masters = list(inv.get('k8s_masters', {}).get('hosts', {}).keys())
+    if masters:
+        print(masters[0])
+")
+                            
+                            if [ -n "$FIRST_MASTER" ]; then
+                                echo "First master: $FIRST_MASTER"
+                                echo "Testing ansible ping..."
+                                ansible $FIRST_MASTER -i ${INVENTORY_SCRIPT} -m ping --timeout=10 || echo "Ping failed"
+                                
+                                echo ""
+                                echo "Checking if kubeconfig exists on master..."
+                                ansible $FIRST_MASTER -i ${INVENTORY_SCRIPT} -m shell -a "ls -la /etc/kubernetes/admin.conf" --timeout=10 || echo "Cannot check file"
+                            fi
+                            
                             # Extract KUBECONFIG
                             mkdir -p kubeconfig
                             
-                            # Try to get kubeconfig with new script first
-                            if ${WORKSPACE}/venv/bin/python scripts/get_kubeconfig_v2.py ${INVENTORY_FILE} kubeconfig/admin.conf; then
+                            # Try to get kubeconfig with simple bash script first
+                            echo ""
+                            echo "Attempting to extract kubeconfig..."
+                            if bash scripts/simple_get_kubeconfig.sh ${INVENTORY_FILE} kubeconfig/admin.conf; then
+                                echo "KUBECONFIG extracted successfully with simple bash script"
+                            elif ${WORKSPACE}/venv/bin/python scripts/get_kubeconfig_v2.py ${INVENTORY_FILE} kubeconfig/admin.conf; then
                                 echo "KUBECONFIG extracted successfully with v2 script"
                             elif ${WORKSPACE}/venv/bin/python scripts/get_kubeconfig.py ${INVENTORY_FILE} kubeconfig/admin.conf; then
                                 echo "KUBECONFIG extracted successfully with v1 script"
@@ -471,12 +503,41 @@ with open('${INVENTORY_FILE}', 'r') as f:
                                         if [ -n "$FIRST_MASTER" ]; then
                                             echo "Trying to fetch kubeconfig directly from $FIRST_MASTER..."
                                             
-                                            # Try direct fetch
+                                            # Method 1: Try direct fetch
+                                            echo "Method 1: Using ansible fetch module..."
                                             ansible $FIRST_MASTER -i ${INVENTORY_SCRIPT} -m fetch \
                                                 -a "src=/etc/kubernetes/admin.conf dest=kubeconfig/admin.conf flat=yes" \
-                                                --timeout=30 || \
-                                            ansible $FIRST_MASTER -i ${INVENTORY_SCRIPT} -m shell \
-                                                -a "kubectl config view --raw" --timeout=30 > kubeconfig/admin.conf
+                                                --timeout=30
+                                            
+                                            # Check if fetch worked
+                                            if [ ! -f kubeconfig/admin.conf ] || [ ! -s kubeconfig/admin.conf ]; then
+                                                echo "Method 1 failed, trying Method 2..."
+                                                
+                                                # Method 2: Use shell to cat the file
+                                                echo "Method 2: Using ansible shell to cat file..."
+                                                ansible $FIRST_MASTER -i ${INVENTORY_SCRIPT} -m shell \
+                                                    -a "cat /etc/kubernetes/admin.conf" --timeout=30 > kubeconfig/admin.conf.tmp
+                                                
+                                                # Clean ansible output (remove the first line with hostname and SUCCESS)
+                                                if [ -f kubeconfig/admin.conf.tmp ]; then
+                                                    grep -A 1000 "apiVersion:" kubeconfig/admin.conf.tmp > kubeconfig/admin.conf || true
+                                                    rm -f kubeconfig/admin.conf.tmp
+                                                fi
+                                            fi
+                                            
+                                            # If still no luck, try kubectl config view
+                                            if [ ! -f kubeconfig/admin.conf ] || [ ! -s kubeconfig/admin.conf ] || ! grep -q "apiVersion:" kubeconfig/admin.conf; then
+                                                echo "Method 2 failed, trying Method 3..."
+                                                echo "Method 3: Using kubectl config view..."
+                                                
+                                                ansible $FIRST_MASTER -i ${INVENTORY_SCRIPT} -m shell \
+                                                    -a "kubectl config view --raw" --timeout=30 > kubeconfig/admin.conf.tmp
+                                                    
+                                                if [ -f kubeconfig/admin.conf.tmp ]; then
+                                                    grep -A 1000 "apiVersion:" kubeconfig/admin.conf.tmp > kubeconfig/admin.conf || true
+                                                    rm -f kubeconfig/admin.conf.tmp
+                                                fi
+                                            fi
                                         fi
                                     fi
                                 else
