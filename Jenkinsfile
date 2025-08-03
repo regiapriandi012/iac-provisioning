@@ -635,6 +635,19 @@ else:
 # For Slack, we need to escape the content properly
 # But since we're using json.dump, it should handle it automatically
 
+# Slack has a limit on message size, so we need to be careful
+# Maximum text length in a section block is 3000 characters
+# Total message size should be under 40KB
+
+# Truncate kubeconfig if it's too long
+max_kubeconfig_length = 2000  # Leave room for the rest of the message
+if len(kubeconfig) > max_kubeconfig_length:
+    print(f"WARNING: Kubeconfig too long ({len(kubeconfig)} chars), truncating to {max_kubeconfig_length}")
+    # Keep the important parts: beginning and a note
+    kubeconfig_truncated = kubeconfig[:max_kubeconfig_length] + "\\n\\n# ... truncated for Slack (full config in Jenkins artifacts)"
+else:
+    kubeconfig_truncated = kubeconfig
+
 # Create the Slack message
 message = {
     "text": "Kubernetes Cluster Ready!",
@@ -660,7 +673,14 @@ message = {
             "type": "section",
             "text": {
                 "type": "mrkdwn",
-                "text": f"*KUBECONFIG Setup Instructions:*\\n```bash\\nmkdir -p ~/.kube\\ncat > ~/.kube/config << 'EOF'\\n{kubeconfig}\\nEOF\\nchmod 600 ~/.kube/config\\nkubectl get nodes```"
+                "text": "*📋 Access Instructions:*\\n1. Download `kubeconfig/admin.conf` from Jenkins artifacts\\n2. Save to `~/.kube/config`\\n3. Run `kubectl get nodes`"
+            }
+        },
+        {
+            "type": "section",
+            "text": {
+                "type": "mrkdwn",
+                "text": f"*Quick Setup (if kubeconfig is small):*\\n```bash\\n# First {min(500, len(kubeconfig_truncated))} chars of kubeconfig:\\n{kubeconfig_truncated[:500]}...\\n\\n# Full config available in Jenkins artifacts\\n```"
             }
         },
         {
@@ -675,9 +695,51 @@ message = {
 
 # Write to file
 with open('slack_message.json', 'w') as f:
-    json.dump(message, f)
+    json.dump(message, f, indent=2)
+    
+# Check message size
+import os
+message_size = os.path.getsize('slack_message.json')
+print(f"Slack message written to slack_message.json (size: {message_size} bytes)")
 
-print("Debug - Slack message written to slack_message.json")
+if message_size > 40000:  # 40KB limit
+    print(f"WARNING: Message too large ({message_size} bytes), creating simplified version...")
+    
+    # Create a simplified message
+    simple_message = {
+        "text": "Kubernetes Cluster Ready!",
+        "blocks": [
+            {
+                "type": "header",
+                "text": {
+                    "type": "plain_text",
+                    "text": "Kubernetes Cluster Deployed Successfully"
+                }
+            },
+            {
+                "type": "section",
+                "fields": [
+                    {"type": "mrkdwn", "text": f"*Build:* #{build_num}"},
+                    {"type": "mrkdwn", "text": f"*Duration:* {duration}"},
+                    {"type": "mrkdwn", "text": f"*Cluster Endpoint:* `{endpoint}`"},
+                    {"type": "mrkdwn", "text": f"*Nodes:* {masters} masters, {workers} workers"}
+                ]
+            },
+            {"type": "divider"},
+            {
+                "type": "section",
+                "text": {
+                    "type": "mrkdwn",
+                    "text": "*📋 Access Instructions:*\\n1. Download `kubeconfig/admin.conf` from Jenkins artifacts\\n2. Save to `~/.kube/config`\\n3. Run `kubectl get nodes`\\n\\n*Note:* Full kubeconfig too large for Slack. Please download from Jenkins."
+                }
+            }
+        ]
+    }
+    
+    with open('slack_message.json', 'w') as f:
+        json.dump(simple_message, f, indent=2)
+    
+    print("Created simplified message due to size limit")
 
 # Also write a debug version to see what's happening
 with open('debug_kubeconfig.txt', 'w') as f:
