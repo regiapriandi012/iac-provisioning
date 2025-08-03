@@ -16,15 +16,7 @@ pipeline {
 0,kube-master,t-debian12-86,thinkcentre,0,2,2048,32G
 0,kube-worker01,t-debian12-86,thinkcentre,0,2,2048,32G
 0,kube-worker02,t-debian12-86,thinkcentre,0,2,2048,32G''',
-            description: '''VM specifications (CSV format) - define template and node per VM
-            
-Example configurations:
-- Small cluster: 1 master (2 cores, 2GB), 2 workers (2 cores, 2GB)
-- Medium cluster: 1 master (4 cores, 8GB), 3 workers (4 cores, 8GB)
-- HA cluster: 3 masters (4 cores, 8GB), 3 workers (4 cores, 8GB)
-
-Templates: t-debian12-86, t-centos9-86
-Nodes: thinkcentre, or other Proxmox nodes'''
+            description: '''VM specifications (CSV format) - define template and node per VM'''
         )
         
         // ===== Advanced Options =====
