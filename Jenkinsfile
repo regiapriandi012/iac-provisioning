@@ -443,9 +443,58 @@ pipeline {
                             
                             # Extract KUBECONFIG
                             mkdir -p kubeconfig
-                            ${WORKSPACE}/venv/bin/python scripts/get_kubeconfig.py ${INVENTORY_FILE} kubeconfig/admin.conf
                             
-                            echo "KUBECONFIG extracted successfully"
+                            # Try to get kubeconfig
+                            if ${WORKSPACE}/venv/bin/python scripts/get_kubeconfig.py ${INVENTORY_FILE} kubeconfig/admin.conf; then
+                                echo "KUBECONFIG extracted successfully"
+                                
+                                # Verify the kubeconfig file
+                                if [ -f kubeconfig/admin.conf ]; then
+                                    KUBE_SIZE=$(stat -c%s kubeconfig/admin.conf)
+                                    echo "KUBECONFIG file size: $KUBE_SIZE bytes"
+                                    
+                                    if [ $KUBE_SIZE -lt 100 ]; then
+                                        echo "ERROR: KUBECONFIG file is too small, trying direct ansible approach..."
+                                        
+                                        # Fallback: try direct ansible command
+                                        FIRST_MASTER=$(${WORKSPACE}/venv/bin/python -c "
+import json
+with open('${INVENTORY_FILE}', 'r') as f:
+    inv = json.load(f)
+    masters = list(inv.get('k8s_masters', {}).get('hosts', {}).keys())
+    if masters:
+                                            print(masters[0])
+")
+                                        
+                                        if [ -n "$FIRST_MASTER" ]; then
+                                            echo "Trying to fetch kubeconfig directly from $FIRST_MASTER..."
+                                            
+                                            # Try direct fetch
+                                            ansible $FIRST_MASTER -i ${INVENTORY_SCRIPT} -m fetch \
+                                                -a "src=/etc/kubernetes/admin.conf dest=kubeconfig/admin.conf flat=yes" \
+                                                --timeout=30 || \
+                                            ansible $FIRST_MASTER -i ${INVENTORY_SCRIPT} -m shell \
+                                                -a "kubectl config view --raw" --timeout=30 > kubeconfig/admin.conf
+                                        fi
+                                    fi
+                                else
+                                    echo "ERROR: kubeconfig/admin.conf not created!"
+                                fi
+                            else
+                                echo "ERROR: Failed to extract KUBECONFIG"
+                            fi
+                            
+                            # Final check
+                            if [ -f kubeconfig/admin.conf ] && [ -s kubeconfig/admin.conf ]; then
+                                echo "KUBECONFIG file exists and has content"
+                                echo "First 5 lines:"
+                                head -5 kubeconfig/admin.conf
+                            else
+                                echo "WARNING: No valid KUBECONFIG found!"
+                                echo "Creating placeholder..."
+                                echo "# KUBECONFIG could not be retrieved automatically" > kubeconfig/admin.conf
+                                echo "# Please manually copy from master node: /etc/kubernetes/admin.conf" >> kubeconfig/admin.conf
+                            fi
                         '''
                         
                         // Send KUBECONFIG to Slack
@@ -503,13 +552,22 @@ if not os.path.exists(kubeconfig_path):
     print(f"Directory contents: {os.listdir('.')}")
     if os.path.exists('kubeconfig'):
         print(f"Kubeconfig dir contents: {os.listdir('kubeconfig')}")
-    sys.exit(1)
-
-with open(kubeconfig_path, 'r') as f:
-    kubeconfig = f.read()
-
-print(f"Debug - KUBECONFIG length: {len(kubeconfig)}")
-print(f"Debug - KUBECONFIG first 100 chars: {kubeconfig[:100]}")
+    kubeconfig = "# ERROR: KUBECONFIG could not be retrieved\\n# Please check the cluster setup"
+else:
+    with open(kubeconfig_path, 'r') as f:
+        kubeconfig = f.read()
+    
+    # Check if it's a placeholder
+    if kubeconfig.startswith("# KUBECONFIG could not be retrieved"):
+        print("WARNING: Using placeholder kubeconfig")
+    else:
+        print(f"Debug - KUBECONFIG length: {len(kubeconfig)}")
+        print(f"Debug - KUBECONFIG first 100 chars: {kubeconfig[:100]}")
+        
+        # Validate it's a real kubeconfig
+        if 'apiVersion:' not in kubeconfig or len(kubeconfig) < 100:
+            print("WARNING: kubeconfig seems invalid")
+            kubeconfig = f"# WARNING: Invalid KUBECONFIG (length: {len(kubeconfig)})\\n# Content:\\n{kubeconfig}"
 
 # For Slack, we need to escape the content properly
 # But since we're using json.dump, it should handle it automatically

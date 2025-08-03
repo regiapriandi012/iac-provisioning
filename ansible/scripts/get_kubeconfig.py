@@ -37,18 +37,51 @@ def get_kubeconfig(inventory_file, output_file=None):
             import os
             os.environ['ANSIBLE_INVENTORY_FILE'] = inventory_file
             
-            cmd = [
-                'ansible', first_master, 
-                '-i', '../inventory.py',
-                '-m', 'shell',
-                '-a', 'cat /root/.kube/config',
-                '--timeout=30'
+            # Try multiple possible locations for kubeconfig
+            kubeconfig_locations = [
+                '/etc/kubernetes/admin.conf',  # Default location for kubeadm
+                '/root/.kube/config',           # Root user config
+                '/home/ubuntu/.kube/config',    # Ubuntu user
+                '/etc/kubernetes/super-admin.conf'  # New kubeadm location
             ]
+            
+            config_found = False
+            kubeconfig = None
+            
+            for config_path in kubeconfig_locations:
+                print(f"Checking {config_path}...")
+                cmd = [
+                    'ansible', first_master, 
+                    '-i', '../inventory.py',
+                    '-m', 'shell',
+                    '-a', f'test -f {config_path} && cat {config_path}',
+                    '--timeout=30'
+                ]
+                
+                result = subprocess.run(cmd, capture_output=True, text=True)
+                
+                if result.returncode == 0 and 'apiVersion:' in result.stdout:
+                    print(f"Found kubeconfig at {config_path}")
+                    config_found = True
+                    break
+            
+            if not config_found:
+                # If no config found, generate one from the cluster
+                print("No existing kubeconfig found, generating from cluster...")
+                cmd = [
+                    'ansible', first_master,
+                    '-i', '../inventory.py', 
+                    '-m', 'shell',
+                    '-a', 'kubectl config view --raw',
+                    '--timeout=30'
+                ]
+                result = subprocess.run(cmd, capture_output=True, text=True)
             
             result = subprocess.run(cmd, capture_output=True, text=True)
             
-            if result.returncode != 0:
+            if result.returncode != 0 or 'apiVersion:' not in result.stdout:
                 print(f"Failed to retrieve KUBECONFIG: {result.stderr}")
+                print("Stdout:", result.stdout[:200])
                 return False
                 
             # Extract the config content from ansible output
@@ -76,9 +109,20 @@ def get_kubeconfig(inventory_file, output_file=None):
             # Clean up the config content
             kubeconfig = '\n'.join(config_content).strip()
             
+            # Validate kubeconfig has content
+            if not kubeconfig or len(kubeconfig) < 100:
+                print(f"ERROR: Retrieved kubeconfig is too short or empty (length: {len(kubeconfig)})")
+                print("Raw output:", result.stdout[:500])
+                return False
+            
             # Replace internal IP with external accessible IP
             kubeconfig = kubeconfig.replace('127.0.0.1', master_ip)
             kubeconfig = kubeconfig.replace('localhost', master_ip)
+            
+            # For multi-master setup, update the server URL to use the load balancer if available
+            if len(masters) > 1:
+                print(f"Multi-master setup detected ({len(masters)} masters)")
+                # Keep using first master IP for now, but could be enhanced to use LB
             
             if output_file:
                 with open(output_file, 'w') as f:
