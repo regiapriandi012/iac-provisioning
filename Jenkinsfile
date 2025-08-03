@@ -768,13 +768,20 @@ if success:
 else:
     print(f'Failed to send summary: {resp}')
 
-# Second message: Kubeconfig
-kubeconfig_msg = {
-    'text': f'''Save this kubeconfig to ~/.kube/config:
+# Second message: Kubeconfig with proper formatting
+# Escape the kubeconfig content to preserve formatting
+import base64
+kubeconfig_b64 = base64.b64encode(kubeconfig.encode()).decode()
 
+kubeconfig_msg = {
+    'text': f'''To setup kubeconfig, run this command:
+
+\\`\\`\\`bash
+echo "{kubeconfig_b64}" | base64 -d > ~/.kube/config
+kubectl get nodes
 \\`\\`\\`
-{kubeconfig}
-\\`\\`\\`'''
+
+Or download from Jenkins: ${BUILD_URL}artifact/ansible/kubeconfig/admin.conf'''
 }
 
 # Send kubeconfig
