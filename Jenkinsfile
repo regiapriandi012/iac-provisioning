@@ -639,14 +639,9 @@ else:
 # Maximum text length in a section block is 3000 characters
 # Total message size should be under 40KB
 
-# Truncate kubeconfig if it's too long
-max_kubeconfig_length = 2000  # Leave room for the rest of the message
-if len(kubeconfig) > max_kubeconfig_length:
-    print(f"WARNING: Kubeconfig too long ({len(kubeconfig)} chars), truncating to {max_kubeconfig_length}")
-    # Keep the important parts: beginning and a note
-    kubeconfig_truncated = kubeconfig[:max_kubeconfig_length] + "\\n\\n# ... truncated for Slack (full config in Jenkins artifacts)"
-else:
-    kubeconfig_truncated = kubeconfig
+# Don't truncate kubeconfig - send full content
+kubeconfig_truncated = kubeconfig
+print(f"Kubeconfig size: {len(kubeconfig)} characters")
 
 # Create the Slack message
 message = {
@@ -680,7 +675,7 @@ message = {
             "type": "section",
             "text": {
                 "type": "mrkdwn",
-                "text": f"*Quick Setup (if kubeconfig is small):*\\n```bash\\n# First {min(500, len(kubeconfig_truncated))} chars of kubeconfig:\\n{kubeconfig_truncated[:500]}...\\n\\n# Full config available in Jenkins artifacts\\n```"
+                "text": f"*Quick Setup:*\\n```bash\\n# Save this as ~/.kube/config\\ncat << 'EOF' > ~/.kube/config\\n{kubeconfig_truncated}\\nEOF\\n\\n# Test connection\\nkubectl get nodes\\n```"
             }
         },
         {
@@ -772,12 +767,50 @@ print("Debug - KUBECONFIG written to debug_kubeconfig.txt")
                                 echo ""
                                 
                                 # Send to Slack
-                                curl -X POST ${SLACK_WEBHOOK_URL} \
+                                if ! curl -X POST ${SLACK_WEBHOOK_URL} \
                                      -H "Content-Type: application/json" \
                                      -d @slack_message.json \
-                                     --silent --show-error --fail \
-                                && echo "KUBECONFIG sent to Slack successfully!" \
-                                || echo "Failed to send to Slack"
+                                     --silent --show-error --fail; then
+                                    
+                                    echo "Blocks format failed, trying simple format..."
+                                    
+                                    # Create simple format message
+                                    ${WORKSPACE}/venv/bin/python -c "
+import json
+with open('kubeconfig/admin.conf', 'r') as f:
+    kubeconfig = f.read()
+    
+simple_message = {
+    'text': f'''Kubernetes Cluster Ready! (Build #${BUILD_NUMBER})
+
+Master nodes: ${masterCount}
+Worker nodes: ${workerCount}
+
+Save this kubeconfig to ~/.kube/config:
+
+\`\`\`
+{kubeconfig}
+\`\`\`
+
+Jenkins: ${BUILD_URL}'''
+}
+
+with open('simple_slack.json', 'w') as f:
+    json.dump(simple_message, f)
+"
+                                    
+                                    # Try simple format
+                                    curl -X POST ${SLACK_WEBHOOK_URL} \
+                                         -H "Content-Type: application/json" \
+                                         -d @simple_slack.json \
+                                         --silent --show-error \
+                                    && echo "KUBECONFIG sent to Slack successfully (simple format)!" \
+                                    || echo "Failed to send to Slack (both formats failed)"
+                                    
+                                    rm -f simple_slack.json
+                                else
+                                    echo "KUBECONFIG sent to Slack successfully!"
+                                fi
                                 
                                 # Cleanup
                                 rm -f slack_message.json format_slack.py debug_kubeconfig.txt
