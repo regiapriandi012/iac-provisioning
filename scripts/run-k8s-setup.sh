@@ -88,7 +88,7 @@ fi
 # Final verification
 echo ""
 echo "Running final verification..."
-FIRST_MASTER=$(python3 scripts/get_first_master.py $INVENTORY_FILE)
+FIRST_MASTER=$(python3 ${WORKSPACE}/scripts/get_first_master.py $INVENTORY_FILE)
 
 if [ -n "$FIRST_MASTER" ]; then
     echo "   Checking cluster status on $FIRST_MASTER..."
