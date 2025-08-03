@@ -7,6 +7,8 @@ import sys
 import subprocess
 
 def get_kubeconfig(inventory_file, output_file=None):
+    import os
+    inventory_script = os.path.join(os.environ.get('WORKSPACE', '/root/coder/iac-provision'), 'scripts', 'inventory.py')
     try:
         with open(inventory_file, 'r') as f:
             content = f.read().strip()
@@ -54,7 +56,7 @@ def get_kubeconfig(inventory_file, output_file=None):
                 # First check if file exists
                 check_cmd = [
                     'ansible', first_master, 
-                    '-i', '../inventory.py',
+                    '-i', inventory_script,
                     '-m', 'shell',
                     '-a', f'test -f {config_path} && echo "FILE_EXISTS"',
                     '--timeout=30'
@@ -68,7 +70,7 @@ def get_kubeconfig(inventory_file, output_file=None):
                     # Now get the content
                     cmd = [
                         'ansible', first_master, 
-                        '-i', '../inventory.py',
+                        '-i', inventory_script,
                         '-m', 'shell',
                         '-a', f'cat {config_path}',
                         '--timeout=30'
@@ -90,7 +92,7 @@ def get_kubeconfig(inventory_file, output_file=None):
                 print("No existing kubeconfig found, generating from cluster...")
                 cmd = [
                     'ansible', first_master,
-                    '-i', '../inventory.py', 
+                    '-i', inventory_script, 
                     '-m', 'shell',
                     '-a', 'kubectl config view --raw',
                     '--timeout=30'

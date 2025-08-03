@@ -16,7 +16,7 @@ pipeline {
 0,kube-master,t-debian12-86,thinkcentre,0,2,2048,32G
 0,kube-worker01,t-debian12-86,thinkcentre,0,2,2048,32G
 0,kube-worker02,t-debian12-86,thinkcentre,0,2,2048,32G''',
-            description: '''VM specifications (CSV format) - define template and node per VM'''
+            description: 'VM specifications (CSV format) - define template and node per VM'
         )
         
         // ===== Advanced Options =====
@@ -32,7 +32,7 @@ pipeline {
         ANSIBLE_DIR = 'ansible'
         ANSIBLE_CONFIG = "${ANSIBLE_DIR}/ansible.cfg"
         INVENTORY_FILE = 'inventory/k8s-inventory.json'
-        INVENTORY_SCRIPT = 'inventory.py'
+        INVENTORY_SCRIPT = 'scripts/inventory.py'
         CACHE_DIR = "${WORKSPACE}/.iac-cache"
     }
     
@@ -58,70 +58,7 @@ pipeline {
                     // Set use_cache as environment variable for shell script
                     env.USE_CACHE = params.use_cache.toString()
                     
-                    sh '''#!/bin/bash
-                        # Create cache directories if caching is enabled
-                        if [ "$USE_CACHE" = "true" ]; then
-                            mkdir -p ${CACHE_DIR}/terraform ${CACHE_DIR}/ansible ${CACHE_DIR}/python
-                        fi
-                        
-                        # Setup Python virtual environment
-                        echo "Setting up Python virtual environment..."
-                        
-                        # Check if venv exists in cache
-                        if [ "$USE_CACHE" = "true" ] && [ -d "${CACHE_DIR}/python/venv" ]; then
-                            echo "Using cached Python venv"
-                            cp -r ${CACHE_DIR}/python/venv ${WORKSPACE}/venv || true
-                        fi
-                        
-                        # Create venv if it doesn't exist
-                        if [ ! -d "${WORKSPACE}/venv" ]; then
-                            echo "Creating new Python venv..."
-                            python3 -m venv ${WORKSPACE}/venv
-                        fi
-                        
-                        # Activate venv and install required packages
-                        . ${WORKSPACE}/venv/bin/activate
-                        
-                        # Check if packages are already installed
-                        NEED_INSTALL=false
-                        if ! python3 -c "import asyncssh" 2>/dev/null; then
-                            NEED_INSTALL=true
-                        fi
-                        if ! python3 -c "import mitogen" 2>/dev/null; then
-                            NEED_INSTALL=true
-                        fi
-                        
-                        if [ "$NEED_INSTALL" = "true" ]; then
-                            echo "Installing required Python packages..."
-                            pip install --upgrade pip
-                            pip install asyncssh paramiko mitogen
-                        else
-                            echo "Python packages already installed"
-                        fi
-                        
-                        # Setup Mitogen for Ansible (ULTRA-FAST performance)
-                        cd ${ANSIBLE_DIR}
-                        if [ -f "setup_mitogen.py" ]; then
-                            echo "Setting up Mitogen for ULTRA-FAST Ansible performance..."
-                            python3 setup_mitogen.py || true
-                            python3 mitogen_ansible_cfg.py || true
-                        fi
-                        cd ${WORKSPACE}
-                        
-                        # Cache the venv for future use
-                        if [ "$USE_CACHE" = "true" ]; then
-                            echo "Caching Python venv..."
-                            cp -r ${WORKSPACE}/venv ${CACHE_DIR}/python/ || true
-                        fi
-                        
-                        # Check Terraform cache
-                        if [ "$USE_CACHE" = "true" ] && [ -d "${TERRAFORM_DIR}" ]; then
-                            if [ -d "${CACHE_DIR}/terraform/.terraform" ]; then
-                                echo "Using cached Terraform providers"
-                                cp -r ${CACHE_DIR}/terraform/.terraform ${TERRAFORM_DIR}/ || true
-                            fi
-                        fi
-                    '''
+                    sh './scripts/setup_environment.sh'
                     
                     // Set environment variables for subsequent stages
                     env.PATH = "${WORKSPACE}/venv/bin:${env.PATH}"
@@ -193,21 +130,7 @@ pipeline {
                                 script {
                                     def startTime = System.currentTimeMillis()
                                     
-                                    sh '''#!/bin/bash
-                                        echo "Applying Terraform with parallel execution..."
-                                        terraform apply -auto-approve -parallelism=10
-                                        
-                                        echo "Deployment summary:"
-                                        terraform output assignment_summary || echo "No assignment summary available"
-                                        
-                                        echo ""
-                                        echo "Checking ansible inventory output:"
-                                        terraform output ansible_inventory_json || echo "ERROR: No ansible_inventory_json output found"
-                                        
-                                        echo ""
-                                        echo "Terraform state list:"
-                                        terraform state list || echo "No resources in state"
-                                    '''
+                                    sh '../scripts/terraform_apply.sh'
                                     
                                     def duration = ((System.currentTimeMillis() - startTime) / 1000).intValue()
                                     echo "Infrastructure provisioned in ${duration}s"
@@ -219,7 +142,7 @@ pipeline {
             }
         }
         
-        stage('Fast VM Readiness') {
+        stage('VM Readiness') {
             when {
                 expression { params.run_ansible }
             }
@@ -228,72 +151,7 @@ pipeline {
                     script {
                         def startTime = System.currentTimeMillis()
                         
-                        sh '''#!/bin/bash
-                            # Ensure we're using venv
-                            . ${WORKSPACE}/venv/bin/activate
-                            
-                            # Generate inventory
-                            mkdir -p inventory
-                            cd ../terraform
-                            
-                            # Debug: Check terraform output
-                            echo "Checking Terraform outputs..."
-                            terraform output -json || echo "Failed to get terraform outputs"
-                            
-                            # Generate inventory file
-                            echo "Generating inventory file..."
-                            terraform output -raw ansible_inventory_json > ../ansible/${INVENTORY_FILE}
-                            
-                            cd ../ansible
-                            
-                            # Debug: Check inventory file
-                            echo "Checking inventory file content..."
-                            if [ -f "${INVENTORY_FILE}" ]; then
-                                echo "Inventory file exists. Size: $(wc -c < ${INVENTORY_FILE}) bytes"
-                                echo "First 500 chars of inventory:"
-                                head -c 500 ${INVENTORY_FILE}
-                                echo ""
-                                
-                                # Validate JSON
-                                if python3 -m json.tool ${INVENTORY_FILE} > /dev/null 2>&1; then
-                                    echo "Inventory JSON is valid"
-                                else
-                                    echo "ERROR: Invalid JSON in inventory file"
-                                    cat ${INVENTORY_FILE}
-                                fi
-                            else
-                                echo "ERROR: Inventory file not found at ${INVENTORY_FILE}"
-                                ls -la inventory/
-                            fi
-                            
-                            # Use smart VM checker (which now supports both async and sync)
-                            echo "Using smart VM readiness checker..."
-                            
-                            # Quick initial delay
-                            echo "Waiting 20s for VMs to initialize..."
-                            sleep 20
-                            
-                            # Run VM readiness check with retry mechanism
-                            MAX_RETRIES=10
-                            RETRY_DELAY=30
-                            
-                            for i in $(seq 1 $MAX_RETRIES); do
-                                echo "VM readiness check attempt $i/$MAX_RETRIES..."
-                                
-                                if ${WORKSPACE}/venv/bin/python scripts/smart_vm_ready.py ${INVENTORY_FILE} 20; then
-                                    echo "All VMs are ready!"
-                                    break
-                                else
-                                    if [ $i -lt $MAX_RETRIES ]; then
-                                        echo "Some VMs not ready yet. Waiting ${RETRY_DELAY}s before retry..."
-                                        sleep $RETRY_DELAY
-                                    else
-                                        echo "ERROR: VMs still not ready after $MAX_RETRIES attempts"
-                                        exit 1
-                                    fi
-                                fi
-                            done
-                        '''
+                        sh '../scripts/check_vm_readiness.sh'
                         
                         def duration = ((System.currentTimeMillis() - startTime) / 1000).intValue()
                         echo "VM readiness check completed in ${duration}s"
@@ -311,40 +169,7 @@ pipeline {
                     script {
                         def startTime = System.currentTimeMillis()
                         
-                        sh '''#!/bin/bash
-                            echo "Starting optimized Kubernetes deployment..."
-                            
-                            # Check if inventory has hosts
-                            if [ -f "${INVENTORY_FILE}" ]; then
-                                # Use the count script to check hosts
-                                HOST_COUNT=$(python3 scripts/count_inventory_hosts.py ${INVENTORY_FILE} 2>/dev/null || echo "0")
-                                
-                                if [ "$HOST_COUNT" = "0" ]; then
-                                    echo "ERROR: No hosts found in inventory. Cannot deploy Kubernetes."
-                                    echo "Please check that VMs were successfully created by Terraform."
-                                    echo ""
-                                    echo "Inventory details:"
-                                    python3 scripts/count_inventory_hosts.py ${INVENTORY_FILE} --details || cat ${INVENTORY_FILE}
-                                    exit 1
-                                fi
-                                
-                                echo "Found $HOST_COUNT hosts in inventory:"
-                                python3 scripts/count_inventory_hosts.py ${INVENTORY_FILE} --details
-                                echo ""
-                                echo "Proceeding with deployment..."
-                            else
-                                echo "ERROR: Inventory file not found at ${INVENTORY_FILE}"
-                                ls -la inventory/
-                                exit 1
-                            fi
-                            
-                            # Use optimized setup script if available
-                            if [ -f "run-k8s-setup-optimized.sh" ]; then
-                                ./run-k8s-setup-optimized.sh
-                            else
-                                ./run-k8s-setup.sh
-                            fi
-                        '''
+                        sh '../scripts/deploy_kubernetes.sh'
                         
                         def duration = ((System.currentTimeMillis() - startTime) / 1000).intValue()
                         def minutes = duration / 60
@@ -366,7 +191,7 @@ pipeline {
                         echo "Verifying Kubernetes deployment..."
                         
                         # Get first master node
-                        FIRST_MASTER=$(python3 scripts/get_first_master.py ${INVENTORY_FILE})
+                        FIRST_MASTER=$(python3 ${WORKSPACE}/scripts/get_first_master.py ${INVENTORY_FILE})
                         
                         if [ -n "$FIRST_MASTER" ]; then
                             echo "Testing kubectl on $FIRST_MASTER..."
@@ -389,143 +214,7 @@ pipeline {
             steps {
                 dir("${ANSIBLE_DIR}") {
                     script {
-                        sh '''#!/bin/bash
-                            # Ensure we're using venv
-                            . ${WORKSPACE}/venv/bin/activate
-                            
-                            # Debug: Check current directory and inventory
-                            echo "Current directory: $(pwd)"
-                            echo "Inventory file: ${INVENTORY_FILE}"
-                            echo "Inventory content (first 10 lines):"
-                            head -10 ${INVENTORY_FILE} || echo "Cannot read inventory"
-                            
-                            # Test ansible connectivity first
-                            echo ""
-                            echo "Testing ansible connectivity to masters..."
-                            FIRST_MASTER=$(${WORKSPACE}/venv/bin/python -c "
-import json
-with open('${INVENTORY_FILE}', 'r') as f:
-    inv = json.load(f)
-    masters = list(inv.get('k8s_masters', {}).get('hosts', {}).keys())
-    if masters:
-        print(masters[0])
-")
-                            
-                            if [ -n "$FIRST_MASTER" ]; then
-                                echo "First master: $FIRST_MASTER"
-                                echo "Testing ansible ping..."
-                                ansible $FIRST_MASTER -i ${INVENTORY_SCRIPT} -m ping --timeout=10 || echo "Ping failed"
-                                
-                                echo ""
-                                echo "Checking if kubeconfig exists on master..."
-                                ansible $FIRST_MASTER -i ${INVENTORY_SCRIPT} -m shell -a "ls -la /etc/kubernetes/admin.conf" --timeout=10 || echo "Cannot check file"
-                            fi
-                            
-                            # Extract KUBECONFIG
-                            mkdir -p kubeconfig
-                            
-                            # Try to get kubeconfig with simple bash script first
-                            echo ""
-                            echo "Attempting to extract kubeconfig..."
-                            if bash scripts/simple_get_kubeconfig.sh ${INVENTORY_FILE} kubeconfig/admin.conf; then
-                                echo "KUBECONFIG extracted successfully with simple bash script"
-                            elif ${WORKSPACE}/venv/bin/python scripts/get_kubeconfig_v2.py ${INVENTORY_FILE} kubeconfig/admin.conf; then
-                                echo "KUBECONFIG extracted successfully with v2 script"
-                            elif ${WORKSPACE}/venv/bin/python scripts/get_kubeconfig.py ${INVENTORY_FILE} kubeconfig/admin.conf; then
-                                echo "KUBECONFIG extracted successfully with v1 script"
-                                
-                                # Verify the kubeconfig file
-                                if [ -f kubeconfig/admin.conf ]; then
-                                    KUBE_SIZE=$(stat -c%s kubeconfig/admin.conf)
-                                    echo "KUBECONFIG file size: $KUBE_SIZE bytes"
-                                    
-                                    if [ $KUBE_SIZE -lt 100 ]; then
-                                        echo "ERROR: KUBECONFIG file is too small, trying direct ansible approach..."
-                                        
-                                        # Fallback: try direct ansible command
-                                        FIRST_MASTER=$(${WORKSPACE}/venv/bin/python -c "
-import json
-with open('${INVENTORY_FILE}', 'r') as f:
-    inv = json.load(f)
-    masters = list(inv.get('k8s_masters', {}).get('hosts', {}).keys())
-    if masters:
-                                            print(masters[0])
-")
-                                        
-                                        if [ -n "$FIRST_MASTER" ]; then
-                                            echo "Trying to fetch kubeconfig directly from $FIRST_MASTER..."
-                                            
-                                            # Method 1: Try direct fetch
-                                            echo "Method 1: Using ansible fetch module..."
-                                            ansible $FIRST_MASTER -i ${INVENTORY_SCRIPT} -m fetch \
-                                                -a "src=/etc/kubernetes/admin.conf dest=kubeconfig/admin.conf flat=yes" \
-                                                --timeout=30
-                                            
-                                            # Check if fetch worked
-                                            if [ ! -f kubeconfig/admin.conf ] || [ ! -s kubeconfig/admin.conf ]; then
-                                                echo "Method 1 failed, trying Method 2..."
-                                                
-                                                # Method 2: Use shell to cat the file
-                                                echo "Method 2: Using ansible shell to cat file..."
-                                                ansible $FIRST_MASTER -i ${INVENTORY_SCRIPT} -m shell \
-                                                    -a "cat /etc/kubernetes/admin.conf" --timeout=30 > kubeconfig/admin.conf.tmp
-                                                
-                                                # Clean ansible output (remove the first line with hostname and SUCCESS)
-                                                if [ -f kubeconfig/admin.conf.tmp ]; then
-                                                    grep -A 1000 "apiVersion:" kubeconfig/admin.conf.tmp > kubeconfig/admin.conf || true
-                                                    rm -f kubeconfig/admin.conf.tmp
-                                                fi
-                                            fi
-                                            
-                                            # If still no luck, try kubectl config view
-                                            if [ ! -f kubeconfig/admin.conf ] || [ ! -s kubeconfig/admin.conf ] || ! grep -q "apiVersion:" kubeconfig/admin.conf; then
-                                                echo "Method 2 failed, trying Method 3..."
-                                                echo "Method 3: Using kubectl config view..."
-                                                
-                                                ansible $FIRST_MASTER -i ${INVENTORY_SCRIPT} -m shell \
-                                                    -a "kubectl config view --raw" --timeout=30 > kubeconfig/admin.conf.tmp
-                                                    
-                                                if [ -f kubeconfig/admin.conf.tmp ]; then
-                                                    grep -A 1000 "apiVersion:" kubeconfig/admin.conf.tmp > kubeconfig/admin.conf || true
-                                                    rm -f kubeconfig/admin.conf.tmp
-                                                fi
-                                            fi
-                                        fi
-                                    fi
-                                else
-                                    echo "ERROR: kubeconfig/admin.conf not created!"
-                                fi
-                            else
-                                echo "ERROR: Failed to extract KUBECONFIG"
-                            fi
-                            
-                            # Final check
-                            if [ -f kubeconfig/admin.conf ] && [ -s kubeconfig/admin.conf ]; then
-                                echo "KUBECONFIG file exists and has content"
-                                echo "First 10 lines:"
-                                head -10 kubeconfig/admin.conf
-                                echo ""
-                                
-                                # Validate YAML structure
-                                echo "Validating YAML structure..."
-                                ${WORKSPACE}/venv/bin/python -c "
-import yaml
-try:
-    with open('kubeconfig/admin.conf', 'r') as f:
-        config = yaml.safe_load(f)
-    print('YAML validation: PASSED')
-    print(f'Config type: {type(config)}')
-    print(f'Keys: {list(config.keys()) if isinstance(config, dict) else \"Not a dict\"}')
-except Exception as e:
-    print(f'YAML validation: FAILED - {e}')
-"
-                            else
-                                echo "WARNING: No valid KUBECONFIG found!"
-                                echo "Creating placeholder..."
-                                echo "# KUBECONFIG could not be retrieved automatically" > kubeconfig/admin.conf
-                                echo "# Please manually copy from master node: /etc/kubernetes/admin.conf" >> kubeconfig/admin.conf
-                            fi
-                        '''
+                        sh '../scripts/extract_kubeconfig.sh'
                         
                         // Send KUBECONFIG to Slack
                         withCredentials([string(credentialsId: 'slack-webhook-url', variable: 'SLACK_WEBHOOK_URL')]) {
@@ -534,12 +223,12 @@ except Exception as e:
                             
                             // Get cluster info
                             def masterCount = sh(
-                                script: "python3 scripts/count_inventory_hosts.py ${INVENTORY_FILE} --details | grep k8s_masters | wc -l",
+                                script: "python3 ${WORKSPACE}/scripts/count_inventory_hosts.py ${INVENTORY_FILE} --details | grep k8s_masters | wc -l",
                                 returnStdout: true
                             ).trim()
                             
                             def workerCount = sh(
-                                script: "python3 scripts/count_inventory_hosts.py ${INVENTORY_FILE} --details | grep k8s_workers | wc -l",
+                                script: "python3 ${WORKSPACE}/scripts/count_inventory_hosts.py ${INVENTORY_FILE} --details | grep k8s_workers | wc -l",
                                 returnStdout: true
                             ).trim()
                             
@@ -554,281 +243,13 @@ except Exception as e:
                             echo "Cluster Endpoint: ${clusterEndpoint}"
                             echo "KUBECONFIG length: ${kubeconfigContent.length()}"
                             
-                            // Create a Python script to properly format the message
-                            def pythonScript = '''
-import json
-import sys
-import os
-
-# Read inputs
-build_num = sys.argv[1]
-duration = sys.argv[2]
-endpoint = sys.argv[3]
-masters = sys.argv[4]
-workers = sys.argv[5]
-build_url = sys.argv[6]
-
-print(f"Debug - Build: {build_num}")
-print(f"Debug - Duration: {duration}")
-print(f"Debug - Endpoint: {endpoint}")
-print(f"Debug - Masters: {masters}")
-print(f"Debug - Workers: {workers}")
-
-# Read kubeconfig
-kubeconfig_path = 'kubeconfig/admin.conf'
-if not os.path.exists(kubeconfig_path):
-    print(f"ERROR: {kubeconfig_path} does not exist!")
-    print(f"Current directory: {os.getcwd()}")
-    print(f"Directory contents: {os.listdir('.')}")
-    if os.path.exists('kubeconfig'):
-        print(f"Kubeconfig dir contents: {os.listdir('kubeconfig')}")
-    kubeconfig = "# ERROR: KUBECONFIG could not be retrieved\\n# Please check the cluster setup"
-else:
-    with open(kubeconfig_path, 'r') as f:
-        kubeconfig = f.read()
-    
-    # Check if it's a placeholder
-    if kubeconfig.startswith("# KUBECONFIG could not be retrieved"):
-        print("WARNING: Using placeholder kubeconfig")
-    else:
-        print(f"Debug - KUBECONFIG length: {len(kubeconfig)}")
-        print(f"Debug - KUBECONFIG first 100 chars: {kubeconfig[:100]}")
-        
-        # Validate it's a real kubeconfig
-        if 'apiVersion:' not in kubeconfig or len(kubeconfig) < 100:
-            print("WARNING: kubeconfig seems invalid")
-            kubeconfig = f"# WARNING: Invalid KUBECONFIG (length: {len(kubeconfig)})\\n# Content:\\n{kubeconfig}"
-
-# For Slack, we need to escape the content properly
-# But since we're using json.dump, it should handle it automatically
-
-# Slack has a limit on message size, so we need to be careful
-# Maximum text length in a section block is 3000 characters
-# Total message size should be under 40KB
-
-# Don't truncate kubeconfig - send full content
-kubeconfig_truncated = kubeconfig
-print(f"Kubeconfig size: {len(kubeconfig)} characters")
-
-# Create the Slack message
-message = {
-    "text": "Kubernetes Cluster Ready!",
-    "blocks": [
-        {
-            "type": "header",
-            "text": {
-                "type": "plain_text",
-                "text": "Kubernetes Cluster Deployed Successfully"
-            }
-        },
-        {
-            "type": "section",
-            "fields": [
-                {"type": "mrkdwn", "text": f"*Build:* #{build_num}"},
-                {"type": "mrkdwn", "text": f"*Duration:* {duration}"},
-                {"type": "mrkdwn", "text": f"*Cluster Endpoint:* `{endpoint}`" if endpoint else "*Cluster Endpoint:* Not found"},
-                {"type": "mrkdwn", "text": f"*Nodes:* {masters} masters, {workers} workers"}
-            ]
-        },
-        {"type": "divider"},
-        {
-            "type": "section",
-            "text": {
-                "type": "mrkdwn",
-                "text": "*📋 Access Instructions:*\\n1. Download `kubeconfig/admin.conf` from Jenkins artifacts\\n2. Save to `~/.kube/config`\\n3. Run `kubectl get nodes`"
-            }
-        },
-        {
-            "type": "section",
-            "text": {
-                "type": "mrkdwn",
-                "text": f"*Quick Setup:*\\n```bash\\n# Save this as ~/.kube/config\\ncat << 'EOF' > ~/.kube/config\\n{kubeconfig_truncated}\\nEOF\\n\\n# Test connection\\nkubectl get nodes\\n```"
-            }
-        },
-        {
-            "type": "section",
-            "text": {
-                "type": "mrkdwn",
-                "text": f"*Jenkins Build:* <{build_url}|View Details>"
-            }
-        }
-    ]
-}
-
-# Write to file
-with open('slack_message.json', 'w') as f:
-    json.dump(message, f, indent=2)
-    
-# Check message size
-import os
-message_size = os.path.getsize('slack_message.json')
-print(f"Slack message written to slack_message.json (size: {message_size} bytes)")
-
-if message_size > 40000:  # 40KB limit
-    print(f"WARNING: Message too large ({message_size} bytes), creating simplified version...")
-    
-    # Create a simplified message
-    simple_message = {
-        "text": "Kubernetes Cluster Ready!",
-        "blocks": [
-            {
-                "type": "header",
-                "text": {
-                    "type": "plain_text",
-                    "text": "Kubernetes Cluster Deployed Successfully"
-                }
-            },
-            {
-                "type": "section",
-                "fields": [
-                    {"type": "mrkdwn", "text": f"*Build:* #{build_num}"},
-                    {"type": "mrkdwn", "text": f"*Duration:* {duration}"},
-                    {"type": "mrkdwn", "text": f"*Cluster Endpoint:* `{endpoint}`"},
-                    {"type": "mrkdwn", "text": f"*Nodes:* {masters} masters, {workers} workers"}
-                ]
-            },
-            {"type": "divider"},
-            {
-                "type": "section",
-                "text": {
-                    "type": "mrkdwn",
-                    "text": "*📋 Access Instructions:*\\n1. Download `kubeconfig/admin.conf` from Jenkins artifacts\\n2. Save to `~/.kube/config`\\n3. Run `kubectl get nodes`\\n\\n*Note:* Full kubeconfig too large for Slack. Please download from Jenkins."
-                }
-            }
-        ]
-    }
-    
-    with open('slack_message.json', 'w') as f:
-        json.dump(simple_message, f, indent=2)
-    
-    print("Created simplified message due to size limit")
-
-# Also write a debug version to see what's happening
-with open('debug_kubeconfig.txt', 'w') as f:
-    f.write(kubeconfig)
-print("Debug - KUBECONFIG written to debug_kubeconfig.txt")
-'''
+                            // Set environment variables for the notification script
+                            env.BUILD_DURATION = buildDuration
+                            env.CLUSTER_ENDPOINT = clusterEndpoint
+                            env.MASTER_COUNT = masterCount
+                            env.WORKER_COUNT = workerCount
                             
-                            writeFile file: "format_slack.py", text: pythonScript
-                            
-                            sh """#!/bin/bash
-                                # Debug: Check if kubeconfig exists
-                                echo "Checking kubeconfig file:"
-                                ls -la kubeconfig/admin.conf || echo "Kubeconfig file not found!"
-                                echo ""
-                                echo "First 5 lines of kubeconfig:"
-                                head -5 kubeconfig/admin.conf || echo "Cannot read kubeconfig!"
-                                echo ""
-                                
-                                # Run Python script to format the message
-                                python3 format_slack.py "${BUILD_NUMBER}" "${buildDuration}" "${clusterEndpoint}" "${masterCount}" "${workerCount}" "${BUILD_URL}"
-                                
-                                # Debug: Check the generated JSON
-                                echo ""
-                                echo "Generated Slack message (first 1000 chars):"
-                                cat slack_message.json | head -c 1000
-                                echo ""
-                                echo ""
-                                echo "Debug kubeconfig content:"
-                                cat debug_kubeconfig.txt | head -20 || echo "No debug kubeconfig"
-                                echo ""
-                                
-                                # Send to Slack
-                                if ! curl -X POST ${SLACK_WEBHOOK_URL} \
-                                     -H "Content-Type: application/json" \
-                                     -d @slack_message.json \
-                                     --silent --show-error --fail; then
-                                    
-                                    echo "Blocks format failed, trying simple format..."
-                                    
-                                    # Send multiple messages for large kubeconfig
-                                    ${WORKSPACE}/venv/bin/python -c "
-import json
-import urllib.request
-import urllib.error
-
-webhook_url = '${SLACK_WEBHOOK_URL}'
-
-# Read kubeconfig
-with open('kubeconfig/admin.conf', 'r') as f:
-    kubeconfig = f.read()
-
-def send_slack_message(message):
-    data = json.dumps(message).encode('utf-8')
-    req = urllib.request.Request(webhook_url, data=data, headers={'Content-Type': 'application/json'})
-    try:
-        with urllib.request.urlopen(req, timeout=10) as response:
-            return response.status == 200, response.read().decode()
-    except urllib.error.HTTPError as e:
-        return False, f'{e.code}: {e.read().decode()}'
-    except Exception as e:
-        return False, str(e)
-
-# First message: Summary
-summary_msg = {
-    'text': f'''Kubernetes Cluster Ready! (Build #${BUILD_NUMBER})
-
-Master nodes: ${masterCount}
-Worker nodes: ${workerCount}
-
-Jenkins: ${BUILD_URL}
-
-Kubeconfig will follow in next message...'''
-}
-
-# Send summary
-success, resp = send_slack_message(summary_msg)
-if success:
-    print('Summary sent successfully')
-else:
-    print(f'Failed to send summary: {resp}')
-
-# Second message: Kubeconfig with proper formatting
-# Escape the kubeconfig content to preserve formatting
-import base64
-kubeconfig_b64 = base64.b64encode(kubeconfig.encode()).decode()
-
-kubeconfig_msg = {
-    'text': f'''To setup kubeconfig, run this command:
-
-\\`\\`\\`bash
-echo "{kubeconfig_b64}" | base64 -d > ~/.kube/config
-kubectl get nodes
-\\`\\`\\`
-
-Or download from Jenkins: ${BUILD_URL}artifact/ansible/kubeconfig/admin.conf'''
-}
-
-# Send kubeconfig
-success, resp = send_slack_message(kubeconfig_msg)
-if success:
-    print('Kubeconfig sent successfully')
-else:
-    print(f'Failed to send kubeconfig: {resp}')
-    
-    # If too large, try sending just the command
-    if 'too_long' in resp or '400' in resp:
-        print('Kubeconfig too large, sending download instructions instead')
-        fallback_msg = {
-            'text': f'''Kubeconfig is too large for Slack. Download it from Jenkins:
-
-${BUILD_URL}artifact/ansible/kubeconfig/admin.conf
-
-Or copy from the Jenkins console output above.'''
-        }
-        success2, resp2 = send_slack_message(fallback_msg)
-        if success2:
-            print('Fallback message sent')
-        else:
-            print(f'Failed to send fallback: {resp2}')
-"
-                                else
-                                    echo "KUBECONFIG sent to Slack successfully!"
-                                fi
-                                
-                                # Cleanup
-                                rm -f slack_message.json format_slack.py debug_kubeconfig.txt
-                            """
+                            sh '../scripts/notify_slack.sh'
                         }
                     }
                 }

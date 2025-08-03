@@ -25,7 +25,7 @@ fi
 
 # Optimize fact gathering
 echo "Pre-gathering facts in parallel..."
-ansible all -i inventory.py -m setup -a "gather_subset=!all,!hardware,network,virtual" --forks 50 &>/dev/null || true
+ansible all -i ${WORKSPACE}/scripts/inventory.py -m setup -a "gather_subset=!all,!hardware,network,virtual" --forks 50 &>/dev/null || true
 
 # Main deployment sequence
 echo ""
@@ -38,7 +38,7 @@ if [ "$SINGLE_PLAYBOOK" = "true" ]; then
     START_TIME=$(date +%s)
     
     ansible-playbook \
-        -i inventory.py \
+        -i ${WORKSPACE}/scripts/inventory.py \
         playbooks/k8s-cluster-setup.yml \
         --forks 50 \
         --timeout 30
@@ -61,7 +61,7 @@ else
         
         # Run with optimized settings
         ansible-playbook \
-            -i inventory.py \
+            -i ${WORKSPACE}/scripts/inventory.py \
             playbooks/$playbook \
             --forks 50 \
             --timeout 30 \
@@ -94,11 +94,11 @@ if [ -n "$FIRST_MASTER" ]; then
     echo "   Checking cluster status on $FIRST_MASTER..."
     
     # Quick cluster health check
-    ansible $FIRST_MASTER -i inventory.py -m shell -a "kubectl get nodes -o wide && echo '---' && kubectl get pods -A | grep -v Running | head -20" || true
+    ansible $FIRST_MASTER -i ${WORKSPACE}/scripts/inventory.py -m shell -a "kubectl get nodes -o wide && echo '---' && kubectl get pods -A | grep -v Running | head -20" || true
     
     # Get cluster info without jq
-    NODE_COUNT=$(ansible $FIRST_MASTER -i inventory.py -m shell -a "kubectl get nodes --no-headers | wc -l" -o | tail -1 | tr -d '\r\n' | grep -o '[0-9]*' || echo "0")
-    READY_COUNT=$(ansible $FIRST_MASTER -i inventory.py -m shell -a "kubectl get nodes --no-headers | grep ' Ready' | wc -l" -o | tail -1 | tr -d '\r\n' | grep -o '[0-9]*' || echo "0")
+    NODE_COUNT=$(ansible $FIRST_MASTER -i ${WORKSPACE}/scripts/inventory.py -m shell -a "kubectl get nodes --no-headers | wc -l" -o | tail -1 | tr -d '\r\n' | grep -o '[0-9]*' || echo "0")
+    READY_COUNT=$(ansible $FIRST_MASTER -i ${WORKSPACE}/scripts/inventory.py -m shell -a "kubectl get nodes --no-headers | grep ' Ready' | wc -l" -o | tail -1 | tr -d '\r\n' | grep -o '[0-9]*' || echo "0")
     
     echo ""
     echo "Cluster Status:"

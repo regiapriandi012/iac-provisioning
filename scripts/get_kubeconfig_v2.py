@@ -9,6 +9,7 @@ import base64
 import os
 
 def get_kubeconfig(inventory_file, output_file=None):
+    inventory_script = os.path.join(os.environ.get('WORKSPACE', '/root/coder/iac-provision'), 'scripts', 'inventory.py')
     try:
         # Load inventory
         with open(inventory_file, 'r') as f:
@@ -49,7 +50,7 @@ def get_kubeconfig(inventory_file, output_file=None):
                 # Use ansible slurp module to get file content as base64
                 cmd = [
                     'ansible', first_master,
-                    '-i', '../inventory.py',
+                    '-i', inventory_script,
                     '-m', 'slurp',
                     '-a', f'src={kube_path}',
                     '--timeout=30'
@@ -89,7 +90,7 @@ def get_kubeconfig(inventory_file, output_file=None):
                 
                 cmd = [
                     'ansible', first_master,
-                    '-i', '../inventory.py',
+                    '-i', inventory_script,
                     '-m', 'fetch',
                     '-a', f'src=/etc/kubernetes/admin.conf dest={temp_file} flat=yes',
                     '--timeout=30'

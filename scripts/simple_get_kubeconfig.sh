@@ -41,7 +41,7 @@ cd $(dirname $0)/..
 echo "Attempting to fetch /etc/kubernetes/admin.conf..."
 
 # Method 1: Direct output with JSON formatting to preserve YAML
-ansible $FIRST_MASTER -i inventory.py -m shell \
+ansible $FIRST_MASTER -i ${WORKSPACE}/scripts/inventory.py -m shell \
     -a "cat /etc/kubernetes/admin.conf 2>/dev/null || echo 'FILE_NOT_FOUND'" \
     --timeout=30 -o 2>/dev/null | \
     awk -F' => ' '{print $2}' | \
@@ -65,7 +65,7 @@ else
     echo "Failed with method 1, trying kubectl config view..."
     
     # Method 2: kubectl config view
-    ansible $FIRST_MASTER -i inventory.py -m shell \
+    ansible $FIRST_MASTER -i ${WORKSPACE}/scripts/inventory.py -m shell \
         -a "kubectl config view --raw 2>/dev/null || echo 'KUBECTL_FAILED'" \
         --timeout=30 -o 2>/dev/null | \
         awk -F' => ' '{print $2}' | \
