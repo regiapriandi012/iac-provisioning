@@ -729,13 +729,25 @@ print("Debug - KUBECONFIG written to debug_kubeconfig.txt")
                                     # Send multiple messages for large kubeconfig
                                     ${WORKSPACE}/venv/bin/python -c "
 import json
-import requests
+import urllib.request
+import urllib.error
 
 webhook_url = '${SLACK_WEBHOOK_URL}'
 
 # Read kubeconfig
 with open('kubeconfig/admin.conf', 'r') as f:
     kubeconfig = f.read()
+
+def send_slack_message(message):
+    data = json.dumps(message).encode('utf-8')
+    req = urllib.request.Request(webhook_url, data=data, headers={'Content-Type': 'application/json'})
+    try:
+        with urllib.request.urlopen(req, timeout=10) as response:
+            return response.status == 200, response.read().decode()
+    except urllib.error.HTTPError as e:
+        return False, f'{e.code}: {e.read().decode()}'
+    except Exception as e:
+        return False, str(e)
 
 # First message: Summary
 summary_msg = {
@@ -750,14 +762,11 @@ Kubeconfig will follow in next message...'''
 }
 
 # Send summary
-try:
-    resp = requests.post(webhook_url, json=summary_msg, timeout=10)
-    if resp.status_code == 200:
-        print('Summary sent successfully')
-    else:
-        print(f'Failed to send summary: {resp.status_code}')
-except Exception as e:
-    print(f'Error sending summary: {e}')
+success, resp = send_slack_message(summary_msg)
+if success:
+    print('Summary sent successfully')
+else:
+    print(f'Failed to send summary: {resp}')
 
 # Second message: Kubeconfig
 kubeconfig_msg = {
@@ -769,28 +778,27 @@ kubeconfig_msg = {
 }
 
 # Send kubeconfig
-try:
-    resp = requests.post(webhook_url, json=kubeconfig_msg, timeout=10)
-    if resp.status_code == 200:
-        print('Kubeconfig sent successfully')
-    else:
-        print(f'Failed to send kubeconfig: {resp.status_code} - {resp.text}')
-        
-        # If too large, try sending just the command
-        if 'too_long' in resp.text or resp.status_code == 400:
-            print('Kubeconfig too large, sending download instructions instead')
-            fallback_msg = {
-                'text': f'''Kubeconfig is too large for Slack. Download it from Jenkins:
+success, resp = send_slack_message(kubeconfig_msg)
+if success:
+    print('Kubeconfig sent successfully')
+else:
+    print(f'Failed to send kubeconfig: {resp}')
+    
+    # If too large, try sending just the command
+    if 'too_long' in resp or '400' in resp:
+        print('Kubeconfig too large, sending download instructions instead')
+        fallback_msg = {
+            'text': f'''Kubeconfig is too large for Slack. Download it from Jenkins:
 
 ${BUILD_URL}artifact/ansible/kubeconfig/admin.conf
 
 Or copy from the Jenkins console output above.'''
-            }
-            resp2 = requests.post(webhook_url, json=fallback_msg, timeout=10)
-            if resp2.status_code == 200:
-                print('Fallback message sent')
-except Exception as e:
-    print(f'Error sending kubeconfig: {e}')
+        }
+        success2, resp2 = send_slack_message(fallback_msg)
+        if success2:
+            print('Fallback message sent')
+        else:
+            print(f'Failed to send fallback: {resp2}')
 "
                                 else
                                     echo "KUBECONFIG sent to Slack successfully!"
