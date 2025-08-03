@@ -321,8 +321,26 @@ pipeline {
                             echo "Waiting 20s for VMs to initialize..."
                             sleep 20
                             
-                            # Run VM readiness check with venv Python
-                            ${WORKSPACE}/venv/bin/python scripts/smart_vm_ready.py ${INVENTORY_FILE} 20
+                            # Run VM readiness check with retry mechanism
+                            MAX_RETRIES=10
+                            RETRY_DELAY=30
+                            
+                            for i in $(seq 1 $MAX_RETRIES); do
+                                echo "VM readiness check attempt $i/$MAX_RETRIES..."
+                                
+                                if ${WORKSPACE}/venv/bin/python scripts/smart_vm_ready.py ${INVENTORY_FILE} 20; then
+                                    echo "All VMs are ready!"
+                                    break
+                                else
+                                    if [ $i -lt $MAX_RETRIES ]; then
+                                        echo "Some VMs not ready yet. Waiting ${RETRY_DELAY}s before retry..."
+                                        sleep $RETRY_DELAY
+                                    else
+                                        echo "ERROR: VMs still not ready after $MAX_RETRIES attempts"
+                                        exit 1
+                                    fi
+                                fi
+                            done
                         '''
                         
                         def duration = ((System.currentTimeMillis() - startTime) / 1000).intValue()
