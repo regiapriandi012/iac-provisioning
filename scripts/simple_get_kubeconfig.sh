@@ -37,6 +37,9 @@ export ANSIBLE_INVENTORY_FILE="$INVENTORY_FILE"
 # Change to ansible directory for inventory.py to work
 cd $(dirname $0)/..
 
+# Create kubeconfig directory if it doesn't exist
+mkdir -p $(dirname "$OUTPUT_FILE")
+
 # Try to get kubeconfig
 echo "Attempting to fetch /etc/kubernetes/admin.conf..."
 

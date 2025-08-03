@@ -39,7 +39,7 @@ fi
 if [ "$NEED_INSTALL" = "true" ]; then
     echo "Installing required Python packages..."
     pip install --upgrade pip
-    pip install asyncssh paramiko mitogen
+    pip install asyncssh paramiko mitogen PyYAML
 else
     echo "Python packages already installed"
 fi

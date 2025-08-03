@@ -32,7 +32,7 @@ pipeline {
         ANSIBLE_DIR = 'ansible'
         ANSIBLE_CONFIG = "${ANSIBLE_DIR}/ansible.cfg"
         INVENTORY_FILE = 'inventory/k8s-inventory.json'
-        INVENTORY_SCRIPT = 'scripts/inventory.py'
+        INVENTORY_SCRIPT = '../scripts/inventory.py'
         CACHE_DIR = "${WORKSPACE}/.iac-cache"
     }
     
