@@ -788,9 +788,9 @@ Worker nodes: ${workerCount}
 
 Save this kubeconfig to ~/.kube/config:
 
-\`\`\`
+\\`\\`\\`
 {kubeconfig}
-\`\`\`
+\\`\\`\\`
 
 Jenkins: ${BUILD_URL}'''
 }
