@@ -24,7 +24,7 @@ defaults
     maxconn                 3000
 
 frontend kubernetes-api
-    bind {{ haproxy_vip }}:{{ haproxy_port | default('6443') }}
+    bind *:{{ haproxy_port | default('6443') }}
     bind 127.0.0.1:{{ haproxy_port | default('6443') }}
     mode tcp
     option tcplog
