@@ -267,53 +267,41 @@
         state: restarted
 
 # HAProxy Setup for Multi-Master HA
+# Note: HAProxy should run on a separate load balancer, not on master nodes
+# to avoid port conflicts with kube-apiserver
 - name: "Setup HAProxy Load Balancer for HA Masters"
   hosts: k8s_masters
   become: true
   vars:
     haproxy_stats_port: 8404
   tasks:
-    - name: Install packages for VIP management (only for HA clusters)
+    - name: Install keepalived for VIP management (only for HA clusters)
       package:
         name:
-          - haproxy
           - keepalived
         state: present
       when: is_ha_cluster
 
-    # VIP will be managed by keepalived, not manually
-    # - name: Configure VIP on primary interface
-    #   shell: |
-    #     # Get primary network interface
-    #     PRIMARY_IF=$(ip route | grep default | awk '{print $5}' | head -n1)
-    #     # Add VIP as secondary IP if not exists
-    #     if ! ip addr show $PRIMARY_IF | grep -q "{{ haproxy_vip }}/32"; then
-    #       ip addr add {{ haproxy_vip }}/32 dev $PRIMARY_IF
-    #     fi
-    #   when: 
-    #     - is_ha_cluster
-    #     - inventory_hostname == groups['k8s_masters'][0]
+    # Skip HAProxy installation on masters - it conflicts with kube-apiserver on port 6443
+    # HAProxy should be deployed on a separate load balancer node
+    
+    - name: Check if HAProxy is installed
+      command: which haproxy
+      register: haproxy_installed
+      failed_when: false
+      changed_when: false
 
-    - name: Configure HAProxy for Kubernetes API
-      template:
-        src: haproxy.cfg.j2
-        dest: /etc/haproxy/haproxy.cfg
-        backup: yes
-      when: is_ha_cluster
-      notify: restart haproxy
-
-    - name: Start and enable HAProxy
+    - name: Stop and disable HAProxy if installed (prevents port conflict)
       systemd:
         name: haproxy
-        state: started
-        enabled: yes
-      when: is_ha_cluster
+        state: stopped
+        enabled: no
+      when: 
+        - haproxy_installed.rc == 0
+        - is_ha_cluster
 
-  handlers:
-    - name: restart haproxy
-      systemd:
-        name: haproxy
-        state: restarted
+  # Remove HAProxy handlers since we're not using it on masters
+  handlers: []
 
 # Initialize First Master Node
 - name: "Initialize First Kubernetes Master"

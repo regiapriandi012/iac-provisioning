@@ -94,7 +94,9 @@ output "ansible_inventory_json" {
         kubernetes_version = "1.28.0"
         container_runtime = "containerd"
       }, local.master_count > 1 ? {
-        control_plane_endpoint = "${local.haproxy_vip}:6443"
+        # For HA cluster without external load balancer, use first master IP
+        # In production, this should point to a proper load balancer
+        control_plane_endpoint = "${local.first_master_ip}:6443"
         haproxy_vip = local.haproxy_vip
         haproxy_port = "6443"
         etcd_cluster = true
