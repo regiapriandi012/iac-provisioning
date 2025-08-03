@@ -10,28 +10,21 @@ pipeline {
         )
         
         // ===== Provision Kubernetes =====
-        choice(
-            name: 'cluster_preset',
-            choices: ['small-single-master', 'medium-single-master', 'ha-3-masters', 'custom'],
-            description: 'Cluster size preset configuration'
-        )
-        choice(
-            name: 'vm_template',
-            choices: ['t-debian12-86', 't-centos9-86'],
-            description: 'VM template to use for all nodes'
-        )
-        string(
-            name: 'proxmox_node',
-            defaultValue: 'thinkcentre',
-            description: 'Target Proxmox node for VM deployment'
-        )
         text(
             name: 'vm_csv_content',
             defaultValue: '''vmid,vm_name,template,node,ip,cores,memory,disk_size
-0,kube-master,TEMPLATE_PLACEHOLDER,NODE_PLACEHOLDER,0,2,2048,32G
-0,kube-worker01,TEMPLATE_PLACEHOLDER,NODE_PLACEHOLDER,0,2,2048,32G
-0,kube-worker02,TEMPLATE_PLACEHOLDER,NODE_PLACEHOLDER,0,2,2048,32G''',
-            description: 'Custom VM specifications (CSV format) - used when cluster_preset is "custom"'
+0,kube-master,t-debian12-86,thinkcentre,0,2,2048,32G
+0,kube-worker01,t-debian12-86,thinkcentre,0,2,2048,32G
+0,kube-worker02,t-debian12-86,thinkcentre,0,2,2048,32G''',
+            description: '''VM specifications (CSV format) - define template and node per VM
+            
+Example configurations:
+- Small cluster: 1 master (2 cores, 2GB), 2 workers (2 cores, 2GB)
+- Medium cluster: 1 master (4 cores, 8GB), 3 workers (4 cores, 8GB)
+- HA cluster: 3 masters (4 cores, 8GB), 3 workers (4 cores, 8GB)
+
+Templates: t-debian12-86, t-centos9-86
+Nodes: thinkcentre, or other Proxmox nodes'''
         )
         
         // ===== Advanced Options =====
@@ -151,41 +144,8 @@ pipeline {
                     script {
                         def startTime = System.currentTimeMillis()
                         
-                        // Generate CSV based on preset or custom input
-                        def csvContent = ""
-                        
-                        if (params.cluster_preset == 'custom') {
-                            // Use custom CSV content
-                            csvContent = params.vm_csv_content
-                        } else {
-                            // Use preset configurations with placeholders
-                            def presetConfigs = [
-                                'small-single-master': '''vmid,vm_name,template,node,ip,cores,memory,disk_size
-0,kube-master,TEMPLATE_PLACEHOLDER,NODE_PLACEHOLDER,0,2,2048,50G
-0,kube-worker01,TEMPLATE_PLACEHOLDER,NODE_PLACEHOLDER,0,2,2048,50G
-0,kube-worker02,TEMPLATE_PLACEHOLDER,NODE_PLACEHOLDER,0,2,2048,50G''',
-                                
-                                'medium-single-master': '''vmid,vm_name,template,node,ip,cores,memory,disk_size
-0,kube-master,TEMPLATE_PLACEHOLDER,NODE_PLACEHOLDER,0,4,8192,100G
-0,kube-worker01,TEMPLATE_PLACEHOLDER,NODE_PLACEHOLDER,0,4,8192,100G
-0,kube-worker02,TEMPLATE_PLACEHOLDER,NODE_PLACEHOLDER,0,4,8192,100G
-0,kube-worker03,TEMPLATE_PLACEHOLDER,NODE_PLACEHOLDER,0,4,8192,100G''',
-                                
-                                'ha-3-masters': '''vmid,vm_name,template,node,ip,cores,memory,disk_size
-0,kube-master01,TEMPLATE_PLACEHOLDER,NODE_PLACEHOLDER,0,4,8192,50G
-0,kube-master02,TEMPLATE_PLACEHOLDER,NODE_PLACEHOLDER,0,4,8192,50G
-0,kube-master03,TEMPLATE_PLACEHOLDER,NODE_PLACEHOLDER,0,4,8192,50G
-0,kube-worker01,TEMPLATE_PLACEHOLDER,NODE_PLACEHOLDER,0,4,8192,100G
-0,kube-worker02,TEMPLATE_PLACEHOLDER,NODE_PLACEHOLDER,0,4,8192,100G
-0,kube-worker03,TEMPLATE_PLACEHOLDER,NODE_PLACEHOLDER,0,4,8192,100G'''
-                            ]
-                            
-                            csvContent = presetConfigs[params.cluster_preset]
-                        }
-                        
-                        // Replace placeholders with actual values
-                        csvContent = csvContent.replaceAll('TEMPLATE_PLACEHOLDER', params.vm_template)
-                        csvContent = csvContent.replaceAll('NODE_PLACEHOLDER', params.proxmox_node)
+                        // Use CSV content directly
+                        def csvContent = params.vm_csv_content
                         
                         // Write final CSV to file
                         writeFile file: "vms.csv", text: csvContent
