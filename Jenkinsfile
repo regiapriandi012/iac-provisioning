@@ -502,8 +502,23 @@ with open('${INVENTORY_FILE}', 'r') as f:
                             # Final check
                             if [ -f kubeconfig/admin.conf ] && [ -s kubeconfig/admin.conf ]; then
                                 echo "KUBECONFIG file exists and has content"
-                                echo "First 5 lines:"
-                                head -5 kubeconfig/admin.conf
+                                echo "First 10 lines:"
+                                head -10 kubeconfig/admin.conf
+                                echo ""
+                                
+                                # Validate YAML structure
+                                echo "Validating YAML structure..."
+                                ${WORKSPACE}/venv/bin/python -c "
+import yaml
+try:
+    with open('kubeconfig/admin.conf', 'r') as f:
+        config = yaml.safe_load(f)
+    print('YAML validation: PASSED')
+    print(f'Config type: {type(config)}')
+    print(f'Keys: {list(config.keys()) if isinstance(config, dict) else \"Not a dict\"}')
+except Exception as e:
+    print(f'YAML validation: FAILED - {e}')
+"
                             else
                                 echo "WARNING: No valid KUBECONFIG found!"
                                 echo "Creating placeholder..."

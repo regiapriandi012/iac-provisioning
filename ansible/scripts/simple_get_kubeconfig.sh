@@ -40,18 +40,26 @@ cd $(dirname $0)/..
 # Try to get kubeconfig
 echo "Attempting to fetch /etc/kubernetes/admin.conf..."
 
-# Method 1: Direct output with minimal formatting
+# Method 1: Direct output with JSON formatting to preserve YAML
 ansible $FIRST_MASTER -i inventory.py -m shell \
     -a "cat /etc/kubernetes/admin.conf 2>/dev/null || echo 'FILE_NOT_FOUND'" \
-    --timeout=30 2>/dev/null | \
-    sed '1,/^apiVersion:/d' | \
-    sed '/^$/,$d' > "$OUTPUT_FILE.tmp"
+    --timeout=30 -o 2>/dev/null | \
+    awk -F' => ' '{print $2}' | \
+    python3 -c "
+import sys
+import json
+try:
+    data = sys.stdin.read().strip()
+    result = json.loads(data)
+    if 'stdout' in result:
+        print(result['stdout'])
+except:
+    pass
+" > "$OUTPUT_FILE.tmp"
 
 # Check if we got valid content
-if grep -q "apiVersion:" "$OUTPUT_FILE.tmp" 2>/dev/null; then
-    # Fix the first line (add back apiVersion)
-    echo "apiVersion: v1" > "$OUTPUT_FILE"
-    tail -n +2 "$OUTPUT_FILE.tmp" >> "$OUTPUT_FILE"
+if grep -q "apiVersion:" "$OUTPUT_FILE.tmp" 2>/dev/null && grep -q "kind: Config" "$OUTPUT_FILE.tmp" 2>/dev/null; then
+    mv "$OUTPUT_FILE.tmp" "$OUTPUT_FILE"
     echo "Successfully retrieved kubeconfig"
 else
     echo "Failed with method 1, trying kubectl config view..."
@@ -59,13 +67,22 @@ else
     # Method 2: kubectl config view
     ansible $FIRST_MASTER -i inventory.py -m shell \
         -a "kubectl config view --raw 2>/dev/null || echo 'KUBECTL_FAILED'" \
-        --timeout=30 2>/dev/null | \
-        sed '1,/^apiVersion:/d' | \
-        sed '/^$/,$d' > "$OUTPUT_FILE.tmp"
+        --timeout=30 -o 2>/dev/null | \
+        awk -F' => ' '{print $2}' | \
+        python3 -c "
+import sys
+import json
+try:
+    data = sys.stdin.read().strip()
+    result = json.loads(data)
+    if 'stdout' in result:
+        print(result['stdout'])
+except:
+    pass
+" > "$OUTPUT_FILE.tmp"
     
     if grep -q "kind: Config" "$OUTPUT_FILE.tmp" 2>/dev/null; then
-        echo "apiVersion: v1" > "$OUTPUT_FILE"
-        tail -n +2 "$OUTPUT_FILE.tmp" >> "$OUTPUT_FILE"
+        mv "$OUTPUT_FILE.tmp" "$OUTPUT_FILE"
         echo "Successfully retrieved kubeconfig with kubectl"
     else
         echo "ERROR: Could not retrieve kubeconfig"
