@@ -50,20 +50,40 @@ def get_kubeconfig(inventory_file, output_file=None):
             
             for config_path in kubeconfig_locations:
                 print(f"Checking {config_path}...")
-                cmd = [
+                
+                # First check if file exists
+                check_cmd = [
                     'ansible', first_master, 
                     '-i', '../inventory.py',
                     '-m', 'shell',
-                    '-a', f'test -f {config_path} && cat {config_path}',
+                    '-a', f'test -f {config_path} && echo "FILE_EXISTS"',
                     '--timeout=30'
                 ]
                 
-                result = subprocess.run(cmd, capture_output=True, text=True)
+                check_result = subprocess.run(check_cmd, capture_output=True, text=True)
                 
-                if result.returncode == 0 and 'apiVersion:' in result.stdout:
-                    print(f"Found kubeconfig at {config_path}")
-                    config_found = True
-                    break
+                if check_result.returncode == 0 and 'FILE_EXISTS' in check_result.stdout:
+                    print(f"File exists at {config_path}, retrieving content...")
+                    
+                    # Now get the content
+                    cmd = [
+                        'ansible', first_master, 
+                        '-i', '../inventory.py',
+                        '-m', 'shell',
+                        '-a', f'cat {config_path}',
+                        '--timeout=30'
+                    ]
+                    
+                    result = subprocess.run(cmd, capture_output=True, text=True)
+                    
+                    if result.returncode == 0:
+                        print(f"Successfully retrieved content from {config_path}")
+                        config_found = True
+                        break
+                    else:
+                        print(f"Failed to cat {config_path}: {result.stderr}")
+                else:
+                    print(f"File not found at {config_path}")
             
             if not config_found:
                 # If no config found, generate one from the cluster
@@ -77,43 +97,51 @@ def get_kubeconfig(inventory_file, output_file=None):
                 ]
                 result = subprocess.run(cmd, capture_output=True, text=True)
             
-            result = subprocess.run(cmd, capture_output=True, text=True)
-            
             if result.returncode != 0 or 'apiVersion:' not in result.stdout:
                 print(f"Failed to retrieve KUBECONFIG: {result.stderr}")
                 print("Stdout:", result.stdout[:200])
                 return False
                 
             # Extract the config content from ansible output
-            output_lines = result.stdout.split('\n')
-            config_content = []
-            capture = False
+            # Ansible output format: hostname | CHANGED | rc=0 >>
+            # actual content starts after >>
+            output = result.stdout
             
-            for line in output_lines:
-                if line.strip().startswith('apiVersion:'):
-                    capture = True
-                    
-                if capture:
-                    # Remove ansible formatting
-                    clean_line = line
-                    if ' | ' in line:
-                        clean_line = line.split(' | ', 1)[1] if len(line.split(' | ')) > 1 else line
-                    
-                    config_content.append(clean_line)
-                    
-                    # Stop at the end of YAML
-                    if line.strip() and not line.startswith(' ') and 'apiVersion:' not in line and len(config_content) > 10:
-                        if not any(yaml_key in line for yaml_key in ['clusters:', 'contexts:', 'users:', 'current-context:', 'kind:', 'preferences:']):
-                            break
+            # Debug output
+            print(f"Raw ansible output (first 500 chars): {output[:500]}")
             
-            # Clean up the config content
-            kubeconfig = '\n'.join(config_content).strip()
+            # Find where the actual output starts (after >>)
+            if ' >> ' in output:
+                output = output.split(' >> ', 1)[1]
+            elif '>>' in output:
+                output = output.split('>>', 1)[1]
+            
+            # Remove any ansible success/error messages at the end
+            lines = output.split('\n')
+            clean_lines = []
+            for line in lines:
+                # Skip ansible metadata lines
+                if line.startswith(first_master) or ' | CHANGED' in line or ' | SUCCESS' in line:
+                    continue
+                clean_lines.append(line)
+            
+            kubeconfig = '\n'.join(clean_lines).strip()
             
             # Validate kubeconfig has content
-            if not kubeconfig or len(kubeconfig) < 100:
-                print(f"ERROR: Retrieved kubeconfig is too short or empty (length: {len(kubeconfig)})")
-                print("Raw output:", result.stdout[:500])
-                return False
+            if not kubeconfig or len(kubeconfig) < 100 or 'apiVersion:' not in kubeconfig:
+                print(f"ERROR: Retrieved kubeconfig is invalid (length: {len(kubeconfig)})")
+                print(f"Parsed content (first 200 chars): {kubeconfig[:200]}")
+                print("\nTrying alternative parsing...")
+                
+                # Alternative: just find the YAML content
+                import re
+                yaml_match = re.search(r'(apiVersion:[\s\S]+)', output, re.MULTILINE)
+                if yaml_match:
+                    kubeconfig = yaml_match.group(1).strip()
+                    print("Found kubeconfig with regex matching")
+                else:
+                    print("ERROR: Could not extract valid kubeconfig from output")
+                    return False
             
             # Replace internal IP with external accessible IP
             kubeconfig = kubeconfig.replace('127.0.0.1', master_ip)

@@ -444,9 +444,11 @@ pipeline {
                             # Extract KUBECONFIG
                             mkdir -p kubeconfig
                             
-                            # Try to get kubeconfig
-                            if ${WORKSPACE}/venv/bin/python scripts/get_kubeconfig.py ${INVENTORY_FILE} kubeconfig/admin.conf; then
-                                echo "KUBECONFIG extracted successfully"
+                            # Try to get kubeconfig with new script first
+                            if ${WORKSPACE}/venv/bin/python scripts/get_kubeconfig_v2.py ${INVENTORY_FILE} kubeconfig/admin.conf; then
+                                echo "KUBECONFIG extracted successfully with v2 script"
+                            elif ${WORKSPACE}/venv/bin/python scripts/get_kubeconfig.py ${INVENTORY_FILE} kubeconfig/admin.conf; then
+                                echo "KUBECONFIG extracted successfully with v1 script"
                                 
                                 # Verify the kubeconfig file
                                 if [ -f kubeconfig/admin.conf ]; then
