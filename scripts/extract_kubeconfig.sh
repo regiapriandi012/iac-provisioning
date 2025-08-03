@@ -123,13 +123,22 @@ if [ -f kubeconfig/admin.conf ] && [ -s kubeconfig/admin.conf ]; then
     # Validate YAML structure
     echo "Validating YAML structure..."
     ${WORKSPACE}/venv/bin/python -c "
-import yaml
 try:
+    import yaml
     with open('kubeconfig/admin.conf', 'r') as f:
         config = yaml.safe_load(f)
     print('YAML validation: PASSED')
     print(f'Config type: {type(config)}')
     print(f'Keys: {list(config.keys()) if isinstance(config, dict) else \"Not a dict\"}')
+except ImportError:
+    print('YAML validation: SKIPPED - PyYAML not available')
+    # Basic validation without PyYAML
+    with open('kubeconfig/admin.conf', 'r') as f:
+        content = f.read()
+        if 'apiVersion:' in content and 'kind:' in content:
+            print('Basic validation: PASSED - Contains required YAML keys')
+        else:
+            print('Basic validation: FAILED - Missing required YAML keys')
 except Exception as e:
     print(f'YAML validation: FAILED - {e}')
 "

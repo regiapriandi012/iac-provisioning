@@ -12,37 +12,18 @@ fi
 # Setup Python virtual environment
 echo "Setting up Python virtual environment..."
 
-# Check if venv exists in cache
-if [ "$USE_CACHE" = "true" ] && [ -d "${CACHE_DIR}/python/venv" ]; then
-    echo "Using cached Python venv"
-    cp -r ${CACHE_DIR}/python/venv ${WORKSPACE}/venv || true
-fi
-
-# Create venv if it doesn't exist
-if [ ! -d "${WORKSPACE}/venv" ]; then
-    echo "Creating new Python venv..."
-    python3 -m venv ${WORKSPACE}/venv
-fi
+# Always recreate venv for now to ensure latest packages
+echo "Creating fresh Python venv..."
+rm -rf ${WORKSPACE}/venv
+python3 -m venv ${WORKSPACE}/venv
 
 # Activate venv and install required packages
 . ${WORKSPACE}/venv/bin/activate
 
-# Check if packages are already installed
-NEED_INSTALL=false
-if ! python3 -c "import asyncssh" 2>/dev/null; then
-    NEED_INSTALL=true
-fi
-if ! python3 -c "import mitogen" 2>/dev/null; then
-    NEED_INSTALL=true
-fi
-
-if [ "$NEED_INSTALL" = "true" ]; then
-    echo "Installing required Python packages..."
-    pip install --upgrade pip
-    pip install asyncssh paramiko mitogen PyYAML
-else
-    echo "Python packages already installed"
-fi
+# Install required packages (fresh venv so always install)
+echo "Installing required Python packages..."
+pip install --upgrade pip
+pip install asyncssh paramiko mitogen PyYAML
 
 # Setup Mitogen for Ansible (ULTRA-FAST performance)
 cd ${ANSIBLE_DIR}
