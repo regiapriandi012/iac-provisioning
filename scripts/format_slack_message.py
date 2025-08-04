@@ -5,6 +5,10 @@ Format Slack message for Kubernetes deployment notification.
 import json
 import sys
 import os
+import gzip
+import base64
+import random
+import string
 
 def main():
     # Read inputs
@@ -14,6 +18,7 @@ def main():
     masters = sys.argv[4]
     workers = sys.argv[5]
     build_url = sys.argv[6]
+    cluster_suffix = sys.argv[7] if len(sys.argv) > 7 else None
 
     print(f"Debug - Build: {build_num}")
     print(f"Debug - Duration: {duration}")
@@ -46,9 +51,29 @@ def main():
                 print("WARNING: kubeconfig seems invalid")
                 kubeconfig = f"# WARNING: Invalid KUBECONFIG (length: {len(kubeconfig)})\n# Content:\n{kubeconfig}"
 
-    # Don't truncate kubeconfig - send full content
-    kubeconfig_truncated = kubeconfig
-    print(f"Kubeconfig size: {len(kubeconfig)} characters")
+    # Compress kubeconfig using gzip + base64 for compact Slack message
+    if kubeconfig and not kubeconfig.startswith("# ERROR:") and not kubeconfig.startswith("# WARNING:"):
+        # Compress with gzip and encode with base64
+        kubeconfig_bytes = kubeconfig.encode('utf-8')
+        compressed = gzip.compress(kubeconfig_bytes, compresslevel=9)
+        kubeconfig_compressed = base64.b64encode(compressed).decode('ascii')
+        
+        # Use cluster suffix from terraform or generate random one as fallback
+        if cluster_suffix:
+            config_filename = f"config-{cluster_suffix}"
+            print(f"Using cluster suffix: {cluster_suffix}")
+        else:
+            random_suffix = ''.join(random.choices(string.ascii_lowercase + string.digits, k=6))
+            config_filename = f"config-{random_suffix}"
+            print(f"Using random suffix: {random_suffix}")
+        
+        print(f"Kubeconfig original size: {len(kubeconfig)} characters")
+        print(f"Kubeconfig compressed size: {len(kubeconfig_compressed)} characters")
+        print(f"Compression ratio: {len(kubeconfig_compressed)/len(kubeconfig)*100:.1f}%")
+    else:
+        kubeconfig_compressed = None
+        config_filename = "config-error"
+        print(f"Kubeconfig size: {len(kubeconfig)} characters (not compressed due to error)")
 
     # Create the Slack message
     message = {
@@ -75,14 +100,7 @@ def main():
                 "type": "section",
                 "text": {
                     "type": "mrkdwn",
-                    "text": "*📋 Access Instructions:*\n1. Download `kubeconfig/admin.conf` from Jenkins artifacts\n2. Save to `~/.kube/config`\n3. Run `kubectl get nodes`"
-                }
-            },
-            {
-                "type": "section",
-                "text": {
-                    "type": "mrkdwn",
-                    "text": f"*Quick Setup:*\n```bash\n# Save this as ~/.kube/config\ncat << 'EOF' > ~/.kube/config\n{kubeconfig_truncated}\nEOF\n\n# Test connection\nkubectl get nodes\n```"
+                    "text": "*📋 Quick Setup Command:*" + (f"\n```bash\n# Create .kube directory and extract compressed kubeconfig\nmkdir -p ~/.kube\necho '{kubeconfig_compressed}' | base64 -d | gunzip > ~/.kube/{config_filename}\n\n# Set as default kubeconfig\nexport KUBECONFIG=~/.kube/{config_filename}\n\n# Test connection\nkubectl get nodes\n```" if kubeconfig_compressed else "\n*Error:* Kubeconfig could not be compressed. Please download from Jenkins artifacts.")
                 }
             },
             {
@@ -131,7 +149,7 @@ def main():
                     "type": "section",
                     "text": {
                         "type": "mrkdwn",
-                        "text": "*📋 Access Instructions:*\n1. Download `kubeconfig/admin.conf` from Jenkins artifacts\n2. Save to `~/.kube/config`\n3. Run `kubectl get nodes`\n\n*Note:* Full kubeconfig too large for Slack. Please download from Jenkins."
+                        "text": "*📋 Access Instructions:*\n1. Use the quick setup command above for instant access\n2. Or download `kubeconfig/admin.conf` from Jenkins artifacts\n3. Run `kubectl get nodes` to verify connection\n\n*Note:* Kubeconfig is compressed for compact delivery via Slack."
                     }
                 }
             ]

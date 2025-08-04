@@ -12,8 +12,17 @@ echo "First 5 lines of kubeconfig:"
 head -5 kubeconfig/admin.conf || echo "Cannot read kubeconfig!"
 echo ""
 
+# Get cluster suffix from terraform output
+CLUSTER_SUFFIX=""
+if [ -d "${WORKSPACE}/terraform" ]; then
+    cd ${WORKSPACE}/terraform
+    CLUSTER_SUFFIX=$(terraform output -json 2>/dev/null | jq -r '.assignment_summary.value.shared_suffix // empty' 2>/dev/null || echo "")
+    echo "Extracted cluster suffix: ${CLUSTER_SUFFIX}"
+    cd - > /dev/null
+fi
+
 # Run Python script to format the message
-python3 ${WORKSPACE}/scripts/format_slack_message.py "${BUILD_NUMBER}" "${BUILD_DURATION}" "${CLUSTER_ENDPOINT}" "${MASTER_COUNT}" "${WORKER_COUNT}" "${BUILD_URL}"
+python3 ${WORKSPACE}/scripts/format_slack_message.py "${BUILD_NUMBER}" "${BUILD_DURATION}" "${CLUSTER_ENDPOINT}" "${MASTER_COUNT}" "${WORKER_COUNT}" "${BUILD_URL}" "${CLUSTER_SUFFIX}"
 
 # Debug: Check the generated JSON
 echo ""
