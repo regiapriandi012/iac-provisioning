@@ -100,7 +100,6 @@ def main():
         json.dump(message, f, indent=2)
         
     # Check message size
-    import os
     message_size = os.path.getsize('slack_message.json')
     print(f"Slack message written to slack_message.json (size: {message_size} bytes)")
 
