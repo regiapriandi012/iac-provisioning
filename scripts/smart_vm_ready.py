@@ -168,10 +168,6 @@ class UltraFastVMChecker:
         if 'k8s_workers' in inventory and 'hosts' in inventory['k8s_workers']:
             all_hosts.update(inventory['k8s_workers']['hosts'])
         
-        # Debug: show what we found
-        print(f"Found hosts in: all={len(inventory.get('all', {}).get('hosts', {}))}, "
-              f"k8s_masters={len(inventory.get('k8s_masters', {}).get('hosts', {}))}, "
-              f"k8s_workers={len(inventory.get('k8s_workers', {}).get('hosts', {}))}")
         
         if not all_hosts:
             print("No hosts found in inventory")
@@ -195,7 +191,6 @@ class UltraFastVMChecker:
         ]
         
         # Process batches in parallel
-        all_ready = True
         with ThreadPoolExecutor(max_workers=max(1, self.max_workers // 10)) as executor:
             batch_futures = {
                 executor.submit(self.check_vm_batch, batch): idx
@@ -214,7 +209,6 @@ class UltraFastVMChecker:
                           f"Ready: {ready_count}/{len(all_hosts)}")
                 except Exception as e:
                     print(f"  [FAIL] Batch {batch_idx + 1} failed: {e}")
-                    all_ready = False
         
         # Final report
         elapsed = time.time() - start_time
@@ -227,12 +221,6 @@ class UltraFastVMChecker:
         if not_ready:
             print(f"Not ready ({len(not_ready)}): {', '.join(not_ready)}")
             
-            # Detailed status for debugging
-            print("\nDetailed status:")
-            for vm in not_ready:
-                status = self.results.get(vm, {})
-                print(f"  - {vm}: Port 22={'OK' if status.get('port_22') else 'FAIL'}, "
-                      f"SSH={'OK' if status.get('ssh') else 'FAIL'}")
         
         return len(ready_vms) == len(all_hosts)
 

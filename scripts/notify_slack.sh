@@ -4,51 +4,27 @@
 
 set -e
 
-# Check if kubeconfig exists
-echo "Checking kubeconfig file:"
-ls -la kubeconfig/admin.conf || echo "Kubeconfig file not found!"
-echo ""
-echo "First 5 lines of kubeconfig:"
-head -5 kubeconfig/admin.conf || echo "Cannot read kubeconfig!"
-echo ""
-
 # Get cluster suffix from terraform output
 CLUSTER_SUFFIX=""
 if [ -d "${WORKSPACE}/terraform" ]; then
     cd ${WORKSPACE}/terraform
     CLUSTER_SUFFIX=$(terraform output -json 2>/dev/null | jq -r '.assignment_summary.value.shared_suffix // empty' 2>/dev/null || echo "")
-    echo "Extracted cluster suffix: ${CLUSTER_SUFFIX}"
     cd - > /dev/null
 fi
 
 # Run Python script to format the message
 python3 ${WORKSPACE}/scripts/format_slack_message.py "${BUILD_NUMBER}" "${BUILD_DURATION}" "${CLUSTER_ENDPOINT}" "${MASTER_COUNT}" "${WORKER_COUNT}" "${BUILD_URL}" "${CLUSTER_SUFFIX}"
 
-# Debug: Check the generated JSON
-echo ""
-echo "Generated Slack message (first 1000 chars):"
-cat slack_message.json | head -c 1000
-echo ""
-echo ""
-echo "Debug kubeconfig content:"
-cat debug_kubeconfig.txt | head -20 || echo "No debug kubeconfig"
-echo ""
-
 # Send to Slack
-if ! curl -X POST ${SLACK_WEBHOOK_URL} \
+if curl -X POST ${SLACK_WEBHOOK_URL} \
      -H "Content-Type: application/json" \
      -d @slack_message.json \
      --silent --show-error --fail; then
-    
-    echo "Blocks format failed, trying simple format..."
-    
-    # Use fallback Python script for multiple messages
-    export MASTER_COUNT
-    export WORKER_COUNT
-    python3 ${WORKSPACE}/scripts/send_slack_fallback.py
+    echo "Deployment notification sent to Slack successfully!"
 else
-    echo "KUBECONFIG sent to Slack successfully!"
+    echo "Failed to send notification to Slack"
+    exit 1
 fi
 
 # Cleanup
-rm -f slack_message.json debug_kubeconfig.txt
+rm -f slack_message.json

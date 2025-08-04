@@ -1,14 +1,10 @@
 #!/usr/bin/env python3
 """
-Format Slack message for Kubernetes deployment notification.
+Format professional Slack message for Kubernetes deployment notification.
 """
 import json
 import sys
 import os
-import gzip
-import base64
-import random
-import string
 
 def main():
     # Read inputs
@@ -18,152 +14,90 @@ def main():
     masters = sys.argv[4]
     workers = sys.argv[5]
     build_url = sys.argv[6]
-    cluster_suffix = sys.argv[7] if len(sys.argv) > 7 else None
+    cluster_suffix = sys.argv[7] if len(sys.argv) > 7 else "cluster"
 
-    print(f"Debug - Build: {build_num}")
-    print(f"Debug - Duration: {duration}")
-    print(f"Debug - Endpoint: {endpoint}")
-    print(f"Debug - Masters: {masters}")
-    print(f"Debug - Workers: {workers}")
+    # Validate kubeconfig exists
+    kubeconfig_available = os.path.exists('kubeconfig/admin.conf')
+    
+    # Create artifact URL for kubeconfig download
+    artifact_url = f"{build_url}artifact/kubeconfig/admin.conf" if build_url else None
 
-    # Read kubeconfig
-    kubeconfig_path = 'kubeconfig/admin.conf'
-    if not os.path.exists(kubeconfig_path):
-        print(f"ERROR: {kubeconfig_path} does not exist!")
-        print(f"Current directory: {os.getcwd()}")
-        print(f"Directory contents: {os.listdir('.')}")
-        if os.path.exists('kubeconfig'):
-            print(f"Kubeconfig dir contents: {os.listdir('kubeconfig')}")
-        kubeconfig = "# ERROR: KUBECONFIG could not be retrieved\n# Please check the cluster setup"
-    else:
-        with open(kubeconfig_path, 'r') as f:
-            kubeconfig = f.read()
-        
-        # Check if it's a placeholder
-        if kubeconfig.startswith("# KUBECONFIG could not be retrieved"):
-            print("WARNING: Using placeholder kubeconfig")
-        else:
-            print(f"Debug - KUBECONFIG length: {len(kubeconfig)}")
-            print(f"Debug - KUBECONFIG first 100 chars: {kubeconfig[:100]}")
-            
-            # Validate it's a real kubeconfig
-            if 'apiVersion:' not in kubeconfig or len(kubeconfig) < 100:
-                print("WARNING: kubeconfig seems invalid")
-                kubeconfig = f"# WARNING: Invalid KUBECONFIG (length: {len(kubeconfig)})\n# Content:\n{kubeconfig}"
-
-    # Compress kubeconfig using gzip + base64 for compact Slack message
-    if kubeconfig and not kubeconfig.startswith("# ERROR:") and not kubeconfig.startswith("# WARNING:"):
-        # Compress with gzip and encode with base64
-        kubeconfig_bytes = kubeconfig.encode('utf-8')
-        compressed = gzip.compress(kubeconfig_bytes, compresslevel=9)
-        kubeconfig_compressed = base64.b64encode(compressed).decode('ascii')
-        
-        # Use cluster suffix from terraform or generate random one as fallback
-        if cluster_suffix:
-            config_filename = f"config-{cluster_suffix}"
-            print(f"Using cluster suffix: {cluster_suffix}")
-        else:
-            random_suffix = ''.join(random.choices(string.ascii_lowercase + string.digits, k=6))
-            config_filename = f"config-{random_suffix}"
-            print(f"Using random suffix: {random_suffix}")
-        
-        print(f"Kubeconfig original size: {len(kubeconfig)} characters")
-        print(f"Kubeconfig compressed size: {len(kubeconfig_compressed)} characters")
-        print(f"Compression ratio: {len(kubeconfig_compressed)/len(kubeconfig)*100:.1f}%")
-    else:
-        kubeconfig_compressed = None
-        config_filename = "config-error"
-        print(f"Kubeconfig size: {len(kubeconfig)} characters (not compressed due to error)")
-
-    # Create the Slack message
+    # Create professional Slack message
     message = {
-        "text": "Kubernetes Cluster Ready!",
+        "text": "🎉 Kubernetes Cluster Deployed Successfully",
         "blocks": [
             {
                 "type": "header",
                 "text": {
                     "type": "plain_text",
-                    "text": "Kubernetes Cluster Deployed Successfully"
+                    "text": "🎉 Kubernetes Cluster Deployed Successfully",
+                    "emoji": True
                 }
             },
             {
                 "type": "section",
                 "fields": [
-                    {"type": "mrkdwn", "text": f"*Build:* #{build_num}"},
-                    {"type": "mrkdwn", "text": f"*Duration:* {duration}"},
-                    {"type": "mrkdwn", "text": f"*Cluster Endpoint:* `{endpoint}`" if endpoint else "*Cluster Endpoint:* Not found"},
-                    {"type": "mrkdwn", "text": f"*Nodes:* {masters} masters, {workers} workers"}
+                    {"type": "mrkdwn", "text": f"*🏗️ Build:* #{build_num}"},
+                    {"type": "mrkdwn", "text": f"*⏱️ Duration:* {duration}"},
+                    {"type": "mrkdwn", "text": f"*🌐 Endpoint:* `{endpoint}`" if endpoint and endpoint != "Not found" else "*🌐 Endpoint:* _Pending_"},
+                    {"type": "mrkdwn", "text": f"*🖥️ Nodes:* {masters} master{'s' if int(masters) > 1 else ''}, {workers} worker{'s' if int(workers) > 1 else ''}"}
                 ]
             },
-            {"type": "divider"},
             {
                 "type": "section",
                 "text": {
                     "type": "mrkdwn",
-                    "text": "*📋 Quick Setup Command:*" + (f"\n```bash\n# Create .kube directory and extract compressed kubeconfig\nmkdir -p ~/.kube\necho '{kubeconfig_compressed}' | base64 -d | gunzip > ~/.kube/{config_filename}\n\n# Set as default kubeconfig\nexport KUBECONFIG=~/.kube/{config_filename}\n\n# Test connection\nkubectl get nodes\n```" if kubeconfig_compressed else "\n*Error:* Kubeconfig could not be compressed. Please download from Jenkins artifacts.")
+                    "text": f"*Cluster ID:* `{cluster_suffix}`"
+                }
+            },
+            {"type": "divider"}
+        ]
+    }
+
+    # Add kubeconfig section
+    if kubeconfig_available and artifact_url:
+        message["blocks"].extend([
+            {
+                "type": "section",
+                "text": {
+                    "type": "mrkdwn",
+                    "text": "*📁 Kubeconfig Access*"
                 }
             },
             {
                 "type": "section",
                 "text": {
                     "type": "mrkdwn",
-                    "text": f"*Jenkins Build:* <{build_url}|View Details>"
+                    "text": f"Download kubeconfig: <{artifact_url}|admin.conf>\n\n*Setup Instructions:*\n1. Download the kubeconfig file above\n2. Save as `~/.kube/config-{cluster_suffix}`\n3. Set environment: `export KUBECONFIG=~/.kube/config-{cluster_suffix}`\n4. Verify: `kubectl get nodes`"
                 }
             }
-        ]
-    }
+        ])
+    else:
+        message["blocks"].append({
+            "type": "section",
+            "text": {
+                "type": "mrkdwn",
+                "text": "*⚠️ Kubeconfig Status:* Not available in artifacts"
+            }
+        })
+
+    # Add footer
+    message["blocks"].extend([
+        {"type": "divider"},
+        {
+            "type": "context",
+            "elements": [
+                {
+                    "type": "mrkdwn",
+                    "text": f"📊 <{build_url}|View Build Details> | 🔧 Infrastructure as Code Pipeline"
+                }
+            ]
+        }
+    ])
 
     # Write to file
     with open('slack_message.json', 'w') as f:
         json.dump(message, f, indent=2)
-        
-    # Check message size
-    message_size = os.path.getsize('slack_message.json')
-    print(f"Slack message written to slack_message.json (size: {message_size} bytes)")
-
-    if message_size > 40000:  # 40KB limit
-        print(f"WARNING: Message too large ({message_size} bytes), creating simplified version...")
-        
-        # Create a simplified message
-        simple_message = {
-            "text": "Kubernetes Cluster Ready!",
-            "blocks": [
-                {
-                    "type": "header",
-                    "text": {
-                        "type": "plain_text",
-                        "text": "Kubernetes Cluster Deployed Successfully"
-                    }
-                },
-                {
-                    "type": "section",
-                    "fields": [
-                        {"type": "mrkdwn", "text": f"*Build:* #{build_num}"},
-                        {"type": "mrkdwn", "text": f"*Duration:* {duration}"},
-                        {"type": "mrkdwn", "text": f"*Cluster Endpoint:* `{endpoint}`"},
-                        {"type": "mrkdwn", "text": f"*Nodes:* {masters} masters, {workers} workers"}
-                    ]
-                },
-                {"type": "divider"},
-                {
-                    "type": "section",
-                    "text": {
-                        "type": "mrkdwn",
-                        "text": "*📋 Access Instructions:*\n1. Use the quick setup command above for instant access\n2. Or download `kubeconfig/admin.conf` from Jenkins artifacts\n3. Run `kubectl get nodes` to verify connection\n\n*Note:* Kubeconfig is compressed for compact delivery via Slack."
-                    }
-                }
-            ]
-        }
-        
-        with open('slack_message.json', 'w') as f:
-            json.dump(simple_message, f, indent=2)
-        
-        print("Created simplified message due to size limit")
-
-    # Also write a debug version to see what's happening
-    with open('debug_kubeconfig.txt', 'w') as f:
-        f.write(kubeconfig)
-    print("Debug - KUBECONFIG written to debug_kubeconfig.txt")
 
 if __name__ == "__main__":
     main()

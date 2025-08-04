@@ -109,8 +109,6 @@ def get_kubeconfig(inventory_file, output_file=None):
             # actual content starts after >>
             output = result.stdout
             
-            # Debug output
-            print(f"Raw ansible output (first 500 chars): {output[:500]}")
             
             # Find where the actual output starts (after >>)
             if ' >> ' in output:
