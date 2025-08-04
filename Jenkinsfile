@@ -13,7 +13,7 @@ pipeline {
         text(
             name: 'vm_csv_content',
             defaultValue: '''vmid,vm_name,template,node,ip,cores,memory,disk_size
-0,kube-master,TEMPLATE_PLACEHOLDER,NODE_PLACEHOLDER,0,2,2048,32G
+0,kube-master01,TEMPLATE_PLACEHOLDER,NODE_PLACEHOLDER,0,2,2048,32G
 0,kube-worker01,TEMPLATE_PLACEHOLDER,NODE_PLACEHOLDER,0,2,2048,32G
 0,kube-worker02,TEMPLATE_PLACEHOLDER,NODE_PLACEHOLDER,0,2,2048,32G''',
             description: 'VM specifications (CSV format) - Replace TEMPLATE_PLACEHOLDER and NODE_PLACEHOLDER with your values'
