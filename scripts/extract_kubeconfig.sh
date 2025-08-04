@@ -37,6 +37,7 @@ fi
 
 # Extract KUBECONFIG
 mkdir -p kubeconfig
+mkdir -p ansible/kubeconfig
 
 # Try to get kubeconfig with simple bash script first
 echo ""
@@ -113,7 +114,7 @@ else
     echo "ERROR: Failed to extract KUBECONFIG"
 fi
 
-# Final check
+# Final check and copy to ansible directory
 if [ -f kubeconfig/admin.conf ] && [ -s kubeconfig/admin.conf ]; then
     echo "KUBECONFIG file exists and has content"
     echo "First 10 lines:"
@@ -142,9 +143,16 @@ except ImportError:
 except Exception as e:
     print(f'YAML validation: FAILED - {e}')
 "
+    
+    # Copy to ansible directory for artifacts
+    echo "Copying kubeconfig to ansible directory for artifacts..."
+    cp kubeconfig/admin.conf ansible/kubeconfig/admin.conf
+    echo "KUBECONFIG copied to ansible/kubeconfig/admin.conf"
 else
     echo "WARNING: No valid KUBECONFIG found!"
     echo "Creating placeholder..."
     echo "# KUBECONFIG could not be retrieved automatically" > kubeconfig/admin.conf
     echo "# Please manually copy from master node: /etc/kubernetes/admin.conf" >> kubeconfig/admin.conf
+    echo "# KUBECONFIG could not be retrieved automatically" > ansible/kubeconfig/admin.conf
+    echo "# Please manually copy from master node: /etc/kubernetes/admin.conf" >> ansible/kubeconfig/admin.conf
 fi
