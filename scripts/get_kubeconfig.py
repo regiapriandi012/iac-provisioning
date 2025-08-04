@@ -8,7 +8,8 @@ import subprocess
 
 def get_kubeconfig(inventory_file, output_file=None):
     import os
-    inventory_script = os.path.join(os.environ.get('WORKSPACE', '/root/coder/iac-provision'), 'scripts', 'inventory.py')
+    workspace = os.environ.get('WORKSPACE', os.getcwd())
+    inventory_script = os.path.join(workspace, 'scripts', 'inventory.py')
     try:
         with open(inventory_file, 'r') as f:
             content = f.read().strip()
@@ -42,7 +43,9 @@ def get_kubeconfig(inventory_file, output_file=None):
             # Try multiple possible locations for kubeconfig
             kubeconfig_locations = [
                 '/etc/kubernetes/admin.conf',  # Default location for kubeadm
-                '/root/.kube/config',           # Root user config
+                '$HOME/.kube/config',           # Current user config
+                '/home/ansible/.kube/config',   # Ansible user config
+                '/root/.kube/config',           # Root user config (fallback)
                 '/home/ubuntu/.kube/config',    # Ubuntu user
                 '/etc/kubernetes/super-admin.conf'  # New kubeadm location
             ]

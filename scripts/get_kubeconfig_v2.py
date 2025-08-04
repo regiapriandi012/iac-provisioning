@@ -9,7 +9,8 @@ import base64
 import os
 
 def get_kubeconfig(inventory_file, output_file=None):
-    inventory_script = os.path.join(os.environ.get('WORKSPACE', '/root/coder/iac-provision'), 'scripts', 'inventory.py')
+    workspace = os.environ.get('WORKSPACE', os.getcwd())
+    inventory_script = os.path.join(workspace, 'scripts', 'inventory.py')
     try:
         # Load inventory
         with open(inventory_file, 'r') as f:
@@ -37,7 +38,9 @@ def get_kubeconfig(inventory_file, output_file=None):
             # Try different kubeconfig locations
             kubeconfig_paths = [
                 '/etc/kubernetes/admin.conf',
-                '/root/.kube/config',
+                '$HOME/.kube/config',           # Current user config
+                '/home/ansible/.kube/config',   # Ansible user config  
+                '/root/.kube/config',           # Root user config (fallback)
                 '/etc/kubernetes/super-admin.conf'
             ]
             

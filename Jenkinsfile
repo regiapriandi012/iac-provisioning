@@ -25,6 +25,12 @@ pipeline {
             defaultValue: true,
             description: 'Enable caching for faster subsequent runs'
         )
+        
+        string(
+            name: 'git_repository_url',
+            defaultValue: 'https://gitlab.labngoprek.my.id/root/iac-provision',
+            description: 'Git repository URL (leave default for original repo)'
+        )
     }
 
     environment {
@@ -48,7 +54,7 @@ pipeline {
             steps {
                 git branch: 'main', 
                     credentialsId: 'gitlab-credential', 
-                    url: 'https://gitlab.labngoprek.my.id/root/iac-provision'
+                    url: params.git_repository_url ?: 'https://gitlab.labngoprek.my.id/root/iac-provision'
             }
         }
         

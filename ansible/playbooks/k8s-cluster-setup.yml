@@ -355,14 +355,14 @@
 
     - name: Create .kube directory
       file:
-        path: /root/.kube
+        path: "{{ ansible_env.HOME }}/.kube"
         state: directory
         mode: '0755'
 
     - name: Copy admin.conf to .kube/config
       copy:
         src: /etc/kubernetes/admin.conf
-        dest: /root/.kube/config
+        dest: "{{ ansible_env.HOME }}/.kube/config"
         remote_src: yes
         owner: root
         group: root
@@ -391,7 +391,7 @@
 
     - name: Create .kube directory
       file:
-        path: /root/.kube
+        path: "{{ ansible_env.HOME }}/.kube"
         state: directory
         mode: '0755'
       when: not node_joined.stat.exists and is_ha_cluster
@@ -399,7 +399,7 @@
     - name: Copy admin.conf to .kube/config
       copy:
         src: /etc/kubernetes/admin.conf
-        dest: /root/.kube/config
+        dest: "{{ ansible_env.HOME }}/.kube/config"
         remote_src: yes
         owner: root
         group: root
