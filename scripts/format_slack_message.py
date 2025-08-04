@@ -17,10 +17,10 @@ def main():
     cluster_suffix = sys.argv[7] if len(sys.argv) > 7 else "cluster"
 
     # Validate kubeconfig exists
-    kubeconfig_available = os.path.exists('kubeconfig/admin.conf')
+    kubeconfig_available = os.path.exists('ansible/kubeconfig/admin.conf')
     
     # Create artifact URL for kubeconfig download
-    artifact_url = f"{build_url}artifact/kubeconfig/admin.conf" if build_url else None
+    artifact_url = f"{build_url}artifact/ansible/kubeconfig/admin.conf" if build_url else None
 
     # Create professional Slack message
     message = {
