@@ -13,10 +13,22 @@ pipeline {
         text(
             name: 'vm_csv_content',
             defaultValue: '''vmid,vm_name,template,node,ip,cores,memory,disk_size
-0,kube-master,t-debian12-86,thinkcentre,0,2,2048,32G
-0,kube-worker01,t-debian12-86,thinkcentre,0,2,2048,32G
-0,kube-worker02,t-debian12-86,thinkcentre,0,2,2048,32G''',
-            description: 'VM specifications (CSV format) - define template and node per VM'
+0,kube-master,TEMPLATE_PLACEHOLDER,NODE_PLACEHOLDER,0,2,2048,32G
+0,kube-worker01,TEMPLATE_PLACEHOLDER,NODE_PLACEHOLDER,0,2,2048,32G
+0,kube-worker02,TEMPLATE_PLACEHOLDER,NODE_PLACEHOLDER,0,2,2048,32G''',
+            description: 'VM specifications (CSV format) - Replace TEMPLATE_PLACEHOLDER and NODE_PLACEHOLDER with your values'
+        )
+        
+        string(
+            name: 'default_vm_template',
+            defaultValue: 't-debian12-86',
+            description: 'Default VM template to use when not specified in CSV'
+        )
+        
+        string(
+            name: 'default_proxmox_node',
+            defaultValue: 'thinkcentre',
+            description: 'Default Proxmox node to use when not specified in CSV'
         )
         
         // ===== Advanced Options =====
@@ -30,6 +42,24 @@ pipeline {
             name: 'git_repository_url',
             defaultValue: 'https://gitlab.labngoprek.my.id/root/iac-provision',
             description: 'Git repository URL (leave default for original repo)'
+        )
+        
+        string(
+            name: 'git_credentials_id',
+            defaultValue: 'gitlab-credential',
+            description: 'Jenkins credential ID for Git repository access'
+        )
+        
+        string(
+            name: 'proxmox_credentials_prefix',
+            defaultValue: 'proxmox',
+            description: 'Prefix for Proxmox credential IDs (will use: prefix-api-url, prefix-api-token-id, prefix-api-token-secret)'
+        )
+        
+        string(
+            name: 'slack_webhook_credential_id',
+            defaultValue: 'slack-webhook-url',
+            description: 'Jenkins credential ID for Slack webhook URL'
         )
     }
 
@@ -53,7 +83,7 @@ pipeline {
         stage('Checkout') {
             steps {
                 git branch: 'main', 
-                    credentialsId: 'gitlab-credential', 
+                    credentialsId: params.git_credentials_id ?: 'gitlab-credential', 
                     url: params.git_repository_url ?: 'https://gitlab.labngoprek.my.id/root/iac-provision'
             }
         }
@@ -79,10 +109,12 @@ pipeline {
                     script {
                         def startTime = System.currentTimeMillis()
                         
-                        // Use CSV content directly
+                        // Process CSV content and replace placeholders
                         def csvContent = params.vm_csv_content
+                            .replace('TEMPLATE_PLACEHOLDER', params.default_vm_template ?: 't-debian12-86')
+                            .replace('NODE_PLACEHOLDER', params.default_proxmox_node ?: 'thinkcentre')
                         
-                        // Write final CSV to file
+                        // Write processed CSV to file
                         writeFile file: "vms.csv", text: csvContent
                         
                         def duration = ((System.currentTimeMillis() - startTime) / 1000).intValue()
@@ -98,9 +130,9 @@ pipeline {
                     steps {
                         dir("${TERRAFORM_DIR}") {
                             withCredentials([
-                                string(credentialsId: 'proxmox-api-url', variable: 'TF_VAR_pm_api_url'),
-                                string(credentialsId: 'proxmox-api-token-id', variable: 'TF_VAR_pm_api_token_id'),
-                                string(credentialsId: 'proxmox-api-token-secret', variable: 'TF_VAR_pm_api_token_secret')
+                                string(credentialsId: "${params.proxmox_credentials_prefix ?: 'proxmox'}-api-url", variable: 'TF_VAR_pm_api_url'),
+                                string(credentialsId: "${params.proxmox_credentials_prefix ?: 'proxmox'}-api-token-id", variable: 'TF_VAR_pm_api_token_id'),
+                                string(credentialsId: "${params.proxmox_credentials_prefix ?: 'proxmox'}-api-token-secret", variable: 'TF_VAR_pm_api_token_secret')
                             ]) {
                                 script {
                                     def startTime = System.currentTimeMillis()
@@ -129,9 +161,9 @@ pipeline {
                     steps {
                         dir("${TERRAFORM_DIR}") {
                             withCredentials([
-                                string(credentialsId: 'proxmox-api-url', variable: 'TF_VAR_pm_api_url'),
-                                string(credentialsId: 'proxmox-api-token-id', variable: 'TF_VAR_pm_api_token_id'),
-                                string(credentialsId: 'proxmox-api-token-secret', variable: 'TF_VAR_pm_api_token_secret')
+                                string(credentialsId: "${params.proxmox_credentials_prefix ?: 'proxmox'}-api-url", variable: 'TF_VAR_pm_api_url'),
+                                string(credentialsId: "${params.proxmox_credentials_prefix ?: 'proxmox'}-api-token-id", variable: 'TF_VAR_pm_api_token_id'),
+                                string(credentialsId: "${params.proxmox_credentials_prefix ?: 'proxmox'}-api-token-secret", variable: 'TF_VAR_pm_api_token_secret')
                             ]) {
                                 script {
                                     def startTime = System.currentTimeMillis()
@@ -223,7 +255,7 @@ pipeline {
                         sh '../scripts/extract_kubeconfig.sh'
                         
                         // Send KUBECONFIG to Slack
-                        withCredentials([string(credentialsId: 'slack-webhook-url', variable: 'SLACK_WEBHOOK_URL')]) {
+                        withCredentials([string(credentialsId: params.slack_webhook_credential_id ?: 'slack-webhook-url', variable: 'SLACK_WEBHOOK_URL')]) {
                             def buildDuration = currentBuild.durationString.replace(' and counting', '')
                             def kubeconfigContent = readFile("kubeconfig/admin.conf")
                             

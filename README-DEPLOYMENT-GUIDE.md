@@ -43,19 +43,49 @@ DEFAULT_IP_RANGE_START=192.168.1.0/24
    - Point to your Git repository
    - Use `Jenkinsfile` from repository
 
-2. **Configure Credentials**:
+2. **Configure Credentials** (customize IDs per environment):
+   
+   **Production Environment:**
    ```
-   - gitlab-credential: Git repository access
-   - proxmox-api-url: Proxmox API endpoint
-   - proxmox-api-token-id: Proxmox token ID
-   - proxmox-api-token-secret: Proxmox token secret
-   - slack-webhook-url: Slack notification webhook
+   - prod-gitlab-credential: Git repository access
+   - prod-proxmox-api-url: Production Proxmox API endpoint
+   - prod-proxmox-api-token-id: Production Proxmox token ID
+   - prod-proxmox-api-token-secret: Production Proxmox token secret
+   - prod-slack-webhook-url: Production Slack webhook
+   ```
+   
+   **Development Environment:**
+   ```
+   - dev-gitlab-credential: Git repository access
+   - dev-proxmox-api-url: Development Proxmox API endpoint
+   - dev-proxmox-api-token-id: Development Proxmox token ID
+   - dev-proxmox-api-token-secret: Development Proxmox token secret
+   - dev-slack-webhook-url: Development Slack webhook
    ```
 
-3. **Set Parameters** (or use Jenkins UI):
-   - `git_repository_url`: Your forked repository URL
-   - `vm_csv_content`: Your VM specifications
-   - Other parameters as needed
+3. **Set Parameters** (customize per environment):
+   
+   **Production Parameters:**
+   ```
+   git_repository_url: https://your-git-server.com/your-org/iac-provision
+   git_credentials_id: prod-gitlab-credential
+   proxmox_credentials_prefix: prod-proxmox
+   slack_webhook_credential_id: prod-slack-webhook-url
+   default_vm_template: ubuntu-22-04-prod
+   default_proxmox_node: proxmox-prod-01
+   vm_csv_content: (your production VM specifications)
+   ```
+   
+   **Development Parameters:**
+   ```
+   git_repository_url: https://your-git-server.com/your-org/iac-provision
+   git_credentials_id: dev-gitlab-credential
+   proxmox_credentials_prefix: dev-proxmox
+   slack_webhook_credential_id: dev-slack-webhook-url
+   default_vm_template: ubuntu-22-04-dev
+   default_proxmox_node: proxmox-dev-01
+   vm_csv_content: (your development VM specifications)
+   ```
 
 ### 4. **Environment-Specific Customization**
 
@@ -70,9 +100,20 @@ DEFAULT_ANSIBLE_USER=ansible               # Non-root user
 
 #### **For Different Network Ranges:**
 ```csv
-# Update vms.csv or Jenkins parameter
+# Production Network (192.168.100.x)
 vmid,vm_name,template,node,ip,cores,memory,disk_size
-0,kube-master,your-template,your-node,192.168.1.10,2,2048,32G
+0,prod-k8s-master,ubuntu-22-04-prod,proxmox-prod-01,192.168.100.10,4,4096,50G
+0,prod-k8s-worker01,ubuntu-22-04-prod,proxmox-prod-01,192.168.100.11,4,8192,100G
+
+# Development Network (10.10.10.x)  
+vmid,vm_name,template,node,ip,cores,memory,disk_size
+0,dev-k8s-master,ubuntu-22-04-dev,proxmox-dev-01,10.10.10.10,2,2048,32G
+0,dev-k8s-worker01,ubuntu-22-04-dev,proxmox-dev-01,10.10.10.11,2,4096,50G
+
+# Using Placeholders (will be replaced by Jenkins parameters)
+vmid,vm_name,template,node,ip,cores,memory,disk_size
+0,kube-master,TEMPLATE_PLACEHOLDER,NODE_PLACEHOLDER,0,2,2048,32G
+0,kube-worker01,TEMPLATE_PLACEHOLDER,NODE_PLACEHOLDER,0,2,2048,32G
 ```
 
 #### **For Different Kubernetes Versions:**
