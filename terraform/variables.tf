@@ -38,3 +38,21 @@ variable "ssh_keys" {
     "ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABgQC1h/Ehx1Z6RvF5BAFFzSz0E4onUaUam3JYEnJs24UziiI6ww0XPVgvQTqIqBb3nGjrlQ+sSswXhjt/MQk7SimaELtF5YSzvO8Zp81f0cIA5wByUjJ2YGJkvEB8RW7/QwGcU5PEEjICC5Goy3XPlUgVUeOWKNALzIPVpW8gx2x9BGG23YPFMXmjrD9CaNBhnEvEByiltFvIrYkwcniKvI3XvfuZOUHOnoIQgEWtp63IwtQH3jnurViAxeDA/Uz7xG0SKrZV/neALBHoOQ8HFnzt/0x8XIyuUa0tOxE7KVukFZEB09m64PBxk3nvutexUXlk4JH8CvKLl3TseawaQyKbizL3XtYxD/ANqyXuTUxprFfj5N/YBaAage8xz9v3jungFht67USp6SayGHQJNUPTVj/VVZVoS6ReeYocqlkxS+tZEGFMWjgpu+7/wO7i8oXTSKFEXrRRycqX955Rqcgf+L0ean+JQelwXGoUrsftDAQLxRUYPooD+Zn6+NJqJK8= jenkins@cicd"
   ]
 }
+
+# CNI Configuration Variables
+variable "cni_type" {
+  description = "Container Network Interface type (cilium, calico, flannel, weave)"
+  type        = string
+  default     = "cilium"
+  
+  validation {
+    condition     = contains(["cilium", "calico", "flannel", "weave"], var.cni_type)
+    error_message = "CNI type must be one of: cilium, calico, flannel, weave."
+  }
+}
+
+variable "cni_version" {
+  description = "CNI version to install"
+  type        = string
+  default     = "1.14.5"
+}

@@ -93,6 +93,8 @@ output "ansible_inventory_json" {
         service_cidr = "10.96.0.0/12"
         kubernetes_version = "1.28.0"
         container_runtime = "containerd"
+        cni_type = var.cni_type
+        cni_version = var.cni_version
       }, local.master_count > 1 ? {
         # For HA cluster without external load balancer, use first master IP
         # In production, this should point to a proper load balancer

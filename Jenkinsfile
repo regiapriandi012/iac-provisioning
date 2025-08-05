@@ -61,6 +61,19 @@ pipeline {
             defaultValue: 'slack-webhook-url',
             description: 'Jenkins credential ID for Slack webhook URL'
         )
+        
+        // ===== CNI Configuration =====
+        choice(
+            name: 'cni_type',
+            choices: ['cilium', 'calico', 'flannel', 'weave'],
+            description: 'Container Network Interface (CNI) type to install'
+        )
+        
+        string(
+            name: 'cni_version',
+            defaultValue: '1.14.5',
+            description: 'CNI version to install (format varies by CNI type)'
+        )
     }
 
     environment {
@@ -167,6 +180,10 @@ pipeline {
                             ]) {
                                 script {
                                     def startTime = System.currentTimeMillis()
+                                    
+                                    // Set CNI environment variables for Terraform
+                                    env.TF_VAR_cni_type = params.cni_type ?: 'cilium'
+                                    env.TF_VAR_cni_version = params.cni_version ?: '1.14.5'
                                     
                                     sh '../scripts/terraform_apply.sh'
                                     

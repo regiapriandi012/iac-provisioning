@@ -11,8 +11,11 @@ echo "Deployment summary:"
 terraform output assignment_summary || echo "No assignment summary available"
 
 echo ""
-echo "Checking ansible inventory output:"
-terraform output ansible_inventory_json || echo "ERROR: No ansible_inventory_json output found"
+echo "Generating Ansible inventory with CNI configuration..."
+terraform output ansible_inventory_json > ../ansible/inventory/k8s-inventory.json || {
+    echo "Failed to get Terraform inventory output, generating from CSV..."
+    ../scripts/generate_ansible_inventory.sh vms.csv ../ansible/inventory/k8s-inventory.json
+}
 
 echo ""
 echo "Terraform state list:"
