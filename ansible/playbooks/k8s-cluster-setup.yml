@@ -204,21 +204,21 @@
       yum_repository:
         name: kubernetes
         description: Kubernetes Repository
-        baseurl: https://pkgs.k8s.io/core:/stable:/v1.28/rpm/
+        baseurl: https://pkgs.k8s.io/core:/stable:/v{{ kubernetes_version.split('.')[0] }}.{{ kubernetes_version.split('.')[1] }}/rpm/
         gpgcheck: yes
-        gpgkey: https://pkgs.k8s.io/core:/stable:/v1.28/rpm/repodata/repomd.xml.key
+        gpgkey: https://pkgs.k8s.io/core:/stable:/v{{ kubernetes_version.split('.')[0] }}.{{ kubernetes_version.split('.')[1] }}/rpm/repodata/repomd.xml.key
         enabled: yes
       when: detected_os_family == "RedHat"
 
     - name: Add Kubernetes APT key (Debian-based)
       apt_key:
-        url: https://pkgs.k8s.io/core:/stable:/v1.28/deb/Release.key
+        url: https://pkgs.k8s.io/core:/stable:/v{{ kubernetes_version.split('.')[0] }}.{{ kubernetes_version.split('.')[1] }}/deb/Release.key
         state: present
       when: detected_os_family == "Debian"
 
     - name: Add Kubernetes repository (Debian-based)
       apt_repository:
-        repo: "deb https://pkgs.k8s.io/core:/stable:/v1.28/deb/ /"
+        repo: "deb https://pkgs.k8s.io/core:/stable:/v{{ kubernetes_version.split('.')[0] }}.{{ kubernetes_version.split('.')[1] }}/deb/ /"
         state: present
         update_cache: yes
       when: detected_os_family == "Debian"
