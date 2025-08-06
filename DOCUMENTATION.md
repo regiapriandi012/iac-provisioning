@@ -140,18 +140,6 @@ vmid,vm_name,template,node,ip,cores,memory,disk_size
 - Ensures consistent configuration across environments
 - Handles both single-node and multi-node clusters
 
-### `ansible/playbooks/templates/haproxy.cfg.j2`
-**Purpose**: HAProxy configuration template for HA clusters
-
-**Key Features**:
-- Load balancing for Kubernetes API servers
-- Health checks for master nodes
-- SSL passthrough configuration
-
-**Why This Exists**:
-- Enables high-availability Kubernetes deployments
-- Provides load balancing for multi-master setups
-- Template allows dynamic configuration based on inventory
 
 ---
 

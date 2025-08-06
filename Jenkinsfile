@@ -2,77 +2,36 @@ pipeline {
     agent any
     
     parameters {
-        // ===== Ansible Configuration =====
+        // Override environment configuration if needed
         booleanParam(
-            name: 'run_ansible',
-            defaultValue: true,
-            description: 'Deploy Kubernetes cluster using Ansible after VM provisioning'
+            name: 'override_config',
+            defaultValue: false,
+            description: 'Override values from config/environment.conf with custom parameters below'
         )
         
-        // ===== Provision Kubernetes =====
-        text(
-            name: 'vm_csv_content',
-            defaultValue: '''vmid,vm_name,template,node,ip,cores,memory,disk_size
-0,kube-master01,TEMPLATE_PLACEHOLDER,NODE_PLACEHOLDER,0,2,2048,32G
-0,kube-worker01,TEMPLATE_PLACEHOLDER,NODE_PLACEHOLDER,0,2,2048,32G
-0,kube-worker02,TEMPLATE_PLACEHOLDER,NODE_PLACEHOLDER,0,2,2048,32G''',
-            description: 'VM specifications (CSV format) - Replace TEMPLATE_PLACEHOLDER and NODE_PLACEHOLDER with your values'
-        )
-        
-        string(
-            name: 'default_vm_template',
-            defaultValue: 't-debian12-86',
-            description: 'Default VM template to use when not specified in CSV'
-        )
-        
-        string(
-            name: 'default_proxmox_node',
-            defaultValue: 'thinkcentre',
-            description: 'Default Proxmox node to use when not specified in CSV'
-        )
-        
-        // ===== Advanced Options =====
+        // Optional parameter overrides (only used if override_config is true)
         booleanParam(
-            name: 'use_cache',
+            name: 'run_ansible_override',
             defaultValue: true,
-            description: 'Enable caching for faster subsequent runs'
+            description: '[OVERRIDE] Deploy Kubernetes cluster using Ansible after VM provisioning'
         )
         
-        string(
-            name: 'git_repository_url',
-            defaultValue: 'https://gitlab.labngoprek.my.id/root/iac-provision',
-            description: 'Git repository URL (leave default for original repo)'
+        booleanParam(
+            name: 'use_cache_override',
+            defaultValue: true,
+            description: '[OVERRIDE] Enable caching for faster subsequent runs'
         )
         
-        string(
-            name: 'git_credentials_id',
-            defaultValue: 'gitlab-credential',
-            description: 'Jenkins credential ID for Git repository access'
-        )
-        
-        string(
-            name: 'proxmox_credentials_prefix',
-            defaultValue: 'proxmox',
-            description: 'Prefix for Proxmox credential IDs (will use: prefix-api-url, prefix-api-token-id, prefix-api-token-secret)'
-        )
-        
-        string(
-            name: 'slack_webhook_credential_id',
-            defaultValue: 'slack-webhook-url',
-            description: 'Jenkins credential ID for Slack webhook URL'
-        )
-        
-        // ===== CNI Configuration =====
         choice(
-            name: 'cni_type',
+            name: 'cni_type_override',
             choices: ['cilium', 'calico', 'flannel', 'weave'],
-            description: 'Container Network Interface (CNI) type to install'
+            description: '[OVERRIDE] Container Network Interface (CNI) type to install'
         )
         
         string(
-            name: 'cni_version',
+            name: 'cni_version_override',
             defaultValue: '1.14.5',
-            description: 'CNI version to install (format varies by CNI type)'
+            description: '[OVERRIDE] CNI version to install (format varies by CNI type)'
         )
     }
 
@@ -83,6 +42,7 @@ pipeline {
         INVENTORY_FILE = 'inventory/k8s-inventory.json'
         INVENTORY_SCRIPT = '../scripts/inventory.py'
         CACHE_DIR = "${WORKSPACE}/.iac-cache"
+        CONFIG_FILE = 'config/environment.conf'
     }
     
     options {
@@ -95,17 +55,45 @@ pipeline {
     stages {
         stage('Checkout') {
             steps {
-                git branch: 'main', 
-                    credentialsId: params.git_credentials_id ?: 'gitlab-credential', 
-                    url: params.git_repository_url ?: 'https://gitlab.labngoprek.my.id/root/iac-provision'
+                script {
+                    // Load configuration values
+                    def configProps = readProperties file: CONFIG_FILE
+                    def gitUrl = configProps.GIT_REPOSITORY_URL ?: 'https://gitlab.labngoprek.my.id/root/iac-provision'
+                    def gitBranch = configProps.GIT_BRANCH ?: 'main'
+                    def gitCredentials = configProps.GIT_CREDENTIALS_ID ?: 'gitlab-credential'
+                    
+                    git branch: gitBranch,
+                        credentialsId: gitCredentials,
+                        url: gitUrl
+                }
             }
         }
         
         stage('Setup Environment') {
             steps {
                 script {
-                    // Set use_cache as environment variable for shell script
-                    env.USE_CACHE = params.use_cache.toString()
+                    // Load configuration
+                    def configProps = readProperties file: CONFIG_FILE
+                    
+                    // Set environment variables from config or overrides
+                    env.USE_CACHE = params.override_config ? 
+                        params.use_cache_override.toString() : 
+                        (configProps.USE_CACHE ?: 'true')
+                    
+                    env.RUN_ANSIBLE = params.override_config ? 
+                        params.run_ansible_override.toString() : 
+                        (configProps.RUN_ANSIBLE ?: 'true')
+                    
+                    env.CNI_TYPE = params.override_config ? 
+                        params.cni_type_override : 
+                        (configProps.DEFAULT_CNI_TYPE ?: 'cilium')
+                    
+                    env.CNI_VERSION = params.override_config ? 
+                        params.cni_version_override : 
+                        (configProps.DEFAULT_CNI_VERSION ?: '1.14.5')
+                        
+                    env.PROXMOX_CREDENTIALS_PREFIX = configProps.PROXMOX_CREDENTIALS_PREFIX ?: 'proxmox'
+                    env.SLACK_WEBHOOK_CREDENTIAL_ID = configProps.SLACK_WEBHOOK_CREDENTIAL_ID ?: 'slack-webhook-url'
                     
                     sh './scripts/setup_environment.sh'
                     
@@ -121,17 +109,25 @@ pipeline {
                 dir("${TERRAFORM_DIR}") {
                     script {
                         def startTime = System.currentTimeMillis()
+                        def configProps = readProperties file: "../${CONFIG_FILE}"
                         
-                        // Process CSV content and replace placeholders
-                        def csvContent = params.vm_csv_content
-                            .replace('TEMPLATE_PLACEHOLDER', params.default_vm_template ?: 't-debian12-86')
-                            .replace('NODE_PLACEHOLDER', params.default_proxmox_node ?: 'thinkcentre')
+                        // Copy vms.csv from repository root to terraform directory
+                        sh 'cp ../vms.csv .'
                         
-                        // Write processed CSV to file
+                        // Process CSV content and replace placeholders with config values
+                        def csvContent = readFile('vms.csv')
+                        def defaultTemplate = configProps.DEFAULT_VM_TEMPLATE ?: 't-debian12-86'
+                        def defaultNode = configProps.DEFAULT_PROXMOX_NODE ?: 'thinkcentre'
+                        
+                        csvContent = csvContent
+                            .replace('TEMPLATE_PLACEHOLDER', defaultTemplate)
+                            .replace('NODE_PLACEHOLDER', defaultNode)
+                        
+                        // Write processed CSV back
                         writeFile file: "vms.csv", text: csvContent
                         
                         def duration = ((System.currentTimeMillis() - startTime) / 1000).intValue()
-                        echo "Configuration generated in ${duration}s"
+                        echo "VM configuration processed in ${duration}s"
                     }
                 }
             }
@@ -143,9 +139,9 @@ pipeline {
                     steps {
                         dir("${TERRAFORM_DIR}") {
                             withCredentials([
-                                string(credentialsId: "${params.proxmox_credentials_prefix ?: 'proxmox'}-api-url", variable: 'TF_VAR_pm_api_url'),
-                                string(credentialsId: "${params.proxmox_credentials_prefix ?: 'proxmox'}-api-token-id", variable: 'TF_VAR_pm_api_token_id'),
-                                string(credentialsId: "${params.proxmox_credentials_prefix ?: 'proxmox'}-api-token-secret", variable: 'TF_VAR_pm_api_token_secret')
+                                string(credentialsId: "${env.PROXMOX_CREDENTIALS_PREFIX}-api-url", variable: 'TF_VAR_pm_api_url'),
+                                string(credentialsId: "${env.PROXMOX_CREDENTIALS_PREFIX}-api-token-id", variable: 'TF_VAR_pm_api_token_id'),
+                                string(credentialsId: "${env.PROXMOX_CREDENTIALS_PREFIX}-api-token-secret", variable: 'TF_VAR_pm_api_token_secret')
                             ]) {
                                 script {
                                     def startTime = System.currentTimeMillis()
@@ -161,7 +157,7 @@ pipeline {
                                     echo "Terraform init completed in ${duration}s"
                                     
                                     // Cache providers
-                                    if (params.use_cache) {
+                                    if (env.USE_CACHE.toBoolean()) {
                                         sh 'cp -r .terraform ${CACHE_DIR}/terraform/ || true'
                                     }
                                 }
@@ -174,16 +170,16 @@ pipeline {
                     steps {
                         dir("${TERRAFORM_DIR}") {
                             withCredentials([
-                                string(credentialsId: "${params.proxmox_credentials_prefix ?: 'proxmox'}-api-url", variable: 'TF_VAR_pm_api_url'),
-                                string(credentialsId: "${params.proxmox_credentials_prefix ?: 'proxmox'}-api-token-id", variable: 'TF_VAR_pm_api_token_id'),
-                                string(credentialsId: "${params.proxmox_credentials_prefix ?: 'proxmox'}-api-token-secret", variable: 'TF_VAR_pm_api_token_secret')
+                                string(credentialsId: "${env.PROXMOX_CREDENTIALS_PREFIX}-api-url", variable: 'TF_VAR_pm_api_url'),
+                                string(credentialsId: "${env.PROXMOX_CREDENTIALS_PREFIX}-api-token-id", variable: 'TF_VAR_pm_api_token_id'),
+                                string(credentialsId: "${env.PROXMOX_CREDENTIALS_PREFIX}-api-token-secret", variable: 'TF_VAR_pm_api_token_secret')
                             ]) {
                                 script {
                                     def startTime = System.currentTimeMillis()
                                     
                                     // Set CNI environment variables for Terraform
-                                    env.TF_VAR_cni_type = params.cni_type ?: 'cilium'
-                                    env.TF_VAR_cni_version = params.cni_version ?: '1.14.5'
+                                    env.TF_VAR_cni_type = env.CNI_TYPE
+                                    env.TF_VAR_cni_version = env.CNI_VERSION
                                     
                                     sh '../scripts/terraform_apply.sh'
                                     
@@ -199,7 +195,7 @@ pipeline {
         
         stage('VM Readiness') {
             when {
-                expression { params.run_ansible }
+                expression { env.RUN_ANSIBLE.toBoolean() }
             }
             steps {
                 dir("${ANSIBLE_DIR}") {
@@ -217,7 +213,7 @@ pipeline {
         
         stage('Deploy Kubernetes') {
             when {
-                expression { params.run_ansible }
+                expression { env.RUN_ANSIBLE.toBoolean() }
             }
             steps {
                 dir("${ANSIBLE_DIR}") {
@@ -238,7 +234,7 @@ pipeline {
         
         stage('Verify Kubernetes Cluster') {
             when {
-                expression { params.run_ansible }
+                expression { env.RUN_ANSIBLE.toBoolean() }
             }
             steps {
                 dir("${ANSIBLE_DIR}") {
@@ -264,7 +260,7 @@ pipeline {
         
         stage('Extract & Notify') {
             when {
-                expression { params.run_ansible }
+                expression { env.RUN_ANSIBLE.toBoolean() }
             }
             steps {
                 dir("${ANSIBLE_DIR}") {
@@ -272,7 +268,7 @@ pipeline {
                         sh '../scripts/extract_kubeconfig.sh'
                         
                         // Send KUBECONFIG to Slack
-                        withCredentials([string(credentialsId: params.slack_webhook_credential_id ?: 'slack-webhook-url', variable: 'SLACK_WEBHOOK_URL')]) {
+                        withCredentials([string(credentialsId: env.SLACK_WEBHOOK_CREDENTIAL_ID, variable: 'SLACK_WEBHOOK_URL')]) {
                             def buildDuration = currentBuild.durationString.replace(' and counting', '')
                             def kubeconfigContent = readFile("kubeconfig/admin.conf")
                             
@@ -315,9 +311,9 @@ pipeline {
             steps {
                 dir("${TERRAFORM_DIR}") {
                     withCredentials([
-                        string(credentialsId: 'proxmox-api-url', variable: 'TF_VAR_pm_api_url'),
-                        string(credentialsId: 'proxmox-api-token-id', variable: 'TF_VAR_pm_api_token_id'),
-                        string(credentialsId: 'proxmox-api-token-secret', variable: 'TF_VAR_pm_api_token_secret')
+                        string(credentialsId: "${env.PROXMOX_CREDENTIALS_PREFIX}-api-url", variable: 'TF_VAR_pm_api_url'),
+                        string(credentialsId: "${env.PROXMOX_CREDENTIALS_PREFIX}-api-token-id", variable: 'TF_VAR_pm_api_token_id'),
+                        string(credentialsId: "${env.PROXMOX_CREDENTIALS_PREFIX}-api-token-secret", variable: 'TF_VAR_pm_api_token_secret')
                     ]) {
                         sh '''
                             echo "==================== DEPLOYMENT SUMMARY ===================="
@@ -336,7 +332,7 @@ pipeline {
     post {
         always {
             script {
-                if (params.run_ansible) {
+                if (env.RUN_ANSIBLE.toBoolean()) {
                     archiveArtifacts artifacts: "${ANSIBLE_DIR}/inventory/*", allowEmptyArchive: true
                     archiveArtifacts artifacts: "${ANSIBLE_DIR}/kubeconfig/*", allowEmptyArchive: true
                     archiveArtifacts artifacts: "${TERRAFORM_DIR}/vms.csv", allowEmptyArchive: true

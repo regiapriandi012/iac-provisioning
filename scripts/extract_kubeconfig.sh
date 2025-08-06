@@ -39,15 +39,11 @@ fi
 mkdir -p kubeconfig
 mkdir -p ansible/kubeconfig
 
-# Try to get kubeconfig with simple bash script first
+# Extract kubeconfig using v2 script
 echo ""
 echo "Attempting to extract kubeconfig..."
-if bash ${WORKSPACE}/scripts/simple_get_kubeconfig.sh ${INVENTORY_FILE} kubeconfig/admin.conf; then
-    echo "KUBECONFIG extracted successfully with simple bash script"
-elif ${WORKSPACE}/venv/bin/python ${WORKSPACE}/scripts/get_kubeconfig_v2.py ${INVENTORY_FILE} kubeconfig/admin.conf; then
+if ${WORKSPACE}/venv/bin/python ${WORKSPACE}/scripts/get_kubeconfig_v2.py ${INVENTORY_FILE} kubeconfig/admin.conf; then
     echo "KUBECONFIG extracted successfully with v2 script"
-elif ${WORKSPACE}/venv/bin/python ${WORKSPACE}/scripts/get_kubeconfig.py ${INVENTORY_FILE} kubeconfig/admin.conf; then
-    echo "KUBECONFIG extracted successfully with v1 script"
     
     # Verify the kubeconfig file
     if [ -f kubeconfig/admin.conf ]; then

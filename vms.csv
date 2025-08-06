@@ -1,0 +1,4 @@
+vmid,vm_name,template,node,ip,cores,memory,disk_size
+0,kube-master01,t-debian12-86,thinkcentre,0,2,2048,32G
+0,kube-worker01,t-debian12-86,thinkcentre,0,2,2048,32G
+0,kube-worker02,t-debian12-86,thinkcentre,0,2,2048,32G
