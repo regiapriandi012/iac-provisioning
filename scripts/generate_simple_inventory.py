@@ -9,6 +9,19 @@ from pathlib import Path
 
 def generate_simple_inventory(csv_file):
     """Generate simple inventory without complex merging that causes issues"""
+    
+    # Read defaults from environment config
+    env_config = {}
+    config_file = Path(__file__).parent.parent / 'config' / 'environment.conf'
+    
+    if config_file.exists():
+        with open(config_file, 'r') as f:
+            for line in f:
+                line = line.strip()
+                if line and not line.startswith('#') and '=' in line:
+                    key, value = line.split('=', 1)
+                    env_config[key] = value
+    
     inventory = {
         'k8s_masters': {'hosts': {}},
         'k8s_workers': {'hosts': {}},
@@ -23,11 +36,11 @@ def generate_simple_inventory(csv_file):
                 'ansible_user': 'root',
                 'ansible_ssh_common_args': '-o StrictHostKeyChecking=no',
                 'ansible_timeout': 120,
-                'pod_network_cidr': '10.244.0.0/16',
-                'service_cidr': '10.96.0.0/12',
-                'kubernetes_version': '1.28.0',
-                'cni_type': 'cilium',
-                'cni_version': '1.14.5'
+                'pod_network_cidr': env_config.get('DEFAULT_POD_NETWORK_CIDR', '10.244.0.0/16'),
+                'service_cidr': env_config.get('DEFAULT_SERVICE_CIDR', '10.96.0.0/12'),
+                'kubernetes_version': env_config.get('DEFAULT_KUBERNETES_VERSION', '1.28.0'),
+                'cni_type': env_config.get('DEFAULT_CNI_TYPE', 'cilium'),
+                'cni_version': env_config.get('DEFAULT_CNI_VERSION', '1.14.5')
             }
         }
     }

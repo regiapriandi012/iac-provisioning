@@ -56,3 +56,9 @@ variable "cni_version" {
   type        = string
   default     = "1.14.5"
 }
+
+variable "kubernetes_version" {
+  description = "Kubernetes version to install"
+  type        = string
+  default     = "1.28.0"
+}

@@ -91,7 +91,7 @@ output "ansible_inventory_json" {
         is_ha_cluster = local.master_count > 1
         pod_network_cidr = "10.244.0.0/16"
         service_cidr = "10.96.0.0/12"
-        kubernetes_version = "1.28.0"
+        kubernetes_version = var.kubernetes_version
         container_runtime = "containerd"
         cni_type = var.cni_type
         cni_version = var.cni_version

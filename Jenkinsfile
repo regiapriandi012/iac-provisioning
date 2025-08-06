@@ -65,6 +65,7 @@ pipeline {
                     env.RUN_ANSIBLE = configProps.OVERRIDE_RUN_ANSIBLE ?: (configProps.RUN_ANSIBLE ?: 'true')
                     env.CNI_TYPE = configProps.OVERRIDE_CNI_TYPE ?: (configProps.DEFAULT_CNI_TYPE ?: 'cilium')
                     env.CNI_VERSION = configProps.OVERRIDE_CNI_VERSION ?: (configProps.DEFAULT_CNI_VERSION ?: '1.14.5')
+                    env.KUBERNETES_VERSION = configProps.OVERRIDE_KUBERNETES_VERSION ?: (configProps.DEFAULT_KUBERNETES_VERSION ?: '1.28.0')
                     
                     env.PROXMOX_CREDENTIALS_PREFIX = configProps.PROXMOX_CREDENTIALS_PREFIX ?: 'proxmox'
                     env.SLACK_WEBHOOK_CREDENTIAL_ID = configProps.SLACK_WEBHOOK_CREDENTIAL_ID ?: 'slack-webhook-url'
@@ -162,9 +163,10 @@ pipeline {
                                 script {
                                     def startTime = System.currentTimeMillis()
                                     
-                                    // Set CNI environment variables for Terraform
+                                    // Set CNI and Kubernetes environment variables for Terraform
                                     env.TF_VAR_cni_type = env.CNI_TYPE
                                     env.TF_VAR_cni_version = env.CNI_VERSION
+                                    env.TF_VAR_kubernetes_version = env.KUBERNETES_VERSION
                                     
                                     sh '../scripts/terraform_apply.sh'
                                     
