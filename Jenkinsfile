@@ -22,8 +22,18 @@ pipeline {
         stage('Checkout') {
             steps {
                 script {
-                    // Load configuration values
-                    def configProps = readProperties file: CONFIG_FILE
+                    // Load configuration values using simple file reading
+                    def configContent = readFile(CONFIG_FILE)
+                    def configProps = [:]
+                    
+                    configContent.split('\n').each { line ->
+                        line = line.trim()
+                        if (line && !line.startsWith('#') && line.contains('=')) {
+                            def parts = line.split('=', 2)
+                            configProps[parts[0].trim()] = parts[1].trim()
+                        }
+                    }
+                    
                     def gitUrl = configProps.GIT_REPOSITORY_URL ?: 'https://gitlab.labngoprek.my.id/root/iac-provision'
                     def gitBranch = configProps.GIT_BRANCH ?: 'main'
                     def gitCredentials = configProps.GIT_CREDENTIALS_ID ?: 'gitlab-credential'
@@ -38,8 +48,17 @@ pipeline {
         stage('Setup Environment') {
             steps {
                 script {
-                    // Load configuration
-                    def configProps = readProperties file: CONFIG_FILE
+                    // Load configuration using simple file reading
+                    def configContent = readFile(CONFIG_FILE)
+                    def configProps = [:]
+                    
+                    configContent.split('\n').each { line ->
+                        line = line.trim()
+                        if (line && !line.startsWith('#') && line.contains('=')) {
+                            def parts = line.split('=', 2)
+                            configProps[parts[0].trim()] = parts[1].trim()
+                        }
+                    }
                     
                     // Set environment variables from config (with override support)
                     env.USE_CACHE = configProps.OVERRIDE_USE_CACHE ?: (configProps.USE_CACHE ?: 'true')
@@ -64,7 +83,18 @@ pipeline {
                 dir("${TERRAFORM_DIR}") {
                     script {
                         def startTime = System.currentTimeMillis()
-                        def configProps = readProperties file: "../${CONFIG_FILE}"
+                        
+                        // Load configuration using simple file reading
+                        def configContent = readFile("../${CONFIG_FILE}")
+                        def configProps = [:]
+                        
+                        configContent.split('\n').each { line ->
+                            line = line.trim()
+                            if (line && !line.startsWith('#') && line.contains('=')) {
+                                def parts = line.split('=', 2)
+                                configProps[parts[0].trim()] = parts[1].trim()
+                            }
+                        }
                         
                         // Copy vms.csv from repository root to terraform directory
                         sh 'cp ../vms.csv .'
@@ -112,7 +142,7 @@ pipeline {
                                     echo "Terraform init completed in ${duration}s"
                                     
                                     // Cache providers
-                                    if (env.USE_CACHE.toBoolean()) {
+                                    if (env.USE_CACHE && env.USE_CACHE.toBoolean()) {
                                         sh 'cp -r .terraform ${CACHE_DIR}/terraform/ || true'
                                     }
                                 }
@@ -150,7 +180,7 @@ pipeline {
         
         stage('VM Readiness') {
             when {
-                expression { env.RUN_ANSIBLE.toBoolean() }
+                expression { env.RUN_ANSIBLE && env.RUN_ANSIBLE.toBoolean() }
             }
             steps {
                 dir("${ANSIBLE_DIR}") {
@@ -168,7 +198,7 @@ pipeline {
         
         stage('Deploy Kubernetes') {
             when {
-                expression { env.RUN_ANSIBLE.toBoolean() }
+                expression { env.RUN_ANSIBLE && env.RUN_ANSIBLE.toBoolean() }
             }
             steps {
                 dir("${ANSIBLE_DIR}") {
@@ -189,7 +219,7 @@ pipeline {
         
         stage('Verify Kubernetes Cluster') {
             when {
-                expression { env.RUN_ANSIBLE.toBoolean() }
+                expression { env.RUN_ANSIBLE && env.RUN_ANSIBLE.toBoolean() }
             }
             steps {
                 dir("${ANSIBLE_DIR}") {
@@ -215,7 +245,7 @@ pipeline {
         
         stage('Extract & Notify') {
             when {
-                expression { env.RUN_ANSIBLE.toBoolean() }
+                expression { env.RUN_ANSIBLE && env.RUN_ANSIBLE.toBoolean() }
             }
             steps {
                 dir("${ANSIBLE_DIR}") {
@@ -287,7 +317,7 @@ pipeline {
     post {
         always {
             script {
-                if (env.RUN_ANSIBLE.toBoolean()) {
+                if (env.RUN_ANSIBLE && env.RUN_ANSIBLE.toBoolean()) {
                     archiveArtifacts artifacts: "${ANSIBLE_DIR}/inventory/*", allowEmptyArchive: true
                     archiveArtifacts artifacts: "${ANSIBLE_DIR}/kubeconfig/*", allowEmptyArchive: true
                     archiveArtifacts artifacts: "${TERRAFORM_DIR}/vms.csv", allowEmptyArchive: true
