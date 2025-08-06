@@ -1,39 +1,5 @@
 pipeline {
     agent any
-    
-    parameters {
-        // Override environment configuration if needed
-        booleanParam(
-            name: 'override_config',
-            defaultValue: false,
-            description: 'Override values from config/environment.conf with custom parameters below'
-        )
-        
-        // Optional parameter overrides (only used if override_config is true)
-        booleanParam(
-            name: 'run_ansible_override',
-            defaultValue: true,
-            description: '[OVERRIDE] Deploy Kubernetes cluster using Ansible after VM provisioning'
-        )
-        
-        booleanParam(
-            name: 'use_cache_override',
-            defaultValue: true,
-            description: '[OVERRIDE] Enable caching for faster subsequent runs'
-        )
-        
-        choice(
-            name: 'cni_type_override',
-            choices: ['cilium', 'calico', 'flannel', 'weave'],
-            description: '[OVERRIDE] Container Network Interface (CNI) type to install'
-        )
-        
-        string(
-            name: 'cni_version_override',
-            defaultValue: '1.14.5',
-            description: '[OVERRIDE] CNI version to install (format varies by CNI type)'
-        )
-    }
 
     environment {
         TERRAFORM_DIR = 'terraform'
@@ -75,23 +41,12 @@ pipeline {
                     // Load configuration
                     def configProps = readProperties file: CONFIG_FILE
                     
-                    // Set environment variables from config or overrides
-                    env.USE_CACHE = params.override_config ? 
-                        params.use_cache_override.toString() : 
-                        (configProps.USE_CACHE ?: 'true')
+                    // Set environment variables from config (with override support)
+                    env.USE_CACHE = configProps.OVERRIDE_USE_CACHE ?: (configProps.USE_CACHE ?: 'true')
+                    env.RUN_ANSIBLE = configProps.OVERRIDE_RUN_ANSIBLE ?: (configProps.RUN_ANSIBLE ?: 'true')
+                    env.CNI_TYPE = configProps.OVERRIDE_CNI_TYPE ?: (configProps.DEFAULT_CNI_TYPE ?: 'cilium')
+                    env.CNI_VERSION = configProps.OVERRIDE_CNI_VERSION ?: (configProps.DEFAULT_CNI_VERSION ?: '1.14.5')
                     
-                    env.RUN_ANSIBLE = params.override_config ? 
-                        params.run_ansible_override.toString() : 
-                        (configProps.RUN_ANSIBLE ?: 'true')
-                    
-                    env.CNI_TYPE = params.override_config ? 
-                        params.cni_type_override : 
-                        (configProps.DEFAULT_CNI_TYPE ?: 'cilium')
-                    
-                    env.CNI_VERSION = params.override_config ? 
-                        params.cni_version_override : 
-                        (configProps.DEFAULT_CNI_VERSION ?: '1.14.5')
-                        
                     env.PROXMOX_CREDENTIALS_PREFIX = configProps.PROXMOX_CREDENTIALS_PREFIX ?: 'proxmox'
                     env.SLACK_WEBHOOK_CREDENTIAL_ID = configProps.SLACK_WEBHOOK_CREDENTIAL_ID ?: 'slack-webhook-url'
                     
