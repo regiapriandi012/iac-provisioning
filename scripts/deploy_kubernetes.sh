@@ -4,7 +4,19 @@
 
 set -e
 
-echo "Starting optimized Kubernetes deployment..."
+# Load environment configuration to check for fast deployment
+if [ -f "../config/environment.conf" ]; then
+    source ../config/environment.conf
+fi
+
+# Check if fast deployment is enabled
+FAST_DEPLOYMENT=${FAST_DEPLOYMENT:-false}
+if [ "$FAST_DEPLOYMENT" = "true" ]; then
+    echo "⚡ Fast deployment enabled - using pre-configured templates"
+    exec ./deploy_kubernetes_fast.sh
+fi
+
+echo "Starting standard Kubernetes deployment..."
 
 # Check if inventory has hosts
 if [ -f "${INVENTORY_FILE}" ]; then
