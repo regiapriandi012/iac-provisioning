@@ -1,0 +1,192 @@
+---
+# Parallel Phase 3: Kubernetes Package Installation (Can run on ALL nodes simultaneously)
+- name: "☸️  Parallel Kubernetes Package Installation - Phase 3"
+  hosts: k8s_cluster
+  become: true
+  gather_facts: false
+  strategy: free  # Enable maximum parallelism
+  serial: 0       # No limit on parallel execution
+  
+  vars:
+    temp_dir: "/tmp/k8s-setup"
+    
+  pre_tasks:
+    - name: Start timer
+      set_fact:
+        phase_start_time: "{{ ansible_date_time.epoch }}"
+    
+    - name: Display parallel execution info
+      debug:
+        msg: |
+          ☸️  PARALLEL KUBERNETES PACKAGE INSTALLATION
+          ===========================================
+          Host: {{ inventory_hostname }}
+          Kubernetes Version: {{ kubernetes_version }}
+          OS Family: {{ detected_os_family }}
+          Strategy: FREE (Maximum Parallelism)
+          
+  tasks:
+    # Add Kubernetes repository (parallel by OS type)
+    - name: Add Kubernetes repository (RedHat-based)
+      yum_repository:
+        name: kubernetes
+        description: Kubernetes Repository
+        baseurl: https://pkgs.k8s.io/core:/stable:/v{{ kubernetes_version.split('.')[0] }}.{{ kubernetes_version.split('.')[1] }}/rpm/
+        gpgcheck: yes
+        gpgkey: https://pkgs.k8s.io/core:/stable:/v{{ kubernetes_version.split('.')[0] }}.{{ kubernetes_version.split('.')[1] }}/rpm/repodata/repomd.xml.key
+        enabled: yes
+      when: detected_os_family == "RedHat"
+      async: 30
+      poll: 0
+      register: rhel_k8s_repo_job
+
+    - name: Add Kubernetes APT key (Debian-based)
+      apt_key:
+        url: https://pkgs.k8s.io/core:/stable:/v{{ kubernetes_version.split('.')[0] }}.{{ kubernetes_version.split('.')[1] }}/deb/Release.key
+        state: present
+      when: detected_os_family == "Debian"
+      async: 30
+      poll: 0
+      register: debian_k8s_key_job
+
+    - name: Add Kubernetes repository (Debian-based)
+      apt_repository:
+        repo: "deb https://pkgs.k8s.io/core:/stable:/v{{ kubernetes_version.split('.')[0] }}.{{ kubernetes_version.split('.')[1] }}/deb/ /"
+        state: present
+        update_cache: yes
+      when: detected_os_family == "Debian"
+      async: 60
+      poll: 0
+      register: debian_k8s_repo_job
+
+    # Wait for repository setup
+    - name: Wait for RedHat Kubernetes repository
+      async_status:
+        jid: "{{ rhel_k8s_repo_job.ansible_job_id }}"
+      register: rhel_k8s_repo_result
+      until: rhel_k8s_repo_result.finished
+      retries: 15
+      delay: 2
+      when: rhel_k8s_repo_job is defined and rhel_k8s_repo_job.ansible_job_id is defined
+
+    - name: Wait for Debian Kubernetes key
+      async_status:
+        jid: "{{ debian_k8s_key_job.ansible_job_id }}"
+      register: debian_k8s_key_result
+      until: debian_k8s_key_result.finished
+      retries: 15
+      delay: 2
+      when: debian_k8s_key_job is defined and debian_k8s_key_job.ansible_job_id is defined
+
+    - name: Wait for Debian Kubernetes repository
+      async_status:
+        jid: "{{ debian_k8s_repo_job.ansible_job_id }}"
+      register: debian_k8s_repo_result
+      until: debian_k8s_repo_result.finished
+      retries: 30
+      delay: 2
+      when: debian_k8s_repo_job is defined and debian_k8s_repo_job.ansible_job_id is defined
+
+    # Install Kubernetes components (parallel by OS, but can run simultaneously across all nodes)
+    - name: Install Kubernetes components (RedHat-based)
+      yum:
+        name:
+          - kubelet
+          - kubeadm
+          - kubectl
+        state: present
+        disable_excludes: kubernetes
+      when: detected_os_family == "RedHat"
+      async: 300
+      poll: 0
+      register: rhel_k8s_install_job
+
+    - name: Install Kubernetes components (Debian-based)
+      apt:
+        name:
+          - kubelet
+          - kubeadm
+          - kubectl
+        state: present
+      when: detected_os_family == "Debian"
+      async: 300
+      poll: 0
+      register: debian_k8s_install_job
+
+    # Hold packages on Debian to prevent automatic updates (parallel)
+    - name: Hold Kubernetes packages (Debian-based)
+      dpkg_selections:
+        name: "{{ item }}"
+        selection: hold
+      loop:
+        - kubelet
+        - kubeadm
+        - kubectl
+      when: detected_os_family == "Debian"
+      async: 30
+      poll: 0
+      register: debian_hold_jobs
+
+    # Wait for Kubernetes installation
+    - name: Wait for RedHat Kubernetes installation
+      async_status:
+        jid: "{{ rhel_k8s_install_job.ansible_job_id }}"
+      register: rhel_k8s_install_result
+      until: rhel_k8s_install_result.finished
+      retries: 150
+      delay: 2
+      when: rhel_k8s_install_job is defined and rhel_k8s_install_job.ansible_job_id is defined
+
+    - name: Wait for Debian Kubernetes installation
+      async_status:
+        jid: "{{ debian_k8s_install_job.ansible_job_id }}"
+      register: debian_k8s_install_result
+      until: debian_k8s_install_result.finished
+      retries: 150
+      delay: 2
+      when: debian_k8s_install_job is defined and debian_k8s_install_job.ansible_job_id is defined
+
+    - name: Wait for Debian package holds
+      async_status:
+        jid: "{{ item.ansible_job_id }}"
+      register: debian_hold_results
+      until: debian_hold_results.finished
+      retries: 15
+      delay: 2
+      loop: "{{ debian_hold_jobs.results | default([]) }}"
+      when: item.ansible_job_id is defined
+
+    # Start kubelet service (can run in parallel on all nodes)
+    - name: Start and enable kubelet
+      systemd:
+        name: kubelet
+        state: started
+        enabled: yes
+      async: 30
+      poll: 0
+      register: kubelet_start_job
+
+    - name: Wait for kubelet service start
+      async_status:
+        jid: "{{ kubelet_start_job.ansible_job_id }}"
+      register: kubelet_start_result
+      until: kubelet_start_result.finished
+      retries: 15
+      delay: 2
+      when: kubelet_start_job is defined
+
+  post_tasks:
+    - name: Calculate phase duration
+      set_fact:
+        phase_end_time: "{{ ansible_date_time.epoch }}"
+        phase_duration: "{{ ansible_date_time.epoch | int - phase_start_time | int }}"
+
+    - name: Display completion status
+      debug:
+        msg: |
+          ✅ KUBERNETES PACKAGES INSTALLATION COMPLETED
+          ============================================
+          Host: {{ inventory_hostname }}
+          Duration: {{ phase_duration }}s
+          Kubelet Version: {{ kubernetes_version }}
+          Status: Ready for cluster initialization

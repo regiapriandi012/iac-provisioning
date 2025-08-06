@@ -1,0 +1,187 @@
+---
+# Parallel Phase 1: System Preparation (Can run on ALL nodes simultaneously)
+- name: "🚀 Parallel System Preparation - Phase 1"
+  hosts: k8s_cluster
+  become: true
+  gather_facts: true
+  strategy: free  # Enable maximum parallelism
+  serial: 0       # No limit on parallel execution
+  
+  vars:
+    temp_dir: "/tmp/k8s-setup"
+    
+  pre_tasks:
+    - name: Start timer
+      set_fact:
+        phase_start_time: "{{ ansible_date_time.epoch }}"
+    
+    - name: Display parallel execution info
+      debug:
+        msg: |
+          🚀 PARALLEL SYSTEM PREPARATION STARTING
+          ======================================
+          Host: {{ inventory_hostname }}
+          Group: {{ group_names | join(', ') }}
+          Strategy: FREE (Maximum Parallelism)
+          Phase: System Preparation
+          
+  tasks:
+    # Detect OS from template and set facts
+    - name: Set OS facts from template
+      set_fact:
+        detected_os_family: >-
+          {%- if 'centos' in template.lower() or 'rhel' in template.lower() or 'rocky' in template.lower() or 'alma' in template.lower() -%}
+          RedHat
+          {%- elif 'debian' in template.lower() or 'ubuntu' in template.lower() -%}
+          Debian
+          {%- else -%}
+          {{ ansible_os_family }}
+          {%- endif -%}
+        detected_distribution: >-
+          {%- if 'ubuntu' in template.lower() -%}
+          ubuntu
+          {%- elif 'debian' in template.lower() -%}
+          debian
+          {%- elif 'centos' in template.lower() -%}
+          centos
+          {%- elif 'rocky' in template.lower() -%}
+          rocky
+          {%- else -%}
+          {{ ansible_distribution | lower }}
+          {%- endif -%}
+        package_manager: >-
+          {%- if 'centos' in template.lower() or 'rhel' in template.lower() or 'rocky' in template.lower() or 'alma' in template.lower() -%}
+          yum
+          {%- elif 'debian' in template.lower() or 'ubuntu' in template.lower() -%}
+          apt
+          {%- else -%}
+          auto
+          {%- endif -%}
+
+    # System configuration tasks (can all run in parallel)
+    - name: Create temporary directory
+      file:
+        path: "{{ temp_dir }}"
+        state: directory
+        mode: '0755'
+
+    - name: Disable SELinux (RedHat-based systems)
+      selinux:
+        state: disabled
+      when: detected_os_family == "RedHat"
+      async: 30
+      poll: 0
+      register: selinux_job
+
+    - name: Disable swap permanently
+      replace:
+        path: /etc/fstab
+        regexp: '^([^#].*?\sswap\s+sw\s+.*)$'
+        replace: '# \1'
+      async: 10
+      poll: 0
+      register: swap_fstab_job
+
+    - name: Disable swap immediately
+      command: swapoff -a
+      when: ansible_swaptotal_mb > 0
+      async: 10
+      poll: 0
+      register: swap_off_job
+
+    - name: Load required kernel modules
+      modprobe:
+        name: "{{ item }}"
+        state: present
+      loop:
+        - overlay
+        - br_netfilter
+      async: 10
+      poll: 0
+      register: modprobe_jobs
+
+    - name: Set kernel modules to load at boot
+      copy:
+        content: |
+          overlay
+          br_netfilter
+        dest: /etc/modules-load.d/k8s.conf
+      async: 10
+      poll: 0
+      register: modules_config_job
+
+    - name: Set kernel parameters for Kubernetes
+      sysctl:
+        name: "{{ item.name }}"
+        value: "{{ item.value }}"
+        sysctl_file: /etc/sysctl.d/k8s.conf
+        reload: yes
+      loop:
+        - { name: 'net.bridge.bridge-nf-call-iptables', value: '1' }
+        - { name: 'net.bridge.bridge-nf-call-ip6tables', value: '1' }
+        - { name: 'net.ipv4.ip_forward', value: '1' }
+      async: 15
+      poll: 0
+      register: sysctl_jobs
+
+    # Wait for all async tasks to complete
+    - name: Wait for SELinux disable to complete
+      async_status:
+        jid: "{{ selinux_job.ansible_job_id }}"
+      register: selinux_result
+      until: selinux_result.finished
+      retries: 30
+      delay: 1
+      when: selinux_job is defined and selinux_job.ansible_job_id is defined
+
+    - name: Wait for swap configuration to complete
+      async_status:
+        jid: "{{ swap_fstab_job.ansible_job_id }}"
+      register: swap_fstab_result
+      until: swap_fstab_result.finished
+      retries: 10
+      delay: 1
+      when: swap_fstab_job is defined
+
+    - name: Wait for swap disable to complete
+      async_status:
+        jid: "{{ swap_off_job.ansible_job_id }}"
+      register: swap_off_result
+      until: swap_off_result.finished
+      retries: 10
+      delay: 1
+      when: swap_off_job is defined
+
+    - name: Wait for modules config to complete
+      async_status:
+        jid: "{{ modules_config_job.ansible_job_id }}"
+      register: modules_config_result
+      until: modules_config_result.finished
+      retries: 10
+      delay: 1
+      when: modules_config_job is defined
+
+    - name: Wait for all sysctl jobs to complete
+      async_status:
+        jid: "{{ item.ansible_job_id }}"
+      register: sysctl_results
+      until: sysctl_results.finished
+      retries: 15
+      delay: 1
+      loop: "{{ sysctl_jobs.results }}"
+      when: item.ansible_job_id is defined
+
+  post_tasks:
+    - name: Calculate phase duration
+      set_fact:
+        phase_end_time: "{{ ansible_date_time.epoch }}"
+        phase_duration: "{{ ansible_date_time.epoch | int - phase_start_time | int }}"
+
+    - name: Display completion status
+      debug:
+        msg: |
+          ✅ SYSTEM PREPARATION COMPLETED
+          =============================
+          Host: {{ inventory_hostname }}
+          Duration: {{ phase_duration }}s
+          Status: Ready for container runtime installation

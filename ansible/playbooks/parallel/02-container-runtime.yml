@@ -1,0 +1,275 @@
+---
+# Parallel Phase 2: Container Runtime Installation (Can run on ALL nodes simultaneously)
+- name: "🐳 Parallel Container Runtime Installation - Phase 2"
+  hosts: k8s_cluster
+  become: true
+  gather_facts: false
+  strategy: free  # Enable maximum parallelism
+  serial: 0       # No limit on parallel execution
+  
+  vars:
+    temp_dir: "/tmp/k8s-setup"
+    
+  pre_tasks:
+    - name: Start timer
+      set_fact:
+        phase_start_time: "{{ ansible_date_time.epoch }}"
+    
+    - name: Display parallel execution info
+      debug:
+        msg: |
+          🐳 PARALLEL CONTAINER RUNTIME INSTALLATION
+          =========================================
+          Host: {{ inventory_hostname }}
+          OS Family: {{ detected_os_family }}
+          Package Manager: {{ package_manager }}
+          Strategy: FREE (Maximum Parallelism)
+          
+  tasks:
+    # Prerequisites installation (parallel by OS type)
+    - name: Install prerequisites for Docker repo (RedHat-based)
+      yum:
+        name:
+          - yum-utils
+          - device-mapper-persistent-data
+          - lvm2
+        state: present
+      when: detected_os_family == "RedHat"
+      async: 120
+      poll: 0
+      register: rhel_prereq_job
+
+    - name: Install prerequisites for Docker repo (Debian-based)
+      apt:
+        name:
+          - apt-transport-https
+          - ca-certificates
+          - curl
+          - gnupg
+          - lsb-release
+        state: present
+        update_cache: yes
+      when: detected_os_family == "Debian"
+      async: 120
+      poll: 0
+      register: debian_prereq_job
+
+    # Repository setup (parallel by OS type)
+    - name: Add Docker repository (RedHat-based)
+      yum_repository:
+        name: docker-ce-stable
+        description: Docker CE Stable - $basearch
+        baseurl: https://download.docker.com/linux/centos/$releasever/$basearch/stable
+        gpgcheck: yes
+        gpgkey: https://download.docker.com/linux/centos/gpg
+        enabled: yes
+      when: detected_os_family == "RedHat"
+      async: 30
+      poll: 0
+      register: rhel_repo_job
+
+    - name: Add Docker GPG key (Debian-based)
+      apt_key:
+        url: https://download.docker.com/linux/debian/gpg
+        state: present
+      when: detected_os_family == "Debian"
+      async: 30
+      poll: 0
+      register: debian_key_job
+
+    - name: Add Docker repository (Debian-based)
+      apt_repository:
+        repo: "deb [arch=amd64] https://download.docker.com/linux/debian {{ ansible_distribution_release }} stable"
+        state: present
+      when: detected_os_family == "Debian"
+      async: 30
+      poll: 0
+      register: debian_repo_job
+
+    # Wait for prerequisites to complete
+    - name: Wait for RedHat prerequisites
+      async_status:
+        jid: "{{ rhel_prereq_job.ansible_job_id }}"
+      register: rhel_prereq_result
+      until: rhel_prereq_result.finished
+      retries: 60
+      delay: 2
+      when: rhel_prereq_job is defined and rhel_prereq_job.ansible_job_id is defined
+
+    - name: Wait for Debian prerequisites
+      async_status:
+        jid: "{{ debian_prereq_job.ansible_job_id }}"
+      register: debian_prereq_result
+      until: debian_prereq_result.finished
+      retries: 60
+      delay: 2
+      when: debian_prereq_job is defined and debian_prereq_job.ansible_job_id is defined
+
+    # Wait for repository setup
+    - name: Wait for RedHat repository setup
+      async_status:
+        jid: "{{ rhel_repo_job.ansible_job_id }}"
+      register: rhel_repo_result
+      until: rhel_repo_result.finished
+      retries: 15
+      delay: 2
+      when: rhel_repo_job is defined and rhel_repo_job.ansible_job_id is defined
+
+    - name: Wait for Debian key addition
+      async_status:
+        jid: "{{ debian_key_job.ansible_job_id }}"
+      register: debian_key_result
+      until: debian_key_result.finished
+      retries: 15
+      delay: 2
+      when: debian_key_job is defined and debian_key_job.ansible_job_id is defined
+
+    - name: Wait for Debian repository setup
+      async_status:
+        jid: "{{ debian_repo_job.ansible_job_id }}"
+      register: debian_repo_result
+      until: debian_repo_result.finished
+      retries: 15
+      delay: 2
+      when: debian_repo_job is defined and debian_repo_job.ansible_job_id is defined
+
+    # Update package cache (parallel by OS)
+    - name: Update package cache (RedHat-based)
+      yum:
+        update_cache: yes
+      when: detected_os_family == "RedHat"
+      async: 60
+      poll: 0
+      register: rhel_update_job
+
+    - name: Update package cache (Debian-based)
+      apt:
+        update_cache: yes
+      when: detected_os_family == "Debian"
+      async: 60
+      poll: 0
+      register: debian_update_job
+
+    # Install containerd (parallel by OS)
+    - name: Install containerd (RedHat-based)
+      yum:
+        name: containerd.io
+        state: present
+      when: detected_os_family == "RedHat"
+      async: 180
+      poll: 0
+      register: rhel_containerd_job
+
+    - name: Install containerd (Debian-based)
+      apt:
+        name: containerd.io
+        state: present
+      when: detected_os_family == "Debian"
+      async: 180
+      poll: 0
+      register: debian_containerd_job
+
+    # Wait for cache updates
+    - name: Wait for RedHat cache update
+      async_status:
+        jid: "{{ rhel_update_job.ansible_job_id }}"
+      register: rhel_update_result
+      until: rhel_update_result.finished
+      retries: 30
+      delay: 2
+      when: rhel_update_job is defined and rhel_update_job.ansible_job_id is defined
+
+    - name: Wait for Debian cache update
+      async_status:
+        jid: "{{ debian_update_job.ansible_job_id }}"
+      register: debian_update_result
+      until: debian_update_result.finished
+      retries: 30
+      delay: 2
+      when: debian_update_job is defined and debian_update_job.ansible_job_id is defined
+
+    # Wait for containerd installation
+    - name: Wait for RedHat containerd installation
+      async_status:
+        jid: "{{ rhel_containerd_job.ansible_job_id }}"
+      register: rhel_containerd_result
+      until: rhel_containerd_result.finished
+      retries: 90
+      delay: 2
+      when: rhel_containerd_job is defined and rhel_containerd_job.ansible_job_id is defined
+
+    - name: Wait for Debian containerd installation
+      async_status:
+        jid: "{{ debian_containerd_job.ansible_job_id }}"
+      register: debian_containerd_result
+      until: debian_containerd_result.finished
+      retries: 90
+      delay: 2
+      when: debian_containerd_job is defined and debian_containerd_job.ansible_job_id is defined
+
+    # Configure containerd (can run in parallel on all nodes)
+    - name: Create containerd configuration directory
+      file:
+        path: /etc/containerd
+        state: directory
+      async: 10
+      poll: 0
+      register: containerd_dir_job
+
+    - name: Generate containerd default configuration
+      shell: containerd config default
+      register: containerd_config
+      async: 30
+      poll: 0
+      register: containerd_config_job
+
+    - name: Wait for containerd directory creation
+      async_status:
+        jid: "{{ containerd_dir_job.ansible_job_id }}"
+      register: containerd_dir_result
+      until: containerd_dir_result.finished
+      retries: 10
+      delay: 1
+      when: containerd_dir_job is defined
+
+    - name: Wait for containerd config generation
+      async_status:
+        jid: "{{ containerd_config_job.ansible_job_id }}"
+      register: containerd_config_result
+      until: containerd_config_result.finished
+      retries: 15
+      delay: 2
+      when: containerd_config_job is defined
+
+    - name: Write containerd configuration
+      copy:
+        content: "{{ containerd_config_result.stdout }}"
+        dest: /etc/containerd/config.toml
+      when: containerd_config_result is defined and containerd_config_result.stdout is defined
+
+    - name: Enable SystemdCgroup in containerd
+      replace:
+        path: /etc/containerd/config.toml
+        regexp: 'SystemdCgroup = false'
+        replace: 'SystemdCgroup = true'
+
+    - name: Start and enable containerd
+      systemd:
+        name: containerd
+        state: started
+        enabled: yes
+
+  post_tasks:
+    - name: Calculate phase duration
+      set_fact:
+        phase_end_time: "{{ ansible_date_time.epoch }}"
+        phase_duration: "{{ ansible_date_time.epoch | int - phase_start_time | int }}"
+
+    - name: Display completion status
+      debug:
+        msg: |
+          ✅ CONTAINER RUNTIME INSTALLATION COMPLETED
+          ==========================================
+          Host: {{ inventory_hostname }}
+          Duration: {{ phase_duration }}s
+          Status: Ready for Kubernetes installation

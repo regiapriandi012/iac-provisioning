@@ -1,0 +1,208 @@
+---
+# Phase 5: CNI Installation (Only on first master, but optimized for speed)
+- name: "🌐 Parallel CNI Installation - Phase 5"
+  hosts: k8s_masters[0]
+  become: true
+  gather_facts: false
+  
+  vars:
+    temp_dir: "/tmp/k8s-setup"
+    
+  pre_tasks:
+    - name: Start timer
+      set_fact:
+        phase_start_time: "{{ ansible_date_time.epoch }}"
+    
+    - name: Display CNI installation info
+      debug:
+        msg: |
+          🌐 CNI INSTALLATION STARTING
+          ============================
+          Master: {{ inventory_hostname }}
+          CNI Type: {{ cni_type }}
+          CNI Version: {{ cni_version }}
+          Pod Network CIDR: {{ pod_network_cidr }}
+          
+  tasks:
+    - name: Check if CNI is already installed
+      shell: kubectl get pods -n kube-system | grep -E "(cilium|flannel|calico|weave)" | wc -l
+      register: cni_installed
+      ignore_errors: true
+
+    # Cilium CNI Installation (Fastest CNI option)
+    - name: Install Cilium CLI
+      shell: |
+        CILIUM_CLI_VERSION=$(curl -s https://raw.githubusercontent.com/cilium/cilium-cli/master/stable.txt)
+        CLI_ARCH=amd64
+        if [ "$(uname -m)" = "aarch64" ]; then CLI_ARCH=arm64; fi
+        curl -L --fail --remote-name-all https://github.com/cilium/cilium-cli/releases/download/${CILIUM_CLI_VERSION}/cilium-linux-${CLI_ARCH}.tar.gz{,.sha256sum}
+        sha256sum --check cilium-linux-${CLI_ARCH}.tar.gz.sha256sum
+        sudo tar xzvfC cilium-linux-${CLI_ARCH}.tar.gz /usr/local/bin
+        rm -f cilium-linux-${CLI_ARCH}.tar.gz cilium-linux-${CLI_ARCH}.tar.gz.sha256sum
+      when: 
+        - cni_installed.stdout == "0"
+        - cni_type == "cilium"
+      async: 120
+      poll: 0
+      register: cilium_cli_job
+
+    - name: Install Cilium CNI
+      shell: cilium install --version {{ cni_version }}
+      when: 
+        - cni_installed.stdout == "0"
+        - cni_type == "cilium"
+      async: 180
+      poll: 0
+      register: cilium_install_job
+
+    # Flannel CNI Installation (Lightweight and fast)
+    - name: Install Flannel CNI
+      shell: kubectl apply -f https://github.com/flannel-io/flannel/releases/latest/download/kube-flannel.yml
+      when: 
+        - cni_installed.stdout == "0"
+        - cni_type == "flannel"
+      async: 60
+      poll: 0
+      register: flannel_install_job
+
+    # Calico CNI Installation
+    - name: Install Calico CNI
+      shell: kubectl create -f https://raw.githubusercontent.com/projectcalico/calico/v{{ cni_version }}/manifests/tigera-operator.yaml
+      when: 
+        - cni_installed.stdout == "0"
+        - cni_type == "calico"
+      async: 60
+      poll: 0
+      register: calico_operator_job
+
+    - name: Create Calico custom resource
+      shell: |
+        cat <<EOF | kubectl create -f -
+        apiVersion: operator.tigera.io/v1
+        kind: Installation
+        metadata:
+          name: default
+        spec:
+          calicoNetwork:
+            ipPools:
+            - blockSize: 26
+              cidr: {{ pod_network_cidr }}
+              encapsulation: VXLANCrossSubnet
+              natOutgoing: Enabled
+              nodeSelector: all()
+        EOF
+      when: 
+        - cni_installed.stdout == "0"
+        - cni_type == "calico"
+      async: 60
+      poll: 0
+      register: calico_config_job
+
+    # Weave Net CNI Installation
+    - name: Install Weave Net CNI
+      shell: kubectl apply -f https://github.com/weaveworks/weave/releases/download/v{{ cni_version }}/weave-daemonset-k8s.yaml
+      when: 
+        - cni_installed.stdout == "0"
+        - cni_type == "weave"
+      async: 60
+      poll: 0
+      register: weave_install_job
+
+    # Wait for installations to complete
+    - name: Wait for Cilium CLI installation
+      async_status:
+        jid: "{{ cilium_cli_job.ansible_job_id }}"
+      register: cilium_cli_result
+      until: cilium_cli_result.finished
+      retries: 60
+      delay: 2
+      when: cilium_cli_job is defined and cilium_cli_job.ansible_job_id is defined
+
+    - name: Wait for Cilium CNI installation
+      async_status:
+        jid: "{{ cilium_install_job.ansible_job_id }}"
+      register: cilium_install_result
+      until: cilium_install_result.finished
+      retries: 90
+      delay: 2
+      when: cilium_install_job is defined and cilium_install_job.ansible_job_id is defined
+
+    - name: Wait for Flannel installation
+      async_status:
+        jid: "{{ flannel_install_job.ansible_job_id }}"
+      register: flannel_install_result
+      until: flannel_install_result.finished
+      retries: 30
+      delay: 2
+      when: flannel_install_job is defined and flannel_install_job.ansible_job_id is defined
+
+    - name: Wait for Calico operator installation
+      async_status:
+        jid: "{{ calico_operator_job.ansible_job_id }}"
+      register: calico_operator_result
+      until: calico_operator_result.finished
+      retries: 30
+      delay: 2
+      when: calico_operator_job is defined and calico_operator_job.ansible_job_id is defined
+
+    - name: Wait for Calico configuration
+      async_status:
+        jid: "{{ calico_config_job.ansible_job_id }}"
+      register: calico_config_result
+      until: calico_config_result.finished
+      retries: 30
+      delay: 2
+      when: calico_config_job is defined and calico_config_job.ansible_job_id is defined
+
+    - name: Wait for Weave installation
+      async_status:
+        jid: "{{ weave_install_job.ansible_job_id }}"
+      register: weave_install_result
+      until: weave_install_result.finished
+      retries: 30
+      delay: 2
+      when: weave_install_job is defined and weave_install_job.ansible_job_id is defined
+
+    # Special handling for Cilium status check
+    - name: Wait for Cilium to be ready
+      shell: cilium status --wait
+      when: 
+        - cni_installed.stdout == "0"
+        - cni_type == "cilium"
+        - cilium_install_result is defined and cilium_install_result.finished
+      async: 300
+      poll: 10
+
+    # Generic wait for CNI pods to be ready (parallel check)
+    - name: Wait for CNI pods to be ready
+      shell: kubectl get pods -n kube-system | grep -E "(cilium|flannel|calico|weave)" | grep -v Running | wc -l
+      register: cni_pods_not_ready
+      until: cni_pods_not_ready.stdout == "0"
+      retries: 60
+      delay: 5
+      when: cni_installed.stdout == "0"
+
+    - name: Wait for all nodes to be ready
+      shell: kubectl get nodes --no-headers | grep -v Ready | wc -l
+      register: nodes_not_ready
+      until: nodes_not_ready.stdout == "0"
+      retries: 60
+      delay: 5
+      async: 300
+      poll: 5
+
+  post_tasks:
+    - name: Calculate phase duration
+      set_fact:
+        phase_end_time: "{{ ansible_date_time.epoch }}"
+        phase_duration: "{{ ansible_date_time.epoch | int - phase_start_time | int }}"
+
+    - name: Display completion status
+      debug:
+        msg: |
+          ✅ CNI INSTALLATION COMPLETED
+          =============================
+          Master: {{ inventory_hostname }}
+          CNI: {{ cni_type }} v{{ cni_version }}
+          Duration: {{ phase_duration }}s
+          Status: Cluster networking ready

@@ -4,7 +4,19 @@
 
 set -e
 
-echo "Starting optimized Kubernetes deployment..."
+# Load environment configuration
+if [ -f "../config/environment.conf" ]; then
+    source ../config/environment.conf
+fi
+
+# Check if parallel deployment is enabled
+PARALLEL_DEPLOYMENT=${PARALLEL_DEPLOYMENT:-false}
+if [ "$PARALLEL_DEPLOYMENT" = "true" ]; then
+    echo "🚀 Parallel deployment enabled - using ultra-fast parallel execution"
+    exec ./deploy_kubernetes_parallel.sh
+fi
+
+echo "Starting standard Kubernetes deployment..."
 
 # Check if inventory has hosts
 if [ -f "${INVENTORY_FILE}" ]; then
