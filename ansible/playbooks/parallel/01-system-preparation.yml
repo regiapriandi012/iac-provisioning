@@ -140,7 +140,7 @@
       until: swap_off_result.finished
       retries: 10
       delay: 1
-      when: swap_off_job is defined
+      when: swap_off_job is defined and swap_off_job.ansible_job_id is defined
 
     - name: Verify modules config was created
       debug:
