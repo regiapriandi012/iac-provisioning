@@ -78,8 +78,6 @@
         path: /etc/fstab
         regexp: '^([^#].*?\sswap\s+sw\s+.*)$'
         replace: '# \1'
-      async: 10
-      poll: 0
       register: swap_fstab_job
 
     - name: Disable swap immediately
@@ -106,8 +104,6 @@
           overlay
           br_netfilter
         dest: /etc/modules-load.d/k8s.conf
-      async: 10
-      poll: 0
       register: modules_config_job
 
     - name: Set kernel parameters for Kubernetes
@@ -120,8 +116,6 @@
         - { name: 'net.bridge.bridge-nf-call-iptables', value: '1' }
         - { name: 'net.bridge.bridge-nf-call-ip6tables', value: '1' }
         - { name: 'net.ipv4.ip_forward', value: '1' }
-      async: 15
-      poll: 0
       register: sysctl_jobs
 
     # Wait for all async tasks to complete
@@ -134,13 +128,9 @@
       delay: 1
       when: selinux_job is defined and selinux_job.ansible_job_id is defined
 
-    - name: Wait for swap configuration to complete
-      async_status:
-        jid: "{{ swap_fstab_job.ansible_job_id }}"
-      register: swap_fstab_result
-      until: swap_fstab_result.finished
-      retries: 10
-      delay: 1
+    - name: Verify swap configuration was updated
+      debug:
+        msg: "Swap configuration updated: {{ swap_fstab_job.changed }}"
       when: swap_fstab_job is defined
 
     - name: Wait for swap disable to complete
@@ -152,24 +142,15 @@
       delay: 1
       when: swap_off_job is defined
 
-    - name: Wait for modules config to complete
-      async_status:
-        jid: "{{ modules_config_job.ansible_job_id }}"
-      register: modules_config_result
-      until: modules_config_result.finished
-      retries: 10
-      delay: 1
+    - name: Verify modules config was created
+      debug:
+        msg: "Kernel modules configuration created: {{ modules_config_job.changed }}"
       when: modules_config_job is defined
 
-    - name: Wait for all sysctl jobs to complete
-      async_status:
-        jid: "{{ item.ansible_job_id }}"
-      register: sysctl_results
-      until: sysctl_results.finished
-      retries: 15
-      delay: 1
-      loop: "{{ sysctl_jobs.results }}"
-      when: item.ansible_job_id is defined
+    - name: Verify sysctl parameters were set
+      debug:
+        msg: "Sysctl parameters configured: {{ sysctl_jobs.results | map(attribute='changed') | list }}"
+      when: sysctl_jobs is defined
 
   post_tasks:
     - name: Calculate phase duration
