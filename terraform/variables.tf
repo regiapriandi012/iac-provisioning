@@ -62,3 +62,63 @@ variable "kubernetes_version" {
   type        = string
   default     = "1.28.0"
 }
+
+variable "pod_network_cidr" {
+  description = "Pod network CIDR for Kubernetes"
+  type        = string
+  default     = "10.244.0.0/16"
+}
+
+variable "service_cidr" {
+  description = "Service CIDR for Kubernetes"
+  type        = string
+  default     = "10.96.0.0/12"
+}
+
+variable "container_runtime" {
+  description = "Container runtime to use"
+  type        = string
+  default     = "containerd"
+}
+
+variable "proxmox_node" {
+  description = "Proxmox node to deploy VMs on"
+  type        = string
+  default     = "proxmox"
+}
+
+variable "vm_template" {
+  description = "VM template to use for cloning"
+  type        = string
+  default     = "debian-12"
+}
+
+variable "vm_cores" {
+  description = "Number of CPU cores for VMs"
+  type        = number
+  default     = 2
+}
+
+variable "vm_memory" {
+  description = "Amount of memory for VMs in MB"
+  type        = number
+  default     = 2048
+}
+
+variable "vm_disk_size" {
+  description = "Disk size for VMs"
+  type        = string
+  default     = "32G"
+}
+
+variable "master_node_count" {
+  description = "Number of master nodes"
+  type        = number
+  default     = 3
+}
+
+variable "worker_node_count" {
+  description = "Number of worker nodes"
+  type        = number
+  default     = 2
+}

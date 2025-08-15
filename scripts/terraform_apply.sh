@@ -4,7 +4,11 @@
 
 set -e
 
-# Generate dynamic vms.csv first
+# Load environment configuration first
+echo "🌍 Loading environment configuration..."
+source ../scripts/load_environment.sh
+
+# Generate dynamic vms.csv based on environment
 echo "🔧 Generating dynamic vms.csv from environment configuration..."
 ../scripts/generate_vms_csv.sh
 

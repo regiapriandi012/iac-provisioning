@@ -89,10 +89,10 @@ output "ansible_inventory_json" {
         ansible_ssh_common_args = "-o StrictHostKeyChecking=no"
         master_count = local.master_count
         is_ha_cluster = local.master_count > 1
-        pod_network_cidr = "10.244.0.0/16"
-        service_cidr = "10.96.0.0/12"
+        pod_network_cidr = var.pod_network_cidr
+        service_cidr = var.service_cidr
         kubernetes_version = var.kubernetes_version
-        container_runtime = "containerd"
+        container_runtime = var.container_runtime
         cni_type = var.cni_type
         cni_version = var.cni_version
       }, local.master_count > 1 ? {

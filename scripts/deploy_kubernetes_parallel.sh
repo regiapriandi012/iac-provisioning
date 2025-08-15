@@ -7,6 +7,10 @@ set -e
 # Ensure we're using venv
 . ${WORKSPACE}/venv/bin/activate
 
+# Load environment configuration
+echo "🌍 Loading environment configuration..."
+source ${WORKSPACE}/scripts/load_environment.sh
+
 echo "🚀 ULTRA-FAST PARALLEL KUBERNETES DEPLOYMENT"
 echo "============================================="
 
