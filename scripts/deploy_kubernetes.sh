@@ -13,7 +13,7 @@ fi
 PARALLEL_DEPLOYMENT=${PARALLEL_DEPLOYMENT:-false}
 if [ "$PARALLEL_DEPLOYMENT" = "true" ]; then
     echo "🚀 Parallel deployment enabled - using ultra-fast parallel execution"
-    exec ./deploy_kubernetes_parallel.sh
+    exec ${WORKSPACE}/scripts/deploy_kubernetes_parallel.sh
 fi
 
 echo "Starting standard Kubernetes deployment..."
