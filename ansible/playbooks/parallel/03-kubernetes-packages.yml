@@ -166,21 +166,7 @@
       poll: 0
       register: debian_k8s_install_job
 
-    # Hold packages on Debian to prevent automatic updates (parallel)
-    - name: Hold Kubernetes packages (Debian-based)
-      dpkg_selections:
-        name: "{{ item }}"
-        selection: hold
-      loop:
-        - kubelet
-        - kubeadm
-        - kubectl
-      when: detected_os_family == "Debian"
-      async: 30
-      poll: 0
-      register: debian_hold_jobs
-
-    # Wait for Kubernetes installation
+    # Wait for Kubernetes installation FIRST
     - name: Wait for RedHat Kubernetes installation
       async_status:
         jid: "{{ rhel_k8s_install_job.ansible_job_id }}"
@@ -199,15 +185,20 @@
       delay: 2
       when: debian_k8s_install_job is defined and debian_k8s_install_job.ansible_job_id is defined
 
-    - name: Wait for Debian package holds
-      async_status:
-        jid: "{{ item.ansible_job_id }}"
-      register: debian_hold_results
-      until: debian_hold_results.finished
-      retries: 15
-      delay: 2
-      loop: "{{ debian_hold_jobs.results | default([]) }}"
-      when: item.ansible_job_id is defined
+    # Hold packages AFTER installation completes (prevent dpkg lock conflicts)
+    - name: Hold Kubernetes packages (Debian-based)
+      dpkg_selections:
+        name: "{{ item }}"
+        selection: hold
+      loop:
+        - kubelet
+        - kubeadm
+        - kubectl
+      when: detected_os_family == "Debian"
+      retries: 3
+      delay: 5
+      until: hold_result is succeeded
+      register: hold_result
 
     # Start kubelet service (can run in parallel on all nodes)
     - name: Start and enable kubelet
