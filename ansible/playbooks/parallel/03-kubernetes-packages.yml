@@ -3,7 +3,7 @@
 - name: "☸️  Parallel Kubernetes Package Installation - Phase 3"
   hosts: k8s_cluster
   become: true
-  gather_facts: false
+  gather_facts: true
   strategy: free  # Enable maximum parallelism
   serial: 0       # No limit on parallel execution
   
@@ -26,6 +26,30 @@
           Strategy: FREE (Maximum Parallelism)
           
   tasks:
+    # Detect OS from template and set facts (consistent with phase 1)
+    - name: Set OS facts from template
+      set_fact:
+        detected_os_family: >-
+          {%- if 'centos' in template.lower() or 'rhel' in template.lower() or 'rocky' in template.lower() or 'alma' in template.lower() -%}
+          RedHat
+          {%- elif 'debian' in template.lower() or 'ubuntu' in template.lower() -%}
+          Debian
+          {%- else -%}
+          {{ ansible_os_family }}
+          {%- endif -%}
+        detected_distribution: >-
+          {%- if 'ubuntu' in template.lower() -%}
+          ubuntu
+          {%- elif 'debian' in template.lower() -%}
+          debian
+          {%- elif 'centos' in template.lower() -%}
+          centos
+          {%- elif 'rocky' in template.lower() -%}
+          rocky
+          {%- else -%}
+          {{ ansible_distribution | lower }}
+          {%- endif -%}
+
     # Add Kubernetes repository (parallel by OS type)
     - name: Add Kubernetes repository (RedHat-based)
       yum_repository:
@@ -173,7 +197,7 @@
       until: kubelet_start_result.finished
       retries: 15
       delay: 2
-      when: kubelet_start_job is defined
+      when: kubelet_start_job is defined and kubelet_start_job.ansible_job_id is defined
 
   post_tasks:
     - name: Calculate phase duration

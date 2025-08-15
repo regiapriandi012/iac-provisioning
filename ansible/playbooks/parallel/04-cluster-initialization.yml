@@ -3,7 +3,7 @@
 - name: "🎯 Initialize First Master - Phase 4A"
   hosts: k8s_masters[0]
   become: true
-  gather_facts: false
+  gather_facts: true
   
   vars:
     temp_dir: "/tmp/k8s-setup"
@@ -106,7 +106,7 @@
 - name: "🎯 Join Additional Masters - Phase 4B"
   hosts: k8s_masters[1:]
   become: true
-  gather_facts: false
+  gather_facts: true
   strategy: free  # Masters can join in parallel
   serial: 0
   
@@ -167,7 +167,7 @@
 - name: "🎯 Join Worker Nodes - Phase 4C"
   hosts: k8s_workers
   become: true
-  gather_facts: false
+  gather_facts: true
   strategy: free  # Workers can join in parallel
   serial: 0       # No limit on parallel execution
   

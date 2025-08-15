@@ -3,7 +3,7 @@
 - name: "🐳 Parallel Container Runtime Installation - Phase 2"
   hosts: k8s_cluster
   become: true
-  gather_facts: false
+  gather_facts: true
   strategy: free  # Enable maximum parallelism
   serial: 0       # No limit on parallel execution
   
@@ -26,6 +26,30 @@
           Strategy: FREE (Maximum Parallelism)
           
   tasks:
+    # Detect OS from template and set facts (consistent with phase 1)
+    - name: Set OS facts from template
+      set_fact:
+        detected_os_family: >-
+          {%- if 'centos' in template.lower() or 'rhel' in template.lower() or 'rocky' in template.lower() or 'alma' in template.lower() -%}
+          RedHat
+          {%- elif 'debian' in template.lower() or 'ubuntu' in template.lower() -%}
+          Debian
+          {%- else -%}
+          {{ ansible_os_family }}
+          {%- endif -%}
+        detected_distribution: >-
+          {%- if 'ubuntu' in template.lower() -%}
+          ubuntu
+          {%- elif 'debian' in template.lower() -%}
+          debian
+          {%- elif 'centos' in template.lower() -%}
+          centos
+          {%- elif 'rocky' in template.lower() -%}
+          rocky
+          {%- else -%}
+          {{ ansible_distribution | lower }}
+          {%- endif -%}
+
     # Prerequisites installation (parallel by OS type)
     - name: Install prerequisites for Docker repo (RedHat-based)
       yum:
@@ -229,7 +253,7 @@
       until: containerd_dir_result.finished
       retries: 10
       delay: 1
-      when: containerd_dir_job is defined
+      when: containerd_dir_job is defined and containerd_dir_job.ansible_job_id is defined
 
     - name: Wait for containerd config generation
       async_status:
@@ -238,7 +262,7 @@
       until: containerd_config_result.finished
       retries: 15
       delay: 2
-      when: containerd_config_job is defined
+      when: containerd_config_job is defined and containerd_config_job.ansible_job_id is defined
 
     - name: Write containerd configuration
       copy:

@@ -3,7 +3,7 @@
 - name: "🌐 Parallel CNI Installation - Phase 5"
   hosts: k8s_masters[0]
   become: true
-  gather_facts: false
+  gather_facts: true
   
   vars:
     temp_dir: "/tmp/k8s-setup"
