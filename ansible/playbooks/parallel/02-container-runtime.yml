@@ -302,17 +302,112 @@
         dest: /etc/containerd/config.toml
       when: containerd_config_result is defined and containerd_config_result.stdout is defined
 
-    - name: Enable SystemdCgroup in containerd
+    - name: Configure containerd for Kubernetes v1.32.7
       replace:
         path: /etc/containerd/config.toml
-        regexp: 'SystemdCgroup = false'
-        replace: 'SystemdCgroup = true'
+        regexp: '{{ item.regexp }}'
+        replace: '{{ item.replace }}'
+      loop:
+        - { regexp: 'SystemdCgroup = false', replace: 'SystemdCgroup = true' }
+        - { regexp: 'sandbox_image = ".*"', replace: 'sandbox_image = "registry.k8s.io/pause:3.10"' }
+      ignore_errors: yes
 
-    - name: Start and enable containerd
+    - name: Enable CRI plugin in containerd
+      lineinfile:
+        path: /etc/containerd/config.toml
+        regexp: 'disabled_plugins.*cri'
+        state: absent
+      ignore_errors: yes
+
+    - name: Ensure CRI plugin is enabled in containerd config
+      blockinfile:
+        path: /etc/containerd/config.toml
+        insertafter: '\[plugins\]'
+        block: |
+          [plugins."io.containerd.grpc.v1.cri"]
+            enable_selinux = false
+            enable_tls_streaming = false
+            max_container_log_line_size = 16384
+            disable_cgroup = false
+            disable_apparmor = false
+            restrict_oom_score_adj = false
+            max_concurrent_downloads = 3
+            disable_proc_mount = false
+            unset_seccomp_profile = ""
+            tolerate_missing_hugetlb_controller = true
+            disable_hugetlb_controller = true
+            ignore_image_defined_volumes = false
+            [plugins."io.containerd.grpc.v1.cri".containerd]
+              snapshotter = "overlayfs"
+              default_runtime_name = "runc"
+              no_pivot = false
+              disable_snapshot_annotations = true
+              discard_unpacked_layers = false
+              [plugins."io.containerd.grpc.v1.cri".containerd.runtimes]
+                [plugins."io.containerd.grpc.v1.cri".containerd.runtimes.runc]
+                  runtime_type = "io.containerd.runc.v2"
+                  runtime_engine = ""
+                  runtime_root = ""
+                  privileged_without_host_devices = false
+                  base_runtime_spec = ""
+                  [plugins."io.containerd.grpc.v1.cri".containerd.runtimes.runc.options]
+                    SystemdCgroup = true
+            [plugins."io.containerd.grpc.v1.cri".cni]
+              bin_dir = "/opt/cni/bin"
+              conf_dir = "/etc/cni/net.d"
+              max_conf_num = 1
+              conf_template = ""
+            [plugins."io.containerd.grpc.v1.cri".registry]
+              config_path = ""
+              [plugins."io.containerd.grpc.v1.cri".registry.auths]
+              [plugins."io.containerd.grpc.v1.cri".registry.configs]
+              [plugins."io.containerd.grpc.v1.cri".registry.headers]
+              [plugins."io.containerd.grpc.v1.cri".registry.mirrors]
+            [plugins."io.containerd.grpc.v1.cri".image_decryption]
+              key_model = ""
+            [plugins."io.containerd.grpc.v1.cri".x509_key_pair_streaming]
+              tls_cert_file = ""
+              tls_private_key_file = ""
+        marker: "# {mark} ANSIBLE MANAGED - CRI PLUGIN CONFIG"
+      when: containerd_config_result is defined
+
+    - name: Restart containerd to apply configuration
       systemd:
         name: containerd
-        state: started
+        state: restarted
         enabled: yes
+
+    - name: Wait for containerd to be ready
+      wait_for:
+        port: 10010
+        host: localhost
+        timeout: 30
+      ignore_errors: yes
+
+    - name: Verify containerd CRI service
+      shell: |
+        crictl info
+      register: cri_check
+      ignore_errors: yes
+      retries: 3
+      delay: 5
+
+    - name: Install crictl if not present
+      shell: |
+        curl -L "https://github.com/kubernetes-sigs/cri-tools/releases/download/v1.32.0/crictl-v1.32.0-linux-amd64.tar.gz" | tar -C /usr/local/bin -xz
+        chmod +x /usr/local/bin/crictl
+      when: cri_check.rc != 0
+      ignore_errors: yes
+
+    - name: Configure crictl
+      copy:
+        content: |
+          runtime-endpoint: unix:///var/run/containerd/containerd.sock
+          image-endpoint: unix:///var/run/containerd/containerd.sock
+          timeout: 10
+          debug: false
+        dest: /etc/crictl.yaml
+      when: cri_check.rc != 0
 
   post_tasks:
     - name: Calculate phase duration
