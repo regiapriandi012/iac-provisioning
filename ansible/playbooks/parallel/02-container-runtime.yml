@@ -59,6 +59,26 @@
           
   tasks:
 
+    # Fix any interrupted dpkg operations (Debian-based systems)
+    - name: Kill any hanging apt processes
+      shell: |
+        killall apt apt-get dpkg 2>/dev/null || true
+        sleep 2
+      when: detected_os_family == "Debian"
+      ignore_errors: yes
+      
+    - name: Fix interrupted dpkg operations
+      command: dpkg --configure -a
+      when: detected_os_family == "Debian"
+      ignore_errors: yes
+      
+    - name: Clean apt cache and fix broken packages
+      apt:
+        autoclean: yes
+        autoremove: yes
+      when: detected_os_family == "Debian"
+      ignore_errors: yes
+
     # Prerequisites installation (parallel by OS type)
     - name: Install prerequisites for Docker repo (RedHat-based)
       yum:
@@ -82,6 +102,8 @@
           - lsb-release
         state: present
         update_cache: yes
+        force_apt_get: yes
+        dpkg_options: 'force-confold,force-confdef'
       when: detected_os_family == "Debian"
       async: 120
       poll: 0
@@ -197,6 +219,8 @@
       apt:
         name: containerd.io
         state: present
+        force_apt_get: yes
+        dpkg_options: 'force-confold,force-confdef'
       when: detected_os_family == "Debian"
       async: 180
       poll: 0
