@@ -285,12 +285,6 @@
       poll: 0
       register: containerd_dir_job
 
-    - name: Generate containerd default configuration
-      shell: containerd config default
-      register: containerd_config_job
-      async: 30
-      poll: 0
-
     - name: Wait for containerd directory creation
       async_status:
         jid: "{{ containerd_dir_job.ansible_job_id }}"
@@ -300,100 +294,133 @@
       delay: 1
       when: containerd_dir_job is defined and containerd_dir_job.ansible_job_id is defined
 
-    - name: Wait for containerd config generation
-      async_status:
-        jid: "{{ containerd_config_job.ansible_job_id }}"
-      register: containerd_config_result
-      until: containerd_config_result.finished
-      retries: 15
-      delay: 2
-      when: containerd_config_job is defined and containerd_config_job.ansible_job_id is defined
-
-    - name: Write containerd configuration
+    - name: Create clean containerd configuration for Kubernetes
       copy:
-        content: "{{ containerd_config_result.stdout }}"
+        content: |
+          version = 2
+          root = "/var/lib/containerd"
+          state = "/run/containerd"
+          plugin_dir = ""
+          disabled_plugins = []
+          required_plugins = []
+          oom_score = 0
+
+          [grpc]
+            address = "/run/containerd/containerd.sock"
+            tcp_address = ""
+            tcp_tls_cert = ""
+            tcp_tls_key = ""
+            uid = 0
+            gid = 0
+            max_recv_message_size = 16777216
+            max_send_message_size = 16777216
+
+          [ttrpc]
+            address = ""
+            uid = 0
+            gid = 0
+
+          [debug]
+            address = ""
+            uid = 0
+            gid = 0
+            level = ""
+
+          [metrics]
+            address = ""
+            grpc_histogram = false
+
+          [cgroup]
+            path = ""
+
+          [timeouts]
+            "io.containerd.timeout.shim.cleanup" = "5s"
+            "io.containerd.timeout.shim.load" = "5s"
+            "io.containerd.timeout.shim.shutdown" = "3s"
+            "io.containerd.timeout.task.state" = "2s"
+
+          [plugins]
+            [plugins."io.containerd.gc.v1.scheduler"]
+              pause_threshold = 0.02
+              deletion_threshold = 0
+              mutation_threshold = 100
+              schedule_delay = "0s"
+              startup_delay = "100ms"
+            [plugins."io.containerd.grpc.v1.cri"]
+              disable_tcp_service = true
+              stream_server_address = "127.0.0.1"
+              stream_server_port = "0"
+              stream_idle_timeout = "4h0m0s"
+              enable_selinux = false
+              enable_tls_streaming = false
+              max_container_log_line_size = 16384
+              disable_cgroup = false
+              disable_apparmor = false
+              restrict_oom_score_adj = false
+              max_concurrent_downloads = 3
+              disable_proc_mount = false
+              unset_seccomp_profile = ""
+              tolerate_missing_hugetlb_controller = true
+              disable_hugetlb_controller = true
+              ignore_image_defined_volumes = false
+              [plugins."io.containerd.grpc.v1.cri".containerd]
+                snapshotter = "overlayfs"
+                default_runtime_name = "runc"
+                no_pivot = false
+                disable_snapshot_annotations = true
+                discard_unpacked_layers = false
+                [plugins."io.containerd.grpc.v1.cri".containerd.runtimes]
+                  [plugins."io.containerd.grpc.v1.cri".containerd.runtimes.runc]
+                    runtime_type = "io.containerd.runc.v2"
+                    runtime_engine = ""
+                    runtime_root = ""
+                    privileged_without_host_devices = false
+                    base_runtime_spec = ""
+                    [plugins."io.containerd.grpc.v1.cri".containerd.runtimes.runc.options]
+                      SystemdCgroup = true
+              [plugins."io.containerd.grpc.v1.cri".cni]
+                bin_dir = "/opt/cni/bin"
+                conf_dir = "/etc/cni/net.d"
+                max_conf_num = 1
+                conf_template = ""
+              [plugins."io.containerd.grpc.v1.cri".registry]
+                [plugins."io.containerd.grpc.v1.cri".registry.mirrors]
+                  [plugins."io.containerd.grpc.v1.cri".registry.mirrors."docker.io"]
+                    endpoint = ["https://registry-1.docker.io"]
         dest: /etc/containerd/config.toml
-      when: containerd_config_result is defined and containerd_config_result.stdout is defined
+        backup: yes
 
-    - name: Configure containerd for Kubernetes v1.32.7
-      replace:
-        path: /etc/containerd/config.toml
-        regexp: '{{ item.regexp }}'
-        replace: '{{ item.replace }}'
-      loop:
-        - { regexp: 'SystemdCgroup = false', replace: 'SystemdCgroup = true' }
-        - { regexp: 'sandbox_image = ".*"', replace: 'sandbox_image = "registry.k8s.io/pause:3.10"' }
+    - name: Validate containerd configuration
+      shell: containerd config dump
+      register: containerd_validation
       ignore_errors: yes
-
-    - name: Enable CRI plugin in containerd
-      lineinfile:
-        path: /etc/containerd/config.toml
-        regexp: 'disabled_plugins.*cri'
-        state: absent
-      ignore_errors: yes
-
-    - name: Ensure CRI plugin is enabled in containerd config
-      blockinfile:
-        path: /etc/containerd/config.toml
-        insertafter: '\[plugins\]'
-        block: |
-          [plugins."io.containerd.grpc.v1.cri"]
-            enable_selinux = false
-            enable_tls_streaming = false
-            max_container_log_line_size = 16384
-            disable_cgroup = false
-            disable_apparmor = false
-            restrict_oom_score_adj = false
-            max_concurrent_downloads = 3
-            disable_proc_mount = false
-            unset_seccomp_profile = ""
-            tolerate_missing_hugetlb_controller = true
-            disable_hugetlb_controller = true
-            ignore_image_defined_volumes = false
-            [plugins."io.containerd.grpc.v1.cri".containerd]
-              snapshotter = "overlayfs"
-              default_runtime_name = "runc"
-              no_pivot = false
-              disable_snapshot_annotations = true
-              discard_unpacked_layers = false
-              [plugins."io.containerd.grpc.v1.cri".containerd.runtimes]
-                [plugins."io.containerd.grpc.v1.cri".containerd.runtimes.runc]
-                  runtime_type = "io.containerd.runc.v2"
-                  runtime_engine = ""
-                  runtime_root = ""
-                  privileged_without_host_devices = false
-                  base_runtime_spec = ""
-                  [plugins."io.containerd.grpc.v1.cri".containerd.runtimes.runc.options]
-                    SystemdCgroup = true
-            [plugins."io.containerd.grpc.v1.cri".cni]
-              bin_dir = "/opt/cni/bin"
-              conf_dir = "/etc/cni/net.d"
-              max_conf_num = 1
-              conf_template = ""
-            [plugins."io.containerd.grpc.v1.cri".registry]
-              config_path = ""
-              [plugins."io.containerd.grpc.v1.cri".registry.auths]
-              [plugins."io.containerd.grpc.v1.cri".registry.configs]
-              [plugins."io.containerd.grpc.v1.cri".registry.headers]
-              [plugins."io.containerd.grpc.v1.cri".registry.mirrors]
-            [plugins."io.containerd.grpc.v1.cri".image_decryption]
-              key_model = ""
-            [plugins."io.containerd.grpc.v1.cri".x509_key_pair_streaming]
-              tls_cert_file = ""
-              tls_private_key_file = ""
-        marker: "# {mark} ANSIBLE MANAGED - CRI PLUGIN CONFIG"
-      when: containerd_config_result is defined
-
-    - name: Restart containerd to apply configuration
+      
+    - name: Stop containerd before config change
       systemd:
         name: containerd
-        state: restarted
+        state: stopped
+      ignore_errors: yes
+      
+    - name: Start containerd with new configuration
+      systemd:
+        name: containerd
+        state: started
         enabled: yes
-
-    - name: Wait for containerd to be ready
+      register: containerd_start_result
+      
+    - name: Check containerd service status
+      systemd:
+        name: containerd
+      register: containerd_status
+      
+    - name: Show containerd logs if failed
+      shell: journalctl -xeu containerd.service --no-pager -n 20
+      when: containerd_start_result.failed or containerd_status.status.ActiveState != "active"
+      ignore_errors: yes
+      
+    - name: Wait for containerd socket
       wait_for:
-        port: 10010
-        host: localhost
+        path: /run/containerd/containerd.sock
         timeout: 30
       ignore_errors: yes
 
