@@ -59,23 +59,36 @@
           
   tasks:
 
-    # Fix any interrupted dpkg operations (Debian-based systems)
-    - name: Kill any hanging apt processes
-      shell: |
-        killall apt apt-get dpkg 2>/dev/null || true
-        sleep 2
+    # Gentle DPKG cleanup (Debian-based systems)
+    - name: Check for dpkg lock files
+      stat:
+        path: "{{ item }}"
+      register: dpkg_locks
+      loop:
+        - /var/lib/dpkg/lock
+        - /var/lib/dpkg/lock-frontend
+        - /var/cache/apt/archives/lock
       when: detected_os_family == "Debian"
       ignore_errors: yes
       
-    - name: Fix interrupted dpkg operations
+    - name: Wait for any running package operations to complete
+      wait_for:
+        path: "{{ item.stat.path }}"
+        state: absent
+        timeout: 60
+      loop: "{{ dpkg_locks.results }}"
+      when: detected_os_family == "Debian" and item.stat.exists
+      ignore_errors: yes
+      
+    - name: Reconfigure interrupted packages
       command: dpkg --configure -a
       when: detected_os_family == "Debian"
       ignore_errors: yes
       
-    - name: Clean apt cache and fix broken packages
+    - name: Update package cache
       apt:
-        autoclean: yes
-        autoremove: yes
+        update_cache: yes
+        cache_valid_time: 300
       when: detected_os_family == "Debian"
       ignore_errors: yes
 
