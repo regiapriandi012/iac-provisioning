@@ -4,6 +4,10 @@
 
 set -e
 
+# Generate dynamic vms.csv first
+echo "🔧 Generating dynamic vms.csv from environment configuration..."
+../scripts/generate_vms_csv.sh
+
 echo "Applying Terraform with parallel execution..."
 terraform apply -auto-approve -parallelism=10
 
