@@ -58,40 +58,22 @@
           Strategy: FREE (Maximum Parallelism)
           
   tasks:
-    # Smart DPKG cleanup (Debian-based systems)
-    - name: Check for active package managers
+    # Fast DPKG cleanup - kill and unlock (Debian-based systems)
+    - name: Kill any stuck package manager processes
       shell: |
-        if pgrep -f "apt|dpkg" > /dev/null; then
-          echo "active"
-        else
-          echo "none"
-        fi
-      register: package_managers_status
+        # Kill any stuck apt/dpkg processes
+        pkill -f "apt-get|apt|dpkg|unattended-upgrade" 2>/dev/null || true
+        sleep 1
       when: detected_os_family == "Debian"
       ignore_errors: yes
       
-    - name: Wait briefly for active package operations
-      wait_for:
-        path: "{{ item }}"
-        state: absent
-        timeout: 10
-      loop:
-        - /var/lib/dpkg/lock
-        - /var/lib/dpkg/lock-frontend
-        - /var/cache/apt/archives/lock
-      when: detected_os_family == "Debian" and package_managers_status.stdout == "active"
-      ignore_errors: yes
-      
-    - name: Force unlock if stuck (emergency cleanup)
+    - name: Force remove all lock files
       shell: |
-        # Remove lock files if they exist and no active processes
-        if ! pgrep -f "apt|dpkg" > /dev/null; then
-          rm -f /var/lib/dpkg/lock /var/lib/dpkg/lock-frontend /var/cache/apt/archives/lock
-        fi
+        rm -f /var/lib/dpkg/lock* /var/cache/apt/archives/lock /var/lib/apt/lists/lock
       when: detected_os_family == "Debian"
       ignore_errors: yes
       
-    - name: Reconfigure interrupted packages
+    - name: Quick dpkg reconfigure
       command: dpkg --configure -a
       when: detected_os_family == "Debian"
       ignore_errors: yes
