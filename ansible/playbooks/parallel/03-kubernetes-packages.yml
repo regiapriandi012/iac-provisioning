@@ -58,36 +58,41 @@
           Strategy: FREE (Maximum Parallelism)
           
   tasks:
-    # Gentle DPKG cleanup (Debian-based systems)
-    - name: Check for dpkg lock files
-      stat:
+    # Smart DPKG cleanup (Debian-based systems)
+    - name: Check for active package managers
+      shell: |
+        if pgrep -f "apt|dpkg" > /dev/null; then
+          echo "active"
+        else
+          echo "none"
+        fi
+      register: package_managers_status
+      when: detected_os_family == "Debian"
+      ignore_errors: yes
+      
+    - name: Wait briefly for active package operations
+      wait_for:
         path: "{{ item }}"
-      register: dpkg_locks
+        state: absent
+        timeout: 10
       loop:
         - /var/lib/dpkg/lock
         - /var/lib/dpkg/lock-frontend
         - /var/cache/apt/archives/lock
-      when: detected_os_family == "Debian"
+      when: detected_os_family == "Debian" and package_managers_status.stdout == "active"
       ignore_errors: yes
       
-    - name: Wait for any running package operations to complete
-      wait_for:
-        path: "{{ item.stat.path }}"
-        state: absent
-        timeout: 60
-      loop: "{{ dpkg_locks.results }}"
-      when: detected_os_family == "Debian" and item.stat.exists
+    - name: Force unlock if stuck (emergency cleanup)
+      shell: |
+        # Remove lock files if they exist and no active processes
+        if ! pgrep -f "apt|dpkg" > /dev/null; then
+          rm -f /var/lib/dpkg/lock /var/lib/dpkg/lock-frontend /var/cache/apt/archives/lock
+        fi
+      when: detected_os_family == "Debian"
       ignore_errors: yes
       
     - name: Reconfigure interrupted packages
       command: dpkg --configure -a
-      when: detected_os_family == "Debian"
-      ignore_errors: yes
-      
-    - name: Update package cache
-      apt:
-        update_cache: yes
-        cache_valid_time: 300
       when: detected_os_family == "Debian"
       ignore_errors: yes
 
