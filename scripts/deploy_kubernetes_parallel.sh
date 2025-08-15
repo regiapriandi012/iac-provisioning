@@ -120,6 +120,7 @@ ansible-playbook \
     --timeout=900 \
     --ssh-extra-args='-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=10' \
     -f 50 \
+    -e "kubernetes_version=${DEFAULT_KUBERNETES_VERSION:-1.32.7}" \
     -v
 
 PHASE3_END=$(date +%s)
@@ -155,6 +156,8 @@ ansible-playbook \
     ${PARALLEL_PLAYBOOKS_DIR}/05-cni-installation.yml \
     --timeout=600 \
     --ssh-extra-args='-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=10' \
+    -e "cni_type=${DEFAULT_CNI_TYPE:-cilium}" \
+    -e "cni_version=${DEFAULT_CNI_VERSION:-1.14.5}" \
     -v
 
 PHASE5_END=$(date +%s)

@@ -15,18 +15,7 @@
       set_fact:
         phase_start_time: "{{ ansible_date_time.epoch }}"
     
-    - name: Display parallel execution info
-      debug:
-        msg: |
-          ☸️  PARALLEL KUBERNETES PACKAGE INSTALLATION
-          ===========================================
-          Host: {{ inventory_hostname }}
-          Kubernetes Version: {{ kubernetes_version }}
-          OS Family: {{ detected_os_family }}
-          Strategy: FREE (Maximum Parallelism)
-          
-  tasks:
-    # Detect OS from template and set facts (consistent with phase 1)
+    # Detect OS from template and set facts BEFORE display
     - name: Set OS facts from template
       set_fact:
         detected_os_family: >-
@@ -49,6 +38,26 @@
           {%- else -%}
           {{ ansible_distribution | lower }}
           {%- endif -%}
+        package_manager: >-
+          {%- if 'centos' in template.lower() or 'rhel' in template.lower() or 'rocky' in template.lower() or 'alma' in template.lower() -%}
+          yum
+          {%- elif 'debian' in template.lower() or 'ubuntu' in template.lower() -%}
+          apt
+          {%- else -%}
+          auto
+          {%- endif -%}
+    
+    - name: Display parallel execution info
+      debug:
+        msg: |
+          ☸️  PARALLEL KUBERNETES PACKAGE INSTALLATION
+          ===========================================
+          Host: {{ inventory_hostname }}
+          Kubernetes Version: {{ kubernetes_version }}
+          OS Family: {{ detected_os_family }}
+          Strategy: FREE (Maximum Parallelism)
+          
+  tasks:
 
     # Add Kubernetes repository (parallel by OS type)
     - name: Add Kubernetes repository (RedHat-based)
