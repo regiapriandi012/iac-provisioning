@@ -109,39 +109,7 @@
       poll: 0
       register: debian_prereq_job
 
-    # Repository setup (parallel by OS type)
-    - name: Add Docker repository (RedHat-based)
-      yum_repository:
-        name: docker-ce-stable
-        description: Docker CE Stable - $basearch
-        baseurl: https://download.docker.com/linux/centos/$releasever/$basearch/stable
-        gpgcheck: yes
-        gpgkey: https://download.docker.com/linux/centos/gpg
-        enabled: yes
-      when: detected_os_family == "RedHat"
-      async: 30
-      poll: 0
-      register: rhel_repo_job
-
-    - name: Add Docker GPG key (Debian-based)
-      apt_key:
-        url: https://download.docker.com/linux/debian/gpg
-        state: present
-      when: detected_os_family == "Debian"
-      async: 30
-      poll: 0
-      register: debian_key_job
-
-    - name: Add Docker repository (Debian-based)
-      apt_repository:
-        repo: "deb [arch=amd64] https://download.docker.com/linux/debian {{ ansible_distribution_release }} stable"
-        state: present
-      when: detected_os_family == "Debian"
-      async: 30
-      poll: 0
-      register: debian_repo_job
-
-    # Wait for prerequisites to complete
+    # Wait for prerequisites to complete FIRST
     - name: Wait for RedHat prerequisites
       async_status:
         jid: "{{ rhel_prereq_job.ansible_job_id }}"
@@ -159,6 +127,37 @@
       retries: 60
       delay: 2
       when: debian_prereq_job is defined and debian_prereq_job.ansible_job_id is defined
+
+    # Repository setup (AFTER prerequisites are installed)
+    - name: Add Docker repository (RedHat-based)
+      yum_repository:
+        name: docker-ce-stable
+        description: Docker CE Stable - $basearch
+        baseurl: https://download.docker.com/linux/centos/$releasever/$basearch/stable
+        gpgcheck: yes
+        gpgkey: https://download.docker.com/linux/centos/gpg
+        enabled: yes
+      when: detected_os_family == "RedHat"
+      async: 30
+      poll: 0
+      register: rhel_repo_job
+
+    - name: Add Docker GPG key (Debian-based)
+      shell: |
+        curl -fsSL https://download.docker.com/linux/debian/gpg | gpg --dearmor -o /usr/share/keyrings/docker-archive-keyring.gpg
+      when: detected_os_family == "Debian"
+      async: 30
+      poll: 0
+      register: debian_key_job
+
+    - name: Add Docker repository (Debian-based)
+      apt_repository:
+        repo: "deb [arch=amd64 signed-by=/usr/share/keyrings/docker-archive-keyring.gpg] https://download.docker.com/linux/debian {{ ansible_distribution_release }} stable"
+        state: present
+      when: detected_os_family == "Debian"
+      async: 30
+      poll: 0
+      register: debian_repo_job
 
     # Wait for repository setup
     - name: Wait for RedHat repository setup

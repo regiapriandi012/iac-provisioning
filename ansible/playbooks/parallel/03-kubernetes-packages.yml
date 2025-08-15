@@ -93,9 +93,8 @@
       register: rhel_k8s_repo_job
 
     - name: Add Kubernetes APT key (Debian-based)
-      apt_key:
-        url: https://pkgs.k8s.io/core:/stable:/v{{ kubernetes_version.split('.')[0] }}.{{ kubernetes_version.split('.')[1] }}/deb/Release.key
-        state: present
+      shell: |
+        curl -fsSL https://pkgs.k8s.io/core:/stable:/v{{ kubernetes_version.split('.')[0] }}.{{ kubernetes_version.split('.')[1] }}/deb/Release.key | gpg --dearmor -o /usr/share/keyrings/kubernetes-archive-keyring.gpg
       when: detected_os_family == "Debian"
       async: 30
       poll: 0
@@ -103,7 +102,7 @@
 
     - name: Add Kubernetes repository (Debian-based)
       apt_repository:
-        repo: "deb https://pkgs.k8s.io/core:/stable:/v{{ kubernetes_version.split('.')[0] }}.{{ kubernetes_version.split('.')[1] }}/deb/ /"
+        repo: "deb [signed-by=/usr/share/keyrings/kubernetes-archive-keyring.gpg] https://pkgs.k8s.io/core:/stable:/v{{ kubernetes_version.split('.')[0] }}.{{ kubernetes_version.split('.')[1] }}/deb/ /"
         state: present
         update_cache: yes
       when: detected_os_family == "Debian"
