@@ -11,10 +11,10 @@ echo "🚀 ULTRA-FAST PARALLEL KUBERNETES DEPLOYMENT"
 echo "============================================="
 
 # Configuration
-PARALLEL_PLAYBOOKS_DIR="playbooks/parallel"
+PARALLEL_PLAYBOOKS_DIR="../ansible/playbooks/parallel"
 INVENTORY_FILE="inventory/k8s-inventory.json"
 INVENTORY_SCRIPT="../scripts/inventory.py"
-PARALLEL_CONFIG="../ansible-parallel.cfg"
+PARALLEL_CONFIG="../ansible/ansible-parallel.cfg"
 
 # Performance settings
 export ANSIBLE_CONFIG="$PARALLEL_CONFIG"

@@ -218,10 +218,9 @@
 
     - name: Generate containerd default configuration
       shell: containerd config default
-      register: containerd_config
+      register: containerd_config_job
       async: 30
       poll: 0
-      register: containerd_config_job
 
     - name: Wait for containerd directory creation
       async_status:
