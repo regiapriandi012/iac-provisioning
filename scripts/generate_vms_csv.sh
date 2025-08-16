@@ -3,34 +3,44 @@
 
 set -e
 
-# Load environment configuration (but allow env vars to override)
+# Load environment configuration using load_environment.sh
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-CONFIG_FILE="${SCRIPT_DIR}/../config/environment.conf"
 
-# Store env vars before sourcing config file
-OVERRIDE_VM_TEMPLATE=${DEFAULT_VM_TEMPLATE}
-OVERRIDE_PROXMOX_NODE=${DEFAULT_PROXMOX_NODE}
-OVERRIDE_CORES=${DEFAULT_CORES}
-OVERRIDE_MEMORY=${DEFAULT_MEMORY}
-OVERRIDE_DISK_SIZE=${DEFAULT_DISK_SIZE}
-OVERRIDE_MASTER_COUNT=${DEFAULT_MASTER_COUNT}
-OVERRIDE_WORKER_COUNT=${DEFAULT_WORKER_COUNT}
+# Store original env vars for override capability
+ORIGINAL_MASTER_COUNT=${DEFAULT_MASTER_COUNT}
+ORIGINAL_WORKER_COUNT=${DEFAULT_WORKER_COUNT}
+ORIGINAL_VM_TEMPLATE=${DEFAULT_VM_TEMPLATE}
+ORIGINAL_PROXMOX_NODE=${DEFAULT_PROXMOX_NODE}
+ORIGINAL_CORES=${DEFAULT_CORES}
+ORIGINAL_MEMORY=${DEFAULT_MEMORY}
+ORIGINAL_DISK_SIZE=${DEFAULT_DISK_SIZE}
 
-if [ -f "$CONFIG_FILE" ]; then
-    source "$CONFIG_FILE"
-else
-    echo "Error: environment.conf not found"
-    exit 1
+# Load environment using the standardized script
+echo "Loading environment configuration..." >&2
+source "${SCRIPT_DIR}/load_environment.sh" > /dev/null 2>&1
+
+# Apply overrides if they were provided as environment variables
+if [ -n "$ORIGINAL_MASTER_COUNT" ]; then
+    DEFAULT_MASTER_COUNT="$ORIGINAL_MASTER_COUNT"
 fi
-
-# Use overrides if provided, otherwise use config values, otherwise use defaults
-DEFAULT_VM_TEMPLATE=${OVERRIDE_VM_TEMPLATE:-${DEFAULT_VM_TEMPLATE:-"t-debian12-86"}}
-DEFAULT_PROXMOX_NODE=${OVERRIDE_PROXMOX_NODE:-${DEFAULT_PROXMOX_NODE:-"proxmox"}}
-DEFAULT_CORES=${OVERRIDE_CORES:-${DEFAULT_CORES:-2}}
-DEFAULT_MEMORY=${OVERRIDE_MEMORY:-${DEFAULT_MEMORY:-2048}}
-DEFAULT_DISK_SIZE=${OVERRIDE_DISK_SIZE:-${DEFAULT_DISK_SIZE:-"32G"}}
-DEFAULT_MASTER_COUNT=${OVERRIDE_MASTER_COUNT:-${DEFAULT_MASTER_COUNT:-3}}
-DEFAULT_WORKER_COUNT=${OVERRIDE_WORKER_COUNT:-${DEFAULT_WORKER_COUNT:-2}}
+if [ -n "$ORIGINAL_WORKER_COUNT" ]; then
+    DEFAULT_WORKER_COUNT="$ORIGINAL_WORKER_COUNT"  
+fi
+if [ -n "$ORIGINAL_VM_TEMPLATE" ]; then
+    DEFAULT_VM_TEMPLATE="$ORIGINAL_VM_TEMPLATE"
+fi
+if [ -n "$ORIGINAL_PROXMOX_NODE" ]; then
+    DEFAULT_PROXMOX_NODE="$ORIGINAL_PROXMOX_NODE"
+fi
+if [ -n "$ORIGINAL_CORES" ]; then
+    DEFAULT_CORES="$ORIGINAL_CORES"
+fi
+if [ -n "$ORIGINAL_MEMORY" ]; then
+    DEFAULT_MEMORY="$ORIGINAL_MEMORY"
+fi
+if [ -n "$ORIGINAL_DISK_SIZE" ]; then
+    DEFAULT_DISK_SIZE="$ORIGINAL_DISK_SIZE"
+fi
 
 # Output file
 OUTPUT_FILE="${SCRIPT_DIR}/../vms.csv"
