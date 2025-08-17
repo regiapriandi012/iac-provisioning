@@ -103,7 +103,7 @@ variable "vm_memory" {
 variable "vm_disk_size" {
   description = "Disk size for VMs"
   type        = string
-  default     = "32G"
+  default     = "4G"
 }
 
 variable "master_node_count" {
