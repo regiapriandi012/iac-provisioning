@@ -44,55 +44,50 @@ resource "random_integer" "ip_base" {
   max = 200
 }
 
-# Local untuk memproses data VM dengan hybrid approach
+# Generate VM configurations directly from Terraform variables
 locals {
-  vm_data_raw = csvdecode(file(var.vm_csv_file))
-  
-  # Create list of VMs that need auto IP, sorted by name for consistency
-  vms_need_auto_ip = [
-    for vm in local.vm_data_raw : vm if vm.ip == "0"
-  ]
-  
-  # Create list of VMs that need auto VMID
-  vms_need_auto_vmid = [
-    for vm in local.vm_data_raw : vm if tonumber(vm.vmid) == 0
-  ]
-  
-  # Group VMs by template for efficient cloning
-  vms_by_template = {
-    for template in distinct([for vm in local.vm_data_raw : vm.template]) :
-    template => [for vm in local.vm_data_raw : vm if vm.template == template]
-  }
- 
-  vm_data = {
-    for i, vm in local.vm_data_raw : vm.vm_name => {
-      # Use defined VMID or sequential VMID (if vmid = 0)
-      vmid = tonumber(vm.vmid) != 0 ? tonumber(vm.vmid) : random_integer.vmid_base.result + index(local.vms_need_auto_vmid, vm)
-     
-      # Generate VM name with same random suffix for all VMs
-      vm_name_original = vm.vm_name
-      vm_name_final    = "${vm.vm_name}-${random_string.vm_suffix.result}"
-      
-      template  = vm.template
-      node      = vm.node
-     
-      # Use defined IP or sequential IP (if ip = "0")
-      # Reserve first IP (base-1) for HAProxy LB when multi-master
-      ip_address = vm.ip != "0" ? vm.ip : "10.200.0.${random_integer.ip_base.result + index(local.vms_need_auto_ip, vm)}"
-      ip         = vm.ip != "0" ? "ip=${vm.ip}/24,gw=${var.gateway}" : "ip=10.200.0.${random_integer.ip_base.result + index(local.vms_need_auto_ip, vm)}/24,gw=${var.gateway}"
-     
-      cores     = tonumber(vm.cores)
-      memory    = tonumber(vm.memory)
-      disk_size = vm.disk_size
-     
-      # Flag untuk tracking
-      vmid_source = tonumber(vm.vmid) != 0 ? "defined" : "sequential"
-      ip_source   = vm.ip != "0" ? "defined" : "sequential"
-      
-      # Batch index untuk staggered creation
-      batch_index = index(local.vm_data_raw, vm) % 3
+  # Generate master nodes based on variable
+  master_vms = {
+    for i in range(var.master_node_count) : "kube-master${format("%02d", i + 1)}" => {
+      vm_name_original = "kube-master${format("%02d", i + 1)}"
+      vm_name_final    = "kube-master${format("%02d", i + 1)}-${random_string.vm_suffix.result}"
+      template         = var.vm_template
+      node            = var.proxmox_node
+      cores           = var.vm_cores
+      memory          = var.vm_memory
+      disk_size       = var.vm_disk_size
+      vmid            = random_integer.vmid_base.result + i
+      ip_address      = "10.200.0.${random_integer.ip_base.result + i}"
+      ip              = "ip=10.200.0.${random_integer.ip_base.result + i}/24,gw=${var.gateway}"
+      vmid_source     = "sequential"
+      ip_source       = "sequential"
+      batch_index     = i % 3
+      node_type       = "master"
     }
   }
+  
+  # Generate worker nodes based on variable
+  worker_vms = {
+    for i in range(var.worker_node_count) : "kube-worker${format("%02d", i + 1)}" => {
+      vm_name_original = "kube-worker${format("%02d", i + 1)}"
+      vm_name_final    = "kube-worker${format("%02d", i + 1)}-${random_string.vm_suffix.result}"
+      template         = var.vm_template
+      node            = var.proxmox_node
+      cores           = var.vm_cores
+      memory          = var.vm_memory
+      disk_size       = var.vm_disk_size
+      vmid            = random_integer.vmid_base.result + var.master_node_count + i
+      ip_address      = "10.200.0.${random_integer.ip_base.result + var.master_node_count + i}"
+      ip              = "ip=10.200.0.${random_integer.ip_base.result + var.master_node_count + i}/24,gw=${var.gateway}"
+      vmid_source     = "sequential"
+      ip_source       = "sequential"
+      batch_index     = (var.master_node_count + i) % 3
+      node_type       = "worker"
+    }
+  }
+  
+  # Combine master and worker VMs
+  vm_data = merge(local.master_vms, local.worker_vms)
 }
 
 # Resource dengan for_each loop dan optimizations
@@ -181,16 +176,4 @@ resource "proxmox_vm_qemu" "vms" {
     }
 }
 
-# Update CSV dengan sequential assignments
-resource "local_file" "updated_csv" {
-  depends_on = [proxmox_vm_qemu.vms]
-  
-  filename = var.vm_csv_file
-  content  = join("\n", concat(
-    ["vmid,vm_name,template,node,ip,cores,memory,disk_size"],
-    [for name, vm in local.vm_data : 
-      "${vm.vmid},${vm.vm_name_original},${vm.template},${vm.node},${vm.ip_address},${vm.cores},${vm.memory},${vm.disk_size}"
-    ]
-  ))
-}
 

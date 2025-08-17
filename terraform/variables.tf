@@ -11,11 +11,6 @@ variable "pm_api_token_secret" {
   sensitive = true
 }
 
-variable "vm_csv_file" {
-  description = "Path to CSV file containing VM definitions"
-  type        = string
-  default     = "vms.csv"
-}
 
 variable "gateway" {
   description = "Default gateway for VMs"

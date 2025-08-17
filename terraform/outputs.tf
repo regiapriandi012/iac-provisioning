@@ -1,7 +1,7 @@
 # Local variables for inventory generation
 locals {
-  masters = [for k, v in local.vm_data : v if can(regex("master", lower(v.vm_name_original)))]
-  master_count = length(local.masters)
+  masters = [for k, v in local.vm_data : v if v.node_type == "master"]
+  master_count = var.master_node_count
   first_master_ip = length(local.masters) > 0 ? replace(local.masters[0].ip_address, "/.*", "") : ""
   # Calculate HAProxy VIP as IP base - 1
   haproxy_vip = "10.200.0.${random_integer.ip_base.result - 1}"
@@ -61,14 +61,14 @@ ansible_ssh_common_args='-o StrictHostKeyChecking=no'
 
 [kube_masters]
 %{for k, v in local.vm_data~}
-%{if can(regex("master", lower(v.vm_name_original)))~}
+%{if v.node_type == "master"~}
 ${v.vm_name_final} ansible_host=${replace(v.ip_address, "/.*", "")} vmid=${v.vmid}
 %{endif~}
 %{endfor~}
 
 [kube_workers]
 %{for k, v in local.vm_data~}
-%{if can(regex("worker", lower(v.vm_name_original)))~}
+%{if v.node_type == "worker"~}
 ${v.vm_name_final} ansible_host=${replace(v.ip_address, "/.*", "")} vmid=${v.vmid}
 %{endif~}
 %{endfor~}
@@ -114,7 +114,7 @@ output "ansible_inventory_json" {
           node = v.node
           original_name = v.vm_name_original
           template = v.template
-        } if can(regex("master", lower(v.vm_name_original)))
+        } if v.node_type == "master"
       }
     }
     k8s_workers = {
@@ -125,7 +125,7 @@ output "ansible_inventory_json" {
           node = v.node
           original_name = v.vm_name_original
           template = v.template
-        } if can(regex("worker", lower(v.vm_name_original)))
+        } if v.node_type == "worker"
       }
     }
     k8s_cluster = {
@@ -137,15 +137,3 @@ output "ansible_inventory_json" {
   })
 }
 
-# Export VM data sebagai CSV untuk dynamic inventory generator
-resource "local_file" "vms_csv" {
-  content = <<-EOT
-vmid,vm_name,template,node,ip,cores,memory,disk_size
-%{for k, v in local.vm_data~}
-${v.vmid},${v.vm_name_original},${v.template},${v.node},${v.ip_address},${v.cores},${v.memory},${v.disk_size}
-%{endfor~}
-EOT
-  filename = "${path.module}/vms.csv"
-
-  depends_on = [proxmox_vm_qemu.vms]
-}

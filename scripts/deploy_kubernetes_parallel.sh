@@ -54,11 +54,11 @@ with open('${INVENTORY_FILE}', 'r') as f:
 
 echo "   Total hosts: $TOTAL_HOSTS"
 
-# Generate optimized inventory
-if python3 ${WORKSPACE}/scripts/generate_inventory_with_cni.py ${WORKSPACE}/terraform/vms.csv inventory/k8s-inventory.json; then
-    echo "✅ Inventory generated successfully"
+# Generate inventory from Terraform output
+if terraform -chdir=${WORKSPACE}/terraform output ansible_inventory_json > inventory/k8s-inventory.json; then
+    echo "✅ Inventory generated from Terraform output"
 else
-    echo "❌ Failed to generate inventory"
+    echo "❌ Failed to generate inventory from Terraform output"
     exit 1
 fi
 
