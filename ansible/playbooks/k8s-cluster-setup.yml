@@ -150,14 +150,17 @@
       when: detected_os_family == "Debian"
 
     - name: Add Docker GPG key (Debian-based)
-      apt_key:
-        url: https://download.docker.com/linux/debian/gpg
-        state: present
+      shell: |
+        mkdir -p /usr/share/keyrings
+        curl -fsSL https://download.docker.com/linux/debian/gpg -o /tmp/docker.gpg
+        gpg --batch --yes --dearmor /tmp/docker.gpg
+        mv /tmp/docker.gpg.gpg /usr/share/keyrings/docker-archive-keyring.gpg
+        rm -f /tmp/docker.gpg
       when: detected_os_family == "Debian"
 
     - name: Add Docker repository (Debian-based)
       apt_repository:
-        repo: "deb [arch=amd64] https://download.docker.com/linux/debian {{ ansible_distribution_release }} stable"
+        repo: "deb [arch=amd64 signed-by=/usr/share/keyrings/docker-archive-keyring.gpg] https://download.docker.com/linux/debian {{ ansible_distribution_release }} stable"
         state: present
       when: detected_os_family == "Debian"
 
@@ -211,14 +214,17 @@
       when: detected_os_family == "RedHat"
 
     - name: Add Kubernetes APT key (Debian-based)
-      apt_key:
-        url: https://pkgs.k8s.io/core:/stable:/v{{ kubernetes_version.split('.')[0] }}.{{ kubernetes_version.split('.')[1] }}/deb/Release.key
-        state: present
+      shell: |
+        mkdir -p /usr/share/keyrings
+        curl -fsSL https://pkgs.k8s.io/core:/stable:/v{{ kubernetes_version.split('.')[0] }}.{{ kubernetes_version.split('.')[1] }}/deb/Release.key -o /tmp/kubernetes.gpg
+        gpg --batch --yes --dearmor /tmp/kubernetes.gpg
+        mv /tmp/kubernetes.gpg.gpg /usr/share/keyrings/kubernetes-archive-keyring.gpg
+        rm -f /tmp/kubernetes.gpg
       when: detected_os_family == "Debian"
 
     - name: Add Kubernetes repository (Debian-based)
       apt_repository:
-        repo: "deb https://pkgs.k8s.io/core:/stable:/v{{ kubernetes_version.split('.')[0] }}.{{ kubernetes_version.split('.')[1] }}/deb/ /"
+        repo: "deb [signed-by=/usr/share/keyrings/kubernetes-archive-keyring.gpg] https://pkgs.k8s.io/core:/stable:/v{{ kubernetes_version.split('.')[0] }}.{{ kubernetes_version.split('.')[1] }}/deb/ /"
         state: present
         update_cache: yes
       when: detected_os_family == "Debian"
