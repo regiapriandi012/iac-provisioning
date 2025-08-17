@@ -319,6 +319,48 @@
         path: /etc/kubernetes/admin.conf
       register: k8s_initialized
 
+    - name: Comprehensive Kubernetes cleanup (if not initialized)
+      shell: |
+        # Force stop any running Kubernetes services
+        systemctl stop kubelet 2>/dev/null || true
+        systemctl stop containerd 2>/dev/null || true
+        
+        # Run kubeadm reset with force
+        kubeadm reset --force 2>/dev/null || true
+        
+        # Remove all Kubernetes directories and configs
+        rm -rf /etc/kubernetes
+        rm -rf /var/lib/etcd
+        rm -rf /var/lib/kubelet
+        rm -rf /var/lib/dockershim
+        rm -rf /var/run/kubernetes
+        rm -rf /var/lib/cni
+        rm -rf /etc/cni
+        rm -rf ~/.kube
+        rm -rf /root/.kube
+        
+        # Clean up any leftover containers and images
+        crictl rm -af 2>/dev/null || true
+        crictl rmi -af 2>/dev/null || true
+        
+        # Remove any leftover network interfaces
+        ip link delete cni0 2>/dev/null || true
+        ip link delete flannel.1 2>/dev/null || true
+        
+        # Clean iptables rules (be careful)
+        iptables -F 2>/dev/null || true
+        iptables -t nat -F 2>/dev/null || true
+        iptables -t mangle -F 2>/dev/null || true
+        iptables -X 2>/dev/null || true
+        
+        # Restart containerd with clean state
+        systemctl start containerd
+        systemctl enable containerd
+        
+        echo "Comprehensive cleanup completed"
+      when: not k8s_initialized.stat.exists
+      ignore_errors: yes
+
     - name: Initialize Kubernetes cluster (Single Master)
       command: >
         kubeadm init
@@ -384,6 +426,24 @@
       stat:
         path: /etc/kubernetes/admin.conf
       register: node_joined
+
+    - name: Cleanup any existing Kubernetes configuration on master nodes
+      shell: |
+        # Force stop any running Kubernetes services
+        systemctl stop kubelet 2>/dev/null || true
+        
+        # Run kubeadm reset with force
+        kubeadm reset --force 2>/dev/null || true
+        
+        # Remove all Kubernetes directories and configs
+        rm -rf /etc/kubernetes
+        rm -rf /var/lib/kubelet
+        rm -rf ~/.kube
+        rm -rf /root/.kube
+        
+        echo "Master node cleanup completed"
+      when: not node_joined.stat.exists
+      ignore_errors: yes
 
     - name: Join additional master nodes
       command: >
