@@ -55,8 +55,12 @@ with open('${INVENTORY_FILE}', 'r') as f:
 echo "   Total hosts: $TOTAL_HOSTS"
 
 # Generate inventory from Terraform output
-if terraform -chdir=${WORKSPACE}/terraform output ansible_inventory_json > inventory/k8s-inventory.json; then
+echo "📝 Generating inventory from Terraform output..."
+if terraform -chdir=${WORKSPACE}/terraform output -json ansible_inventory_json | jq -r . > inventory/k8s-inventory.json; then
     echo "✅ Inventory generated from Terraform output"
+    echo "📄 Inventory file size: $(wc -c < inventory/k8s-inventory.json) bytes"
+    echo "🔍 First few lines:"
+    head -5 inventory/k8s-inventory.json
 else
     echo "❌ Failed to generate inventory from Terraform output"
     exit 1
@@ -194,11 +198,24 @@ echo "📋 CLUSTER STATUS:"
 echo "=================="
 FIRST_MASTER=$(${WORKSPACE}/venv/bin/python -c "
 import json
-with open('${INVENTORY_FILE}', 'r') as f:
-    inv = json.load(f)
-    masters = list(inv.get('k8s_masters', {}).get('hosts', {}).keys())
-    if masters:
-        print(masters[0])
+import sys
+try:
+    with open('${INVENTORY_FILE}', 'r') as f:
+        content = f.read().strip()
+        if not content:
+            sys.exit(0)
+        inv = json.loads(content)
+        # Try different inventory formats
+        if isinstance(inv, dict):
+            masters = list(inv.get('k8s_masters', {}).get('hosts', {}).keys())
+            if not masters:
+                # Try alternate format
+                masters = list(inv.get('all', {}).get('children', {}).get('k8s_masters', {}).get('hosts', {}).keys())
+            if masters:
+                print(masters[0])
+except Exception as e:
+    print(f'Error reading inventory: {e}', file=sys.stderr)
+    sys.exit(0)
 ")
 
 if [ -n "$FIRST_MASTER" ]; then
