@@ -79,42 +79,42 @@ pipeline {
             }
         }
         
-        stage('Generate VM Configuration') {
+        stage('Load Environment Variables') {
             steps {
-                dir("${TERRAFORM_DIR}") {
-                    script {
-                        def startTime = System.currentTimeMillis()
-                        
-                        // Load configuration using simple file reading
-                        def configContent = readFile("../${CONFIG_FILE}")
-                        def configProps = [:]
-                        
-                        configContent.split('\n').each { line ->
-                            line = line.trim()
-                            if (line && !line.startsWith('#') && line.contains('=')) {
-                                def parts = line.split('=', 2)
-                                configProps[parts[0].trim()] = parts[1].trim()
-                            }
+                script {
+                    def startTime = System.currentTimeMillis()
+                    
+                    // Load configuration using simple file reading
+                    def configContent = readFile(CONFIG_FILE)
+                    def configProps = [:]
+                    
+                    configContent.split('\n').each { line ->
+                        line = line.trim()
+                        if (line && !line.startsWith('#') && line.contains('=')) {
+                            def parts = line.split('=', 2)
+                            configProps[parts[0].trim()] = parts[1].trim()
                         }
-                        
-                        // Copy vms.csv from repository root to terraform directory
-                        sh 'cp ../vms.csv .'
-                        
-                        // Process CSV content and replace placeholders with config values
-                        def csvContent = readFile('vms.csv')
-                        def defaultTemplate = configProps.DEFAULT_VM_TEMPLATE ?: 't-debian12-86'
-                        def defaultNode = configProps.DEFAULT_PROXMOX_NODE ?: 'thinkcentre'
-                        
-                        csvContent = csvContent
-                            .replace('TEMPLATE_PLACEHOLDER', defaultTemplate)
-                            .replace('NODE_PLACEHOLDER', defaultNode)
-                        
-                        // Write processed CSV back
-                        writeFile file: "vms.csv", text: csvContent
-                        
-                        def duration = ((System.currentTimeMillis() - startTime) / 1000).intValue()
-                        echo "VM configuration processed in ${duration}s"
                     }
+                    
+                    // Set Terraform variables from environment.conf
+                    env.TF_VAR_master_node_count = configProps.DEFAULT_MASTER_COUNT ?: '1'
+                    env.TF_VAR_worker_node_count = configProps.DEFAULT_WORKER_COUNT ?: '1'
+                    env.TF_VAR_vm_template = configProps.DEFAULT_VM_TEMPLATE ?: 't-debian12-86'
+                    env.TF_VAR_proxmox_node = configProps.DEFAULT_PROXMOX_NODE ?: 'thinkcentre'
+                    env.TF_VAR_vm_cores = configProps.DEFAULT_CORES ?: '2'
+                    env.TF_VAR_vm_memory = configProps.DEFAULT_MEMORY ?: '2048'
+                    env.TF_VAR_vm_disk_size = configProps.DEFAULT_DISK_SIZE ?: '32G'
+                    env.TF_VAR_pod_network_cidr = configProps.DEFAULT_POD_NETWORK_CIDR ?: '10.244.0.0/16'
+                    env.TF_VAR_service_cidr = configProps.DEFAULT_SERVICE_CIDR ?: '10.96.0.0/12'
+                    env.TF_VAR_container_runtime = configProps.DEFAULT_CONTAINER_RUNTIME ?: 'containerd'
+                    env.TF_VAR_ip_range_start = configProps.DEFAULT_IP_RANGE_START ?: '10.200.0.0/24'
+                    
+                    def duration = ((System.currentTimeMillis() - startTime) / 1000).intValue()
+                    echo """Environment variables loaded in ${duration}s:
+  Masters: ${env.TF_VAR_master_node_count}
+  Workers: ${env.TF_VAR_worker_node_count}
+  Template: ${env.TF_VAR_vm_template}
+  Node: ${env.TF_VAR_proxmox_node}"""
                 }
             }
         }
@@ -322,7 +322,6 @@ pipeline {
                 if (env.RUN_ANSIBLE && env.RUN_ANSIBLE.toBoolean()) {
                     archiveArtifacts artifacts: "${ANSIBLE_DIR}/inventory/*", allowEmptyArchive: true
                     archiveArtifacts artifacts: "${ANSIBLE_DIR}/kubeconfig/*", allowEmptyArchive: true
-                    archiveArtifacts artifacts: "${TERRAFORM_DIR}/vms.csv", allowEmptyArchive: true
                 }
                 
                 // Show performance metrics

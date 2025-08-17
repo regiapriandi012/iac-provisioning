@@ -4,9 +4,15 @@
 
 set -e
 
-# Load environment configuration first
-echo "🌍 Loading environment configuration..."
-source ../scripts/load_environment.sh
+# Only load environment if TF_VAR variables are not already set (e.g., by Jenkins)
+if [ -z "$TF_VAR_master_node_count" ]; then
+    echo "🌍 Loading environment configuration..."
+    source ../scripts/load_environment.sh
+else
+    echo "🌍 Using pre-set TF_VAR environment variables..."
+    echo "   Masters: ${TF_VAR_master_node_count}, Workers: ${TF_VAR_worker_node_count}"
+    echo "   Template: ${TF_VAR_vm_template}, Node: ${TF_VAR_proxmox_node}"
+fi
 
 echo "🔧 Applying Terraform with environment variables (TF_VAR_*)..."
 terraform apply -auto-approve -parallelism=10
