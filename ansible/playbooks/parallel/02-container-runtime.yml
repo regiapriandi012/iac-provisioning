@@ -144,7 +144,11 @@
 
     - name: Add Docker GPG key (Debian-based)
       shell: |
-        curl -fsSL https://download.docker.com/linux/debian/gpg | gpg --batch --yes --dearmor -o /usr/share/keyrings/docker-archive-keyring.gpg
+        mkdir -p /usr/share/keyrings
+        curl -fsSL https://download.docker.com/linux/debian/gpg -o /tmp/docker.gpg
+        gpg --batch --yes --dearmor /tmp/docker.gpg
+        mv /tmp/docker.gpg.gpg /usr/share/keyrings/docker-archive-keyring.gpg
+        rm -f /tmp/docker.gpg
       when: detected_os_family == "Debian"
       async: 30
       poll: 0

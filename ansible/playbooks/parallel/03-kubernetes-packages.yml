@@ -94,7 +94,11 @@
 
     - name: Add Kubernetes APT key (Debian-based)
       shell: |
-        curl -fsSL https://pkgs.k8s.io/core:/stable:/v{{ kubernetes_version.split('.')[0] }}.{{ kubernetes_version.split('.')[1] }}/deb/Release.key | gpg --dearmor -o /usr/share/keyrings/kubernetes-archive-keyring.gpg
+        mkdir -p /usr/share/keyrings
+        curl -fsSL https://pkgs.k8s.io/core:/stable:/v{{ kubernetes_version.split('.')[0] }}.{{ kubernetes_version.split('.')[1] }}/deb/Release.key -o /tmp/kubernetes.gpg
+        gpg --batch --yes --dearmor /tmp/kubernetes.gpg
+        mv /tmp/kubernetes.gpg.gpg /usr/share/keyrings/kubernetes-archive-keyring.gpg
+        rm -f /tmp/kubernetes.gpg
       when: detected_os_family == "Debian"
       async: 30
       poll: 0
