@@ -20,9 +20,9 @@ if curl -X POST ${SLACK_WEBHOOK_URL} \
      -H "Content-Type: application/json" \
      -d @slack_message.json \
      --silent --show-error --fail; then
-    echo "Deployment notification sent to Slack successfully!"
+    true
 else
-    echo "Failed to send notification to Slack"
+    exit 1
     exit 1
 fi
 

@@ -1,6 +1,26 @@
 pipeline {
     agent any
 
+    // Define parameters that can be passed from Django REST API
+    parameters {
+        string(name: 'CLUSTER_NAME', defaultValue: 'k8s-cluster', description: 'Name of the Kubernetes cluster')
+        string(name: 'DESCRIPTION', defaultValue: 'Kubernetes cluster deployed from Django', description: 'Cluster description')
+        choice(name: 'PROXMOX_NODE', choices: ['thinkcentre', 'proxmox'], description: 'Proxmox node to deploy on')
+        choice(name: 'VM_TEMPLATE', choices: ['t-debian12-kube', 't-centos9-kube'], description: 'VM template to use')
+        choice(name: 'MASTER_COUNT', choices: ['1', '3'], description: 'Number of master nodes')
+        choice(name: 'WORKER_COUNT', choices: ['0', '1', '2', '3'], description: 'Number of worker nodes')
+        string(name: 'CORES', defaultValue: '2', description: 'CPU cores per VM')
+        string(name: 'MEMORY', defaultValue: '2048', description: 'Memory per VM in MB')
+        string(name: 'DISK_SIZE', defaultValue: '10G', description: 'Disk size per VM')
+        string(name: 'KUBERNETES_VERSION', defaultValue: '1.32.7', description: 'Kubernetes version')
+        string(name: 'CNI_TYPE', defaultValue: 'cilium', description: 'CNI type')
+        string(name: 'CNI_VERSION', defaultValue: '1.14.5', description: 'CNI version')
+        string(name: 'POD_NETWORK_CIDR', defaultValue: '10.244.0.0/16', description: 'Pod network CIDR')
+        string(name: 'SERVICE_CIDR', defaultValue: '10.96.0.0/12', description: 'Service CIDR')
+        string(name: 'CONTAINER_RUNTIME', defaultValue: 'containerd', description: 'Container runtime')
+        string(name: 'IP_RANGE_START', defaultValue: '10.200.0.0/24', description: 'IP range for VMs')
+    }
+
     environment {
         TERRAFORM_DIR = 'terraform'
         ANSIBLE_DIR = 'ansible'
@@ -9,6 +29,23 @@ pipeline {
         INVENTORY_SCRIPT = '../scripts/inventory.py'
         CACHE_DIR = "${WORKSPACE}/.iac-cache"
         CONFIG_FILE = 'config/environment.conf'
+        
+        // Use parameters passed from Django REST API or defaults from config
+        TF_VAR_cluster_name = "${params.CLUSTER_NAME}"
+        TF_VAR_master_node_count = "${params.MASTER_COUNT}"
+        TF_VAR_worker_node_count = "${params.WORKER_COUNT}"
+        TF_VAR_vm_template = "${params.VM_TEMPLATE}"
+        TF_VAR_proxmox_node = "${params.PROXMOX_NODE}"
+        TF_VAR_vm_cores = "${params.CORES}"
+        TF_VAR_vm_memory = "${params.MEMORY}"
+        TF_VAR_vm_disk_size = "${params.DISK_SIZE}"
+        TF_VAR_kubernetes_version = "${params.KUBERNETES_VERSION}"
+        TF_VAR_cni_type = "${params.CNI_TYPE}"
+        TF_VAR_cni_version = "${params.CNI_VERSION}"
+        TF_VAR_pod_network_cidr = "${params.POD_NETWORK_CIDR}"
+        TF_VAR_service_cidr = "${params.SERVICE_CIDR}"
+        TF_VAR_container_runtime = "${params.CONTAINER_RUNTIME}"
+        TF_VAR_ip_range_start = "${params.IP_RANGE_START}"
     }
     
     options {
@@ -19,6 +56,26 @@ pipeline {
     }
 
     stages {
+        stage('Validate Parameters') {
+            steps {
+                script {
+                    echo """
+=== CLUSTER DEPLOYMENT STARTED ===
+Cluster Name: ${params.CLUSTER_NAME}
+Description: ${params.DESCRIPTION}
+Proxmox Node: ${params.PROXMOX_NODE}
+VM Template: ${params.VM_TEMPLATE}
+Masters: ${params.MASTER_COUNT}
+Workers: ${params.WORKER_COUNT}
+VM Specs: ${params.CORES} cores, ${params.MEMORY}MB RAM, ${params.DISK_SIZE} disk
+Kubernetes: ${params.KUBERNETES_VERSION} with ${params.CNI_TYPE} ${params.CNI_VERSION}
+Parameters passed from Django REST API successfully!
+=====================================
+"""
+                }
+            }
+        }
+
         stage('Checkout') {
             steps {
                 script {
@@ -79,45 +136,7 @@ pipeline {
             }
         }
         
-        stage('Load Environment Variables') {
-            steps {
-                script {
-                    def startTime = System.currentTimeMillis()
-                    
-                    // Load configuration using simple file reading
-                    def configContent = readFile(CONFIG_FILE)
-                    def configProps = [:]
-                    
-                    configContent.split('\n').each { line ->
-                        line = line.trim()
-                        if (line && !line.startsWith('#') && line.contains('=')) {
-                            def parts = line.split('=', 2)
-                            configProps[parts[0].trim()] = parts[1].trim()
-                        }
-                    }
-                    
-                    // Set Terraform variables from environment.conf
-                    env.TF_VAR_master_node_count = configProps.DEFAULT_MASTER_COUNT ?: '1'
-                    env.TF_VAR_worker_node_count = configProps.DEFAULT_WORKER_COUNT ?: '1'
-                    env.TF_VAR_vm_template = configProps.DEFAULT_VM_TEMPLATE ?: 't-debian12-86'
-                    env.TF_VAR_proxmox_node = configProps.DEFAULT_PROXMOX_NODE ?: 'thinkcentre'
-                    env.TF_VAR_vm_cores = configProps.DEFAULT_CORES ?: '2'
-                    env.TF_VAR_vm_memory = configProps.DEFAULT_MEMORY ?: '2048'
-                    env.TF_VAR_vm_disk_size = configProps.DEFAULT_DISK_SIZE ?: '32G'
-                    env.TF_VAR_pod_network_cidr = configProps.DEFAULT_POD_NETWORK_CIDR ?: '10.244.0.0/16'
-                    env.TF_VAR_service_cidr = configProps.DEFAULT_SERVICE_CIDR ?: '10.96.0.0/12'
-                    env.TF_VAR_container_runtime = configProps.DEFAULT_CONTAINER_RUNTIME ?: 'containerd'
-                    env.TF_VAR_ip_range_start = configProps.DEFAULT_IP_RANGE_START ?: '10.200.0.0/24'
-                    
-                    def duration = ((System.currentTimeMillis() - startTime) / 1000).intValue()
-                    echo """Environment variables loaded in ${duration}s:
-  Masters: ${env.TF_VAR_master_node_count}
-  Workers: ${env.TF_VAR_worker_node_count}
-  Template: ${env.TF_VAR_vm_template}
-  Node: ${env.TF_VAR_proxmox_node}"""
-                }
-            }
-        }
+        // Environment variables now set from parameters in environment block above
         
         stage('Terraform Provisioning') {
             stages {
@@ -338,9 +357,14 @@ pipeline {
             script {
                 def successMessage = """
             ==================== SUCCESS ====================
-            Infrastructure deployment completed successfully!
+            Kubernetes cluster deployment completed successfully!
             
-            Deployment Type: NEW VMs (Previous VMs remain untouched)
+            Cluster Configuration (from Django REST API):
+            - Cluster: ${params.CLUSTER_NAME}
+            - Masters: ${params.MASTER_COUNT}, Workers: ${params.WORKER_COUNT}
+            - VM Template: ${params.VM_TEMPLATE} on ${params.PROXMOX_NODE}
+            - Kubernetes: ${params.KUBERNETES_VERSION} with ${params.CNI_TYPE}
+            - VM Specs: ${params.CORES} cores, ${params.MEMORY}MB RAM, ${params.DISK_SIZE} disk
             
             What was deployed:
             - Brand NEW VMs provisioned with Terraform

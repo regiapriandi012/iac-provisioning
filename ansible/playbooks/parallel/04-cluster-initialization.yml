@@ -13,16 +13,6 @@
       set_fact:
         phase_start_time: "{{ ansible_date_time.epoch }}"
     
-    - name: Display initialization info
-      debug:
-        msg: |
-          🎯 CLUSTER INITIALIZATION STARTING
-          =================================
-          Primary Master: {{ inventory_hostname }}
-          Cluster Mode: {{ 'HA Multi-Master' if is_ha_cluster else 'Single Master' }}
-          Control Plane Endpoint: {{ control_plane_endpoint }}
-          
-  tasks:
     - name: Check if cluster is already initialized
       stat:
         path: /etc/kubernetes/admin.conf
@@ -135,18 +125,6 @@
         phase_end_time: "{{ ansible_date_time.epoch }}"
         phase_duration: "{{ ansible_date_time.epoch | int - phase_start_time | int }}"
 
-    - name: Display completion status
-      debug:
-        msg: |
-          ✅ PRIMARY MASTER INITIALIZATION COMPLETED
-          ==========================================
-          Host: {{ inventory_hostname }}
-          Duration: {{ phase_duration }}s
-          Status: Ready for additional masters and workers
-
-# Phase 4B: Join Additional Masters (Can run in parallel with each other)
-- name: "🎯 Join Additional Masters - Phase 4B"
-  hosts: k8s_masters[1:]
   become: true
   gather_facts: true
   strategy: free  # Masters can join in parallel
@@ -196,18 +174,6 @@
         phase_end_time: "{{ ansible_date_time.epoch }}"
         phase_duration: "{{ ansible_date_time.epoch | int - phase_start_time | int }}"
 
-    - name: Display completion status
-      debug:
-        msg: |
-          ✅ ADDITIONAL MASTER JOINED
-          ==========================
-          Host: {{ inventory_hostname }}
-          Duration: {{ phase_duration }}s
-          Status: Master node ready
-
-# Phase 4C: Join Worker Nodes (All workers can join in parallel)
-- name: "🎯 Join Worker Nodes - Phase 4C"
-  hosts: k8s_workers
   become: true
   gather_facts: true
   strategy: free  # Workers can join in parallel
@@ -236,11 +202,3 @@
         phase_end_time: "{{ ansible_date_time.epoch }}"
         phase_duration: "{{ ansible_date_time.epoch | int - phase_start_time | int }}"
 
-    - name: Display completion status
-      debug:
-        msg: |
-          ✅ WORKER NODE JOINED
-          =====================
-          Host: {{ inventory_hostname }}
-          Duration: {{ phase_duration }}s
-          Status: Worker node ready

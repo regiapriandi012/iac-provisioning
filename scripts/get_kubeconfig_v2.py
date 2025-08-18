@@ -24,13 +24,11 @@ def get_kubeconfig(inventory_file, output_file=None):
             masters = list(inv.get('k8s_masters', {}).get('hosts', {}).keys())
             
             if not masters:
-                print("No master nodes found in inventory")
                 return False
                 
             first_master = masters[0]
             master_ip = inv['k8s_masters']['hosts'][first_master]['ansible_host']
             
-            print(f"Retrieving KUBECONFIG from {first_master} ({master_ip})...")
             
             # Set environment for dynamic inventory
             os.environ['ANSIBLE_INVENTORY_FILE'] = inventory_file
@@ -78,17 +76,12 @@ def get_kubeconfig(inventory_file, output_file=None):
                                 # Decode base64 content
                                 kubeconfig = base64.b64decode(data['content']).decode('utf-8')
                                 found_path = kube_path
-                                print(f"Successfully retrieved kubeconfig from {kube_path}")
                                 break
                     except Exception as e:
-                        print(f"Failed to parse output from {kube_path}: {e}")
                         continue
             
             if not kubeconfig:
-                print("ERROR: Could not retrieve kubeconfig from any location")
-                
-                # Last resort: try with fetch module
-                print("Trying ansible fetch module as last resort...")
+# Last resort: try with fetch module
                 temp_file = '/tmp/kubeconfig_temp'
                 
                 cmd = [
@@ -105,14 +98,11 @@ def get_kubeconfig(inventory_file, output_file=None):
                     with open(temp_file, 'r') as f:
                         kubeconfig = f.read()
                     os.remove(temp_file)
-                    print("Retrieved kubeconfig using fetch module")
                 else:
-                    print("Fetch module also failed")
                     return False
             
             # Validate kubeconfig
             if not kubeconfig or 'apiVersion:' not in kubeconfig:
-                print("ERROR: Invalid kubeconfig content")
                 return False
             
             # Replace localhost/127.0.0.1 with actual master IP
@@ -125,22 +115,16 @@ def get_kubeconfig(inventory_file, output_file=None):
             if output_file:
                 with open(output_file, 'w') as f:
                     f.write(kubeconfig)
-                print(f"KUBECONFIG saved to: {output_file}")
-                print(f"Config size: {len(kubeconfig)} bytes")
             else:
                 print(kubeconfig)
             
             return True
             
     except Exception as e:
-        print(f"Error: {e}")
-        import traceback
-        traceback.print_exc()
         return False
 
 if __name__ == '__main__':
     if len(sys.argv) < 2:
-        print("Usage: get_kubeconfig_v2.py <inventory_file> [output_file]")
         sys.exit(1)
         
     inventory_file = sys.argv[1]

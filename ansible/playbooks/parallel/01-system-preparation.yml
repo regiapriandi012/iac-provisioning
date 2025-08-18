@@ -15,15 +15,6 @@
       set_fact:
         phase_start_time: "{{ ansible_date_time.epoch }}"
     
-    - name: Display parallel execution info
-      debug:
-        msg: |
-          🚀 PARALLEL SYSTEM PREPARATION STARTING
-          ======================================
-          Host: {{ inventory_hostname }}
-          Group: {{ group_names | join(', ') }}
-          Strategy: FREE (Maximum Parallelism)
-          Phase: System Preparation
           
   tasks:
     # Detect OS from template and set facts
@@ -128,10 +119,6 @@
       delay: 1
       when: selinux_job is defined and selinux_job.ansible_job_id is defined
 
-    - name: Verify swap configuration was updated
-      debug:
-        msg: "Swap configuration updated: {{ swap_fstab_job.changed }}"
-      when: swap_fstab_job is defined
 
     - name: Wait for swap disable to complete
       async_status:
@@ -142,15 +129,7 @@
       delay: 1
       when: swap_off_job is defined and swap_off_job.ansible_job_id is defined
 
-    - name: Verify modules config was created
-      debug:
-        msg: "Kernel modules configuration created: {{ modules_config_job.changed }}"
-      when: modules_config_job is defined
 
-    - name: Verify sysctl parameters were set
-      debug:
-        msg: "Sysctl parameters configured: {{ sysctl_jobs.results | map(attribute='changed') | list }}"
-      when: sysctl_jobs is defined
 
   post_tasks:
     - name: Calculate phase duration
@@ -158,11 +137,3 @@
         phase_end_time: "{{ ansible_date_time.epoch }}"
         phase_duration: "{{ ansible_date_time.epoch | int - phase_start_time | int }}"
 
-    - name: Display completion status
-      debug:
-        msg: |
-          ✅ SYSTEM PREPARATION COMPLETED
-          =============================
-          Host: {{ inventory_hostname }}
-          Duration: {{ phase_duration }}s
-          Status: Ready for container runtime installation

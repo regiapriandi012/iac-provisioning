@@ -47,17 +47,6 @@
           auto
           {%- endif -%}
     
-    - name: Display parallel execution info
-      debug:
-        msg: |
-          ☸️  PARALLEL KUBERNETES PACKAGE INSTALLATION
-          ===========================================
-          Host: {{ inventory_hostname }}
-          Kubernetes Version: {{ kubernetes_version }}
-          OS Family: {{ detected_os_family }}
-          Strategy: FREE (Maximum Parallelism)
-          
-  tasks:
     # Fast DPKG cleanup - kill and unlock (Debian-based systems)
     - name: Kill any stuck package manager processes
       shell: |
@@ -229,12 +218,3 @@
         phase_end_time: "{{ ansible_date_time.epoch }}"
         phase_duration: "{{ ansible_date_time.epoch | int - phase_start_time | int }}"
 
-    - name: Display completion status
-      debug:
-        msg: |
-          ✅ KUBERNETES PACKAGES INSTALLATION COMPLETED
-          ============================================
-          Host: {{ inventory_hostname }}
-          Duration: {{ phase_duration }}s
-          Kubelet Version: {{ kubernetes_version }}
-          Status: Ready for cluster initialization

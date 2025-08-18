@@ -15,13 +15,6 @@
         state: directory
         mode: '0755'
     
-    - name: Display cluster configuration
-      debug:
-        msg: |
-          Cluster Mode: {{ 'HA Multi-Master' if is_ha_cluster else 'Single Master' }}
-          Master Count: {{ master_count }}
-          Control Plane Endpoint: {{ control_plane_endpoint }}
-          Pod Network CIDR: {{ pod_network_cidr }}
 
   tasks:
     # Detect OS from template and set facts
@@ -594,25 +587,3 @@
       shell: kubectl get nodes -o wide
       register: node_status
 
-    - name: Display cluster information
-      debug:
-        msg: |
-          ===============================================
-          Kubernetes Cluster Setup Complete!
-          ===============================================
-          
-          Cluster Mode: {{ 'HA Multi-Master (' + master_count|string + ' masters)' if is_ha_cluster else 'Single Master' }}
-          Control Plane Endpoint: {{ control_plane_endpoint }}
-          
-          {{ cluster_info.stdout }}
-          
-          Node Status:
-          {{ node_status.stdout }}
-          
-          {% if is_ha_cluster %}
-          HAProxy Stats: http://{{ ansible_default_ipv4.address }}:8404/stats
-          {% endif %}
-          
-          Next steps:
-          - kubectl get pods --all-namespaces
-          - kubectl get svc --all-namespaces

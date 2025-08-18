@@ -13,17 +13,6 @@
       set_fact:
         phase_start_time: "{{ ansible_date_time.epoch }}"
     
-    - name: Display CNI installation info
-      debug:
-        msg: |
-          🌐 CNI INSTALLATION STARTING
-          ============================
-          Master: {{ inventory_hostname }}
-          CNI Type: {{ cni_type }}
-          CNI Version: {{ cni_version }}
-          Pod Network CIDR: {{ pod_network_cidr }}
-          
-  tasks:
     - name: Check if CNI is already installed
       shell: kubectl get pods -n kube-system | grep -E "(cilium|flannel|calico|weave)" | wc -l
       register: cni_installed
@@ -205,12 +194,3 @@
         phase_end_time: "{{ ansible_date_time.epoch }}"
         phase_duration: "{{ ansible_date_time.epoch | int - phase_start_time | int }}"
 
-    - name: Display completion status
-      debug:
-        msg: |
-          ✅ CNI INSTALLATION COMPLETED
-          =============================
-          Master: {{ inventory_hostname }}
-          CNI: {{ cni_type }} v{{ cni_version }}
-          Duration: {{ phase_duration }}s
-          Status: Cluster networking ready

@@ -47,17 +47,6 @@
           auto
           {%- endif -%}
     
-    - name: Display parallel execution info
-      debug:
-        msg: |
-          🐳 PARALLEL CONTAINER RUNTIME INSTALLATION
-          =========================================
-          Host: {{ inventory_hostname }}
-          OS Family: {{ detected_os_family }}
-          Package Manager: {{ package_manager }}
-          Strategy: FREE (Maximum Parallelism)
-          
-  tasks:
 
     # Fast DPKG cleanup - kill and unlock (Debian-based systems)
     - name: Kill any stuck package manager processes
@@ -405,12 +394,6 @@
         name: containerd
       register: containerd_status
       
-    - name: Show containerd logs if failed
-      shell: journalctl -xeu containerd.service --no-pager -n 20
-      when: containerd_start_result.failed or containerd_status.status.ActiveState != "active"
-      ignore_errors: yes
-      
-    - name: Wait for containerd socket
       wait_for:
         path: /run/containerd/containerd.sock
         timeout: 30
@@ -447,11 +430,3 @@
         phase_end_time: "{{ ansible_date_time.epoch }}"
         phase_duration: "{{ ansible_date_time.epoch | int - phase_start_time | int }}"
 
-    - name: Display completion status
-      debug:
-        msg: |
-          ✅ CONTAINER RUNTIME INSTALLATION COMPLETED
-          ==========================================
-          Host: {{ inventory_hostname }}
-          Duration: {{ phase_duration }}s
-          Status: Ready for Kubernetes installation
