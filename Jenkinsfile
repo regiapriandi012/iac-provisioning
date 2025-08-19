@@ -273,6 +273,19 @@ Parameters passed from Django REST API successfully!
                     script {
                         sh '../scripts/extract_kubeconfig.sh'
                         
+                        // Send metadata to Django webhook
+                        try {
+                            echo "Sending cluster metadata to Django..."
+                            sh """
+                                cd ${WORKSPACE}
+                                python3 scripts/send_metadata_to_django.py "${params.CLUSTER_NAME}" "https://labngoprek.my.id"
+                            """
+                            echo "Successfully sent metadata to Django!"
+                        } catch (Exception e) {
+                            echo "Warning: Failed to send metadata to Django: ${e.getMessage()}"
+                            // Continue with deployment even if Django webhook fails
+                        }
+                        
                         // Send KUBECONFIG to Slack
                         withCredentials([string(credentialsId: env.SLACK_WEBHOOK_CREDENTIAL_ID, variable: 'SLACK_WEBHOOK_URL')]) {
                             def buildDuration = currentBuild.durationString.replace(' and counting', '')
