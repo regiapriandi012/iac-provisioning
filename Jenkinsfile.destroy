@@ -147,7 +147,13 @@ except:
 
         stage('Manual Confirmation') {
             when {
-                not { expression { params.SKIP_CONFIRMATION == true } }
+                not { 
+                    anyOf {
+                        expression { params.SKIP_CONFIRMATION == true }
+                        expression { params.SKIP_CONFIRMATION == 'true' }
+                        expression { params.SKIP_CONFIRMATION == 'on' }
+                    }
+                }
             }
             steps {
                 script {
