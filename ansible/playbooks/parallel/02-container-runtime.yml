@@ -394,6 +394,7 @@
         name: containerd
       register: containerd_status
       
+    - name: Wait for containerd socket
       wait_for:
         path: /run/containerd/containerd.sock
         timeout: 30
