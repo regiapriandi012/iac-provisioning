@@ -152,6 +152,8 @@ except:
                         expression { params.SKIP_CONFIRMATION == true }
                         expression { params.SKIP_CONFIRMATION == 'true' }
                         expression { params.SKIP_CONFIRMATION == 'on' }
+                        expression { params.SKIP_CONFIRMATION.toString() == 'true' }
+                        expression { params.SKIP_CONFIRMATION.toString().toLowerCase() == 'on' }
                     }
                 }
             }
@@ -367,7 +369,38 @@ Next steps:
         }
         
         failure {
-            echo """
+            script {
+                // Notify Django about destruction failure
+                try {
+                    sh """
+                        python3 -c "
+import requests
+import json
+
+webhook_url = 'https://labngoprek.my.id/webhook/jenkins/'
+payload = {
+    'name': '${params.CLUSTER_NAME}',
+    'build': {
+        'number': int('${BUILD_NUMBER}'),
+        'status': 'failure',
+        'full_url': '${BUILD_URL}'
+    },
+    'action': 'destroy',
+    'cluster_name': '${params.CLUSTER_NAME}'
+}
+
+try:
+    response = requests.post(webhook_url, json=payload, timeout=30)
+    print(f'Django webhook response: {response.status_code}')
+except Exception as e:
+    print(f'Failed to notify Django: {e}')
+"
+                    """
+                } catch (Exception e) {
+                    echo "Warning: Failed to notify Django about failure: ${e.getMessage()}"
+                }
+                
+                echo """
 ==================== DESTRUCTION FAILURE ====================
 Failed to destroy cluster '${params.CLUSTER_NAME}'!
 
@@ -381,6 +414,7 @@ Common troubleshooting steps:
 IMPORTANT: Some resources may still exist and need manual cleanup!
 =============================================================
 """
+            }
         }
         
         cleanup {
