@@ -7,8 +7,8 @@ pipeline {
         string(name: 'DESCRIPTION', defaultValue: 'Kubernetes cluster deployed from Django', description: 'Cluster description')
         choice(name: 'PROXMOX_NODE', choices: ['thinkcentre', 'proxmox'], description: 'Proxmox node to deploy on')
         choice(name: 'VM_TEMPLATE', choices: ['t-debian12-kube', 't-centos9-kube'], description: 'VM template to use')
-        string(name: 'MASTER_COUNT', defaultValue: '1', description: 'Number of master nodes')
-        string(name: 'WORKER_COUNT', defaultValue: '0', description: 'Number of worker nodes')
+        string(name: 'MASTER_COUNT', defaultValue: '3', description: 'Number of master nodes')
+        string(name: 'WORKER_COUNT', defaultValue: '2', description: 'Number of worker nodes')
         string(name: 'CORES', defaultValue: '2', description: 'CPU cores per VM')
         string(name: 'MEMORY', defaultValue: '2048', description: 'Memory per VM in MB')
         string(name: 'DISK_SIZE', defaultValue: '10G', description: 'Disk size per VM')
@@ -70,6 +70,15 @@ Workers: ${params.WORKER_COUNT}
 VM Specs: ${params.CORES} cores, ${params.MEMORY}MB RAM, ${params.DISK_SIZE} disk
 Kubernetes: ${params.KUBERNETES_VERSION} with ${params.CNI_TYPE} ${params.CNI_VERSION}
 Parameters passed from Django REST API successfully!
+
+=== TERRAFORM ENVIRONMENT VARIABLES ===
+TF_VAR_cluster_name: ${env.TF_VAR_cluster_name}
+TF_VAR_master_node_count: ${env.TF_VAR_master_node_count}
+TF_VAR_worker_node_count: ${env.TF_VAR_worker_node_count}
+TF_VAR_vm_template: ${env.TF_VAR_vm_template}
+TF_VAR_proxmox_node: ${env.TF_VAR_proxmox_node}
+TF_VAR_vm_cores: ${env.TF_VAR_vm_cores}
+TF_VAR_vm_memory: ${env.TF_VAR_vm_memory}
 =====================================
 """
                 }
