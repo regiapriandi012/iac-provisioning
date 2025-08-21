@@ -45,21 +45,22 @@ DEFAULT_SERVICE_CIDR=${OVERRIDE_SERVICE_CIDR:-${DEFAULT_SERVICE_CIDR:-"10.96.0.0
 DEFAULT_CNI_TYPE=${OVERRIDE_CNI_TYPE:-${DEFAULT_CNI_TYPE:-"cilium"}}
 DEFAULT_CNI_VERSION=${OVERRIDE_CNI_VERSION:-${DEFAULT_CNI_VERSION:-"1.14.5"}}
 
-# Export all DEFAULT_* variables as TF_VAR_* for Terraform
-export TF_VAR_proxmox_node=${DEFAULT_PROXMOX_NODE}
-export TF_VAR_vm_template=${DEFAULT_VM_TEMPLATE}
-export TF_VAR_master_node_count=${DEFAULT_MASTER_COUNT}
-export TF_VAR_worker_node_count=${DEFAULT_WORKER_COUNT}
-export TF_VAR_vm_cores=${DEFAULT_CORES}
-export TF_VAR_vm_memory=${DEFAULT_MEMORY}
-export TF_VAR_vm_disk_size=${DEFAULT_DISK_SIZE}
-export TF_VAR_kubernetes_version=${DEFAULT_KUBERNETES_VERSION}
-export TF_VAR_pod_network_cidr=${DEFAULT_POD_NETWORK_CIDR}
-export TF_VAR_service_cidr=${DEFAULT_SERVICE_CIDR}
-export TF_VAR_container_runtime=${DEFAULT_CONTAINER_RUNTIME:-"containerd"}
-export TF_VAR_cni_type=${DEFAULT_CNI_TYPE}
-export TF_VAR_cni_version=${DEFAULT_CNI_VERSION}
-export TF_VAR_ip_range_start=${DEFAULT_IP_RANGE_START:-"10.200.0.0/24"}
+# Export DEFAULT_* variables as TF_VAR_* for Terraform
+# Only set if TF_VAR_* is not already defined (preserves Jenkins parameters)
+export TF_VAR_proxmox_node=${TF_VAR_proxmox_node:-${DEFAULT_PROXMOX_NODE}}
+export TF_VAR_vm_template=${TF_VAR_vm_template:-${DEFAULT_VM_TEMPLATE}}
+export TF_VAR_master_node_count=${TF_VAR_master_node_count:-${DEFAULT_MASTER_COUNT}}
+export TF_VAR_worker_node_count=${TF_VAR_worker_node_count:-${DEFAULT_WORKER_COUNT}}
+export TF_VAR_vm_cores=${TF_VAR_vm_cores:-${DEFAULT_CORES}}
+export TF_VAR_vm_memory=${TF_VAR_vm_memory:-${DEFAULT_MEMORY}}
+export TF_VAR_vm_disk_size=${TF_VAR_vm_disk_size:-${DEFAULT_DISK_SIZE}}
+export TF_VAR_kubernetes_version=${TF_VAR_kubernetes_version:-${DEFAULT_KUBERNETES_VERSION}}
+export TF_VAR_pod_network_cidr=${TF_VAR_pod_network_cidr:-${DEFAULT_POD_NETWORK_CIDR}}
+export TF_VAR_service_cidr=${TF_VAR_service_cidr:-${DEFAULT_SERVICE_CIDR}}
+export TF_VAR_container_runtime=${TF_VAR_container_runtime:-${DEFAULT_CONTAINER_RUNTIME:-"containerd"}}
+export TF_VAR_cni_type=${TF_VAR_cni_type:-${DEFAULT_CNI_TYPE}}
+export TF_VAR_cni_version=${TF_VAR_cni_version:-${DEFAULT_CNI_VERSION}}
+export TF_VAR_ip_range_start=${TF_VAR_ip_range_start:-${DEFAULT_IP_RANGE_START:-"10.200.0.0/24"}}
 
 # Export Ansible variables
 export ANSIBLE_USER=${DEFAULT_ANSIBLE_USER:-"root"}
@@ -75,11 +76,11 @@ export RUN_ANSIBLE=${RUN_ANSIBLE:-true}
 export USE_CACHE=${USE_CACHE:-true}
 
 echo "✅ Environment loaded:"
-echo "   Template: ${DEFAULT_VM_TEMPLATE}"
-echo "   Cluster: ${DEFAULT_MASTER_COUNT} masters, ${DEFAULT_WORKER_COUNT} workers"
-echo "   Kubernetes: v${DEFAULT_KUBERNETES_VERSION}"
-echo "   CNI: ${DEFAULT_CNI_TYPE} v${DEFAULT_CNI_VERSION}"
-echo "   Resources: ${DEFAULT_CORES}c/${DEFAULT_MEMORY}MB/${DEFAULT_DISK_SIZE}"
+echo "   Template: ${TF_VAR_vm_template}"
+echo "   Cluster: ${TF_VAR_master_node_count} masters, ${TF_VAR_worker_node_count} workers"
+echo "   Kubernetes: v${TF_VAR_kubernetes_version}"
+echo "   CNI: ${TF_VAR_cni_type} v${TF_VAR_cni_version}"
+echo "   Resources: ${TF_VAR_vm_cores}c/${TF_VAR_vm_memory}MB/${TF_VAR_vm_disk_size}"
 echo "   Parallel: ${PARALLEL_DEPLOYMENT}"
 
 # If run directly, show exported variables
