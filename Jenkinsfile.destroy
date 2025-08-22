@@ -219,14 +219,34 @@ Proceeding with automatic destruction...
                                     // Wait a moment for VM to stop
                                     sleep(3)
                                     
-                                    // Delete VM using qm destroy command (more reliable than API)
+                                    // Delete VM - try multiple methods for compatibility
                                     def deleteResult = sh(
                                         script: """
-                                            # Try API method first, fallback to SSH if available
-                                            curl -k -X DELETE \\
-                                                -H "Authorization: PVEAPIToken=${PROXMOX_TOKEN_ID}=${PROXMOX_TOKEN_SECRET}" \\
-                                                "${PROXMOX_API_URL}/api2/json/nodes/${params.PROXMOX_NODE}/qemu/${vmId}?purge=1" \\
-                                                -w "%{http_code}" -o /tmp/vm_delete_${vmId}.json -s
+                                            # Method 1: Try using pvesh via SSH (most reliable)
+                                            PROXMOX_HOST=\$(echo "${PROXMOX_API_URL}" | sed 's|https://||' | sed 's|:.*||')
+                                            
+                                            # Try SSH with pvesh delete (if SSH is available)
+                                            if ssh -o StrictHostKeyChecking=no -o ConnectTimeout=3 root@\${PROXMOX_HOST} "pvesh delete /nodes/${params.PROXMOX_NODE}/qemu/${vmId} --purge 1" 2>/dev/null; then
+                                                echo "200"
+                                            else
+                                                # Method 2: Try API with POST to tasks endpoint (alternative method)
+                                                TASK_RESULT=\$(curl -k -X POST \\
+                                                    -H "Authorization: PVEAPIToken=${PROXMOX_TOKEN_ID}=${PROXMOX_TOKEN_SECRET}" \\
+                                                    -H "Content-Type: application/json" \\
+                                                    -d '{"node":"${params.PROXMOX_NODE}","vmid":"${vmId}","purge":1}' \\
+                                                    "${PROXMOX_API_URL}/api2/json/nodes/${params.PROXMOX_NODE}/qemu/${vmId}/status/destroy" \\
+                                                    -w "%{http_code}" -o /tmp/vm_delete_${vmId}.json -s)
+                                                
+                                                if [ "\$TASK_RESULT" = "200" ]; then
+                                                    echo "200"
+                                                else
+                                                    # Method 3: Last resort - try standard DELETE (might not work on all versions)
+                                                    curl -k -X DELETE \\
+                                                        -H "Authorization: PVEAPIToken=${PROXMOX_TOKEN_ID}=${PROXMOX_TOKEN_SECRET}" \\
+                                                        "${PROXMOX_API_URL}/api2/json/nodes/${params.PROXMOX_NODE}/qemu/${vmId}" \\
+                                                        -w "%{http_code}" -o /tmp/vm_delete_${vmId}.json -s
+                                                fi
+                                            fi
                                         """,
                                         returnStdout: true
                                     ).trim()
