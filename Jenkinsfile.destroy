@@ -7,7 +7,7 @@ pipeline {
         string(name: 'TERRAFORM_STATE_FILE', defaultValue: '', description: 'Optional: Path to specific terraform state file')
         choice(name: 'PROXMOX_NODE', choices: ['thinkcentre', 'proxmox'], description: 'Proxmox node where cluster is deployed')
         booleanParam(name: 'FORCE_DESTROY', defaultValue: false, description: 'Force destroy even if cluster is not in ready/failed state')
-        booleanParam(name: 'SKIP_CONFIRMATION', defaultValue: false, description: 'Skip manual confirmation (use with caution)')
+        booleanParam(name: 'SKIP_CONFIRMATION', defaultValue: true, description: 'Legacy parameter - manual confirmation has been removed for auto-destroy')
         
         // VM ID parameters for direct Proxmox destruction
         string(name: 'ALL_VMIDS', defaultValue: '', description: 'Comma-separated list of all VM IDs to destroy (e.g., "100,101,102")')
@@ -163,39 +163,23 @@ except:
             }
         }
 
-        stage('Manual Confirmation') {
-            when {
-                not { 
-                    anyOf {
-                        expression { params.SKIP_CONFIRMATION == true }
-                        expression { params.SKIP_CONFIRMATION == 'true' }
-                        expression { params.SKIP_CONFIRMATION == 'on' }
-                        expression { params.SKIP_CONFIRMATION.toString() == 'true' }
-                        expression { params.SKIP_CONFIRMATION.toString().toLowerCase() == 'on' }
-                    }
-                }
-            }
+        stage('Auto-Destroy Confirmation') {
             steps {
                 script {
-                    try {
-                        timeout(time: 5, unit: 'MINUTES') {
-                            input message: """
-Are you sure you want to DESTROY cluster '${params.CLUSTER_NAME}'?
+                    echo """
+=== AUTOMATIC DESTRUCTION INITIATED ===
+Cluster: ${params.CLUSTER_NAME}
+Proxmox Node: ${params.PROXMOX_NODE}
+Triggered by: Customer request or auto-expiry (3-hour timeout)
+Skip Confirmation: ${params.SKIP_CONFIRMATION}
 
 ⚠️  WARNING: This action is IRREVERSIBLE!
 ⚠️  All VMs and associated resources will be permanently deleted!
 ⚠️  All data on the cluster will be lost!
 
-Click 'Proceed' to continue with destruction or 'Abort' to cancel.
-""", 
-                                ok: 'Proceed with DESTRUCTION',
-                                submitterParameter: 'APPROVER'
-                        }
-                        echo "Destruction approved by: ${APPROVER}"
-                    } catch (Exception e) {
-                        echo "Destruction cancelled or timed out"
-                        error("Cluster destruction cancelled")
-                    }
+Proceeding with automatic destruction...
+======================================
+"""
                 }
             }
         }
