@@ -17,8 +17,22 @@ def update_ansible_cfg():
     
     print(f"Setting up Mitogen to use local plugins at: {mitogen_path}")
     
-    # Read current ansible.cfg
-    with open("ansible.cfg", "r") as f:
+    # Read current ansible.cfg - check both possible locations
+    ansible_cfg_paths = ["ansible.cfg", "ansible/ansible.cfg"]
+    ansible_cfg_path = None
+    
+    for path in ansible_cfg_paths:
+        if os.path.exists(path):
+            ansible_cfg_path = path
+            break
+    
+    if not ansible_cfg_path:
+        print("Error: ansible.cfg not found in current directory or ansible/ subdirectory")
+        return False
+    
+    print(f"Found ansible.cfg at: {ansible_cfg_path}")
+    
+    with open(ansible_cfg_path, "r") as f:
         content = f.read()
     
     # Update the strategy_plugins line to use only local plugins
@@ -38,8 +52,8 @@ def update_ansible_cfg():
             new_content
         )
     
-    # Write back
-    with open("ansible.cfg", "w") as f:
+    # Write back to the same location
+    with open(ansible_cfg_path, "w") as f:
         f.write(new_content)
     
     print("✅ Updated ansible.cfg to use local Mitogen plugins")

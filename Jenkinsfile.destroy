@@ -126,9 +126,9 @@ Destruction Method: ${params.ALL_VMIDS ? 'Direct VM ID destruction' : 'Terraform
                             // Initialize terraform to read state
                             sh 'terraform init -upgrade=false'
                             
-                            // Check if there are resources to destroy
+                            // Check if there are resources to destroy (no cluster_name variable needed for destroy)
                             def planOutput = sh(
-                                script: 'terraform plan -destroy -detailed-exitcode -var cluster_name="${TF_VAR_cluster_name}" || echo "exit_code=$?"',
+                                script: 'terraform plan -destroy -detailed-exitcode || echo "exit_code=$?"',
                                 returnStdout: true
                             ).trim()
                             
@@ -229,12 +229,10 @@ Proceeding with automatic destruction...
                                             if ssh -o StrictHostKeyChecking=no -o ConnectTimeout=3 root@\${PROXMOX_HOST} "pvesh delete /nodes/${params.PROXMOX_NODE}/qemu/${vmId} --purge 1" 2>/dev/null; then
                                                 echo "200"
                                             else
-                                                # Method 2: Try API with POST to tasks endpoint (alternative method)
-                                                TASK_RESULT=\$(curl -k -X POST \\
+                                                # Method 2: Use correct Proxmox API DELETE endpoint
+                                                TASK_RESULT=\$(curl -k -X DELETE \\
                                                     -H "Authorization: PVEAPIToken=${PROXMOX_TOKEN_ID}=${PROXMOX_TOKEN_SECRET}" \\
-                                                    -H "Content-Type: application/json" \\
-                                                    -d '{"node":"${params.PROXMOX_NODE}","vmid":"${vmId}","purge":1}' \\
-                                                    "${PROXMOX_API_URL}/api2/json/nodes/${params.PROXMOX_NODE}/qemu/${vmId}/status/destroy" \\
+                                                    "${PROXMOX_API_URL}/api2/json/nodes/${params.PROXMOX_NODE}/qemu/${vmId}?purge=1" \\
                                                     -w "%{http_code}" -o /tmp/vm_delete_${vmId}.json -s)
                                                 
                                                 if [ "\$TASK_RESULT" = "200" ]; then
