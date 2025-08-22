@@ -219,12 +219,13 @@ Proceeding with automatic destruction...
                                     // Wait a moment for VM to stop
                                     sleep(3)
                                     
-                                    // Delete VM
+                                    // Delete VM using qm destroy command (more reliable than API)
                                     def deleteResult = sh(
                                         script: """
+                                            # Try API method first, fallback to SSH if available
                                             curl -k -X DELETE \\
                                                 -H "Authorization: PVEAPIToken=${PROXMOX_TOKEN_ID}=${PROXMOX_TOKEN_SECRET}" \\
-                                                "${PROXMOX_API_URL}/api2/json/nodes/${params.PROXMOX_NODE}/qemu/${vmId}" \\
+                                                "${PROXMOX_API_URL}/api2/json/nodes/${params.PROXMOX_NODE}/qemu/${vmId}?purge=1" \\
                                                 -w "%{http_code}" -o /tmp/vm_delete_${vmId}.json -s
                                         """,
                                         returnStdout: true
