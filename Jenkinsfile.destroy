@@ -8,6 +8,14 @@ pipeline {
         choice(name: 'PROXMOX_NODE', choices: ['thinkcentre', 'proxmox'], description: 'Proxmox node where cluster is deployed')
         booleanParam(name: 'FORCE_DESTROY', defaultValue: false, description: 'Force destroy even if cluster is not in ready/failed state')
         booleanParam(name: 'SKIP_CONFIRMATION', defaultValue: false, description: 'Skip manual confirmation (use with caution)')
+        
+        // VM ID parameters for direct Proxmox destruction
+        string(name: 'ALL_VMIDS', defaultValue: '', description: 'Comma-separated list of all VM IDs to destroy (e.g., "100,101,102")')
+        string(name: 'MASTER_VMIDS', defaultValue: '', description: 'Comma-separated list of master VM IDs')
+        string(name: 'WORKER_VMIDS', defaultValue: '', description: 'Comma-separated list of worker VM IDs')
+        string(name: 'VM_COUNT', defaultValue: '', description: 'Total number of VMs to destroy')
+        string(name: 'MASTER_HOSTNAMES', defaultValue: '', description: 'Comma-separated list of master hostnames')
+        string(name: 'WORKER_HOSTNAMES', defaultValue: '', description: 'Comma-separated list of worker hostnames')
     }
 
     environment {
@@ -36,6 +44,16 @@ Cluster Name: ${params.CLUSTER_NAME}
 Proxmox Node: ${params.PROXMOX_NODE}
 Force Destroy: ${params.FORCE_DESTROY}
 Skip Confirmation: ${params.SKIP_CONFIRMATION}
+
+=== VM ID METADATA ===
+All VM IDs: ${params.ALL_VMIDS ?: 'Not provided - will use terraform state'}
+Master VM IDs: ${params.MASTER_VMIDS ?: 'Not provided'}
+Worker VM IDs: ${params.WORKER_VMIDS ?: 'Not provided'}
+VM Count: ${params.VM_COUNT ?: 'Unknown'}
+Master Hostnames: ${params.MASTER_HOSTNAMES ?: 'Not provided'}
+Worker Hostnames: ${params.WORKER_HOSTNAMES ?: 'Not provided'}
+
+Destruction Method: ${params.ALL_VMIDS ? 'Direct VM ID destruction' : 'Terraform state-based destruction'}
 ===================================
 """
                     
@@ -182,7 +200,97 @@ Click 'Proceed' to continue with destruction or 'Abort' to cancel.
             }
         }
         
+        stage('Direct VM Destruction') {
+            when {
+                expression { return params.ALL_VMIDS != null && params.ALL_VMIDS != '' }
+            }
+            steps {
+                script {
+                    echo "🎯 Using direct VM destruction with VM IDs: ${params.ALL_VMIDS}"
+                    
+                    withCredentials([
+                        string(credentialsId: "${env.PROXMOX_CREDENTIALS_PREFIX}-api-url", variable: 'PROXMOX_API_URL'),
+                        string(credentialsId: "${env.PROXMOX_CREDENTIALS_PREFIX}-api-token-id", variable: 'PROXMOX_TOKEN_ID'),
+                        string(credentialsId: "${env.PROXMOX_CREDENTIALS_PREFIX}-api-token-secret", variable: 'PROXMOX_TOKEN_SECRET')
+                    ]) {
+                        def vmIds = params.ALL_VMIDS.split(',')
+                        def destroyedVMs = []
+                        def failedVMs = []
+                        
+                        echo "🚀 Starting direct VM destruction for ${vmIds.size()} VMs..."
+                        
+                        vmIds.each { vmId ->
+                            vmId = vmId.trim()
+                            if (vmId) {
+                                try {
+                                    echo "🔥 Destroying VM ${vmId} on node ${params.PROXMOX_NODE}..."
+                                    
+                                    // Stop VM first (ignore errors if already stopped)
+                                    def stopResult = sh(
+                                        script: """
+                                            curl -k -X POST \\
+                                                -H "Authorization: PVEAPIToken=${PROXMOX_TOKEN_ID}=${PROXMOX_TOKEN_SECRET}" \\
+                                                "${PROXMOX_API_URL}/api2/json/nodes/${params.PROXMOX_NODE}/qemu/${vmId}/status/stop" \\
+                                                -w "%{http_code}" -o /tmp/vm_stop_${vmId}.json -s
+                                        """,
+                                        returnStdout: true
+                                    ).trim()
+                                    
+                                    // Wait a moment for VM to stop
+                                    sleep(3)
+                                    
+                                    // Delete VM
+                                    def deleteResult = sh(
+                                        script: """
+                                            curl -k -X DELETE \\
+                                                -H "Authorization: PVEAPIToken=${PROXMOX_TOKEN_ID}=${PROXMOX_TOKEN_SECRET}" \\
+                                                "${PROXMOX_API_URL}/api2/json/nodes/${params.PROXMOX_NODE}/qemu/${vmId}" \\
+                                                -w "%{http_code}" -o /tmp/vm_delete_${vmId}.json -s
+                                        """,
+                                        returnStdout: true
+                                    ).trim()
+                                    
+                                    if (deleteResult == "200") {
+                                        echo "✅ Successfully destroyed VM ${vmId}"
+                                        destroyedVMs.add(vmId)
+                                    } else {
+                                        echo "❌ Failed to destroy VM ${vmId} (HTTP ${deleteResult})"
+                                        sh "cat /tmp/vm_delete_${vmId}.json || echo 'No response file'"
+                                        failedVMs.add(vmId)
+                                    }
+                                    
+                                } catch (Exception e) {
+                                    echo "❌ Exception destroying VM ${vmId}: ${e.getMessage()}"
+                                    failedVMs.add(vmId)
+                                }
+                            }
+                        }
+                        
+                        // Summary
+                        echo """
+=== DIRECT VM DESTRUCTION SUMMARY ===
+Total VMs: ${vmIds.size()}
+Successfully destroyed: ${destroyedVMs.size()} (${destroyedVMs.join(', ')})
+Failed to destroy: ${failedVMs.size()} ${failedVMs.size() > 0 ? '(' + failedVMs.join(', ') + ')' : ''}
+======================================
+"""
+                        
+                        if (failedVMs.size() > 0) {
+                            echo "⚠️  Some VMs failed to destroy directly. Terraform destroy will attempt to clean up remaining resources."
+                        } else {
+                            echo "🎉 All VMs destroyed successfully! Skipping terraform destroy."
+                            // Set flag to skip terraform stage
+                            env.SKIP_TERRAFORM_DESTROY = 'true'
+                        }
+                    }
+                }
+            }
+        }
+        
         stage('Terraform Destroy') {
+            when {
+                expression { return env.SKIP_TERRAFORM_DESTROY != 'true' }
+            }
             steps {
                 dir("${TERRAFORM_DIR}") {
                     withCredentials([
