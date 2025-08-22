@@ -21,10 +21,6 @@ pipeline {
     environment {
         TERRAFORM_DIR = 'terraform'
         CONFIG_FILE = 'config/environment.conf'
-        
-        // Use parameters for terraform variables
-        TF_VAR_cluster_name = "${params.CLUSTER_NAME}"
-        TF_VAR_proxmox_node = "${params.PROXMOX_NODE}"
     }
     
     options {
@@ -173,9 +169,9 @@ Proxmox Node: ${params.PROXMOX_NODE}
 Triggered by: Customer request or auto-expiry (3-hour timeout)
 Skip Confirmation: ${params.SKIP_CONFIRMATION}
 
-⚠️  WARNING: This action is IRREVERSIBLE!
-⚠️  All VMs and associated resources will be permanently deleted!
-⚠️  All data on the cluster will be lost!
+WARNING: This action is IRREVERSIBLE!
+WARNING: All VMs and associated resources will be permanently deleted!
+WARNING: All data on the cluster will be lost!
 
 Proceeding with automatic destruction...
 ======================================
@@ -190,7 +186,7 @@ Proceeding with automatic destruction...
             }
             steps {
                 script {
-                    echo "🎯 Using direct VM destruction with VM IDs: ${params.ALL_VMIDS}"
+                    echo "Using direct VM destruction with VM IDs: ${params.ALL_VMIDS}"
                     
                     withCredentials([
                         string(credentialsId: "${env.PROXMOX_CREDENTIALS_PREFIX}-api-url", variable: 'PROXMOX_API_URL'),
@@ -201,13 +197,13 @@ Proceeding with automatic destruction...
                         def destroyedVMs = []
                         def failedVMs = []
                         
-                        echo "🚀 Starting direct VM destruction for ${vmIds.size()} VMs..."
+                        echo "Starting direct VM destruction for ${vmIds.size()} VMs..."
                         
                         vmIds.each { vmId ->
                             vmId = vmId.trim()
                             if (vmId) {
                                 try {
-                                    echo "🔥 Destroying VM ${vmId} on node ${params.PROXMOX_NODE}..."
+                                    echo "Destroying VM ${vmId} on node ${params.PROXMOX_NODE}..."
                                     
                                     // Stop VM first (ignore errors if already stopped)
                                     def stopResult = sh(
@@ -235,16 +231,16 @@ Proceeding with automatic destruction...
                                     ).trim()
                                     
                                     if (deleteResult == "200") {
-                                        echo "✅ Successfully destroyed VM ${vmId}"
+                                        echo "Successfully destroyed VM ${vmId}"
                                         destroyedVMs.add(vmId)
                                     } else {
-                                        echo "❌ Failed to destroy VM ${vmId} (HTTP ${deleteResult})"
+                                        echo "Failed to destroy VM ${vmId} (HTTP ${deleteResult})"
                                         sh "cat /tmp/vm_delete_${vmId}.json || echo 'No response file'"
                                         failedVMs.add(vmId)
                                     }
                                     
                                 } catch (Exception e) {
-                                    echo "❌ Exception destroying VM ${vmId}: ${e.getMessage()}"
+                                    echo "Exception destroying VM ${vmId}: ${e.getMessage()}"
                                     failedVMs.add(vmId)
                                 }
                             }
@@ -260,9 +256,9 @@ Failed to destroy: ${failedVMs.size()} ${failedVMs.size() > 0 ? '(' + failedVMs.
 """
                         
                         if (failedVMs.size() > 0) {
-                            echo "⚠️  Some VMs failed to destroy directly. Terraform destroy will attempt to clean up remaining resources."
+                            echo "WARNING: Some VMs failed to destroy directly. Terraform destroy will attempt to clean up remaining resources."
                         } else {
-                            echo "🎉 All VMs destroyed successfully! Skipping terraform destroy."
+                            echo "All VMs destroyed successfully! Skipping terraform destroy."
                             // Set flag to skip terraform stage
                             env.SKIP_TERRAFORM_DESTROY = 'true'
                         }
@@ -285,15 +281,13 @@ Failed to destroy: ${failedVMs.size()} ${failedVMs.size() > 0 ? '(' + failedVMs.
                         script {
                             def startTime = System.currentTimeMillis()
                             
-                            echo "🔥 Starting infrastructure destruction for cluster: ${params.CLUSTER_NAME}"
+                            echo "Starting infrastructure destruction for cluster: ${params.CLUSTER_NAME}"
                             
-                            // Execute terraform destroy
+                            // Execute terraform destroy without cluster_name variable (not defined in variables.tf)
                             def destroyResult = sh(
                                 script: '''
                                     terraform destroy \
                                         -auto-approve \
-                                        -var cluster_name="${TF_VAR_cluster_name}" \
-                                        -var proxmox_node="${TF_VAR_proxmox_node}" \
                                         2>&1 | tee destroy.log
                                     echo "DESTROY_EXIT_CODE=${PIPESTATUS[0]}" >> destroy.log
                                 ''',
@@ -303,7 +297,7 @@ Failed to destroy: ${failedVMs.size()} ${failedVMs.size() > 0 ? '(' + failedVMs.
                             def duration = ((System.currentTimeMillis() - startTime) / 1000).intValue()
                             
                             if (destroyResult == 0) {
-                                echo "✅ Infrastructure destroyed successfully in ${duration}s"
+                                echo "Infrastructure destroyed successfully in ${duration}s"
                                 
                                 // Clean up terraform files
                                 sh '''
@@ -312,7 +306,7 @@ Failed to destroy: ${failedVMs.size()} ${failedVMs.size() > 0 ? '(' + failedVMs.
                                 '''
                                 
                             } else {
-                                echo "❌ Terraform destroy failed with exit code: ${destroyResult}"
+                                echo "Terraform destroy failed with exit code: ${destroyResult}"
                                 
                                 // Show destroy log for debugging
                                 sh 'cat destroy.log || echo "No destroy log available"'
@@ -354,11 +348,11 @@ payload = {
 try:
     response = requests.post(webhook_url, json=payload, timeout=30)
     if response.status_code == 200:
-        print('✅ Successfully notified Django about destruction')
+        print('Successfully notified Django about destruction')
     else:
-        print(f'⚠️ Django webhook returned {response.status_code}: {response.text}')
+        print(f'WARNING: Django webhook returned {response.status_code}: {response.text}')
 except Exception as e:
-    print(f'⚠️ Failed to notify Django: {e}')
+    print(f'WARNING: Failed to notify Django: {e}')
 "
                         """
                         
@@ -380,7 +374,7 @@ except Exception as e:
                             sh """
                                 curl -X POST -H 'Content-type: application/json' \
                                 --data '{
-                                    "text": "🔥 *Cluster Destroyed*",
+                                    "text": "*Cluster Destroyed*",
                                     "attachments": [
                                         {
                                             "color": "danger",
@@ -402,7 +396,7 @@ except Exception as e:
                                                 },
                                                 {
                                                     "title": "Status",
-                                                    "value": "✅ Successfully Destroyed",
+                                                    "value": "Successfully Destroyed",
                                                     "short": true
                                                 }
                                             ]
@@ -448,7 +442,7 @@ What was destroyed:
 - Storage allocations
 - Terraform state cleaned up
 
-⚠️  IMPORTANT: All data has been permanently lost!
+WARNING: All data has been permanently lost!
 
 Next steps:
 - Cluster is now completely removed from infrastructure
