@@ -345,35 +345,32 @@ Failed to destroy: ${failedVMs.size()} ${failedVMs.size() > 0 ? '(' + failedVMs.
                     try {
                         echo "Notifying Django about cluster destruction..."
                         
-                        // Send destruction notification to Django webhook
+                        // Send destruction notification to Django webhook using curl
                         sh """
-                            cd ${WORKSPACE}
-                            python3 -c "
-import requests
-import json
-import os
-
-webhook_url = 'https://labngoprek.my.id/webhook/jenkins/'
-payload = {
-    'name': '${params.CLUSTER_NAME}',
-    'build': {
-        'number': int('${BUILD_NUMBER}'),
-        'status': 'success',
-        'full_url': '${BUILD_URL}'
-    },
-    'action': 'destroy',
-    'cluster_name': '${params.CLUSTER_NAME}'
-}
-
-try:
-    response = requests.post(webhook_url, json=payload, timeout=30)
-    if response.status_code == 200:
-        print('Successfully notified Django about destruction')
-    else:
-        print(f'WARNING: Django webhook returned {response.status_code}: {response.text}')
-except Exception as e:
-    print(f'WARNING: Failed to notify Django: {e}')
-"
+                            echo "Sending destroy notification to Django..."
+                            
+                            WEBHOOK_URL="https://labngoprek.my.id/webhook/jenkins/"
+                            PAYLOAD='{"name":"${params.CLUSTER_NAME}","build":{"number":${BUILD_NUMBER},"status":"success","full_url":"${BUILD_URL}"},"action":"destroy","cluster_name":"${params.CLUSTER_NAME}"}'
+                            
+                            RESPONSE=\$(curl -s -w "%{http_code}" \\
+                                -X POST \\
+                                -H "Content-Type: application/json" \\
+                                -d "\$PAYLOAD" \\
+                                --connect-timeout 10 \\
+                                --max-time 30 \\
+                                "\$WEBHOOK_URL")
+                            
+                            HTTP_CODE=\$(echo "\$RESPONSE" | tail -c 4)
+                            RESPONSE_BODY=\$(echo "\$RESPONSE" | sed 's/....\$//')
+                            
+                            if [ "\$HTTP_CODE" = "200" ]; then
+                                echo "✅ Successfully notified Django about cluster destruction"
+                                echo "Response: \$RESPONSE_BODY"
+                            else
+                                echo "⚠️ Django webhook returned HTTP \$HTTP_CODE"
+                                echo "Response: \$RESPONSE_BODY"
+                                echo "WARNING: Django may not know cluster was destroyed!"
+                            fi
                         """
                         
                     } catch (Exception e) {
@@ -476,31 +473,24 @@ Next steps:
         
         failure {
             script {
-                // Notify Django about destruction failure
+                // Notify Django about destruction failure using curl
                 try {
                     sh """
-                        python3 -c "
-import requests
-import json
-
-webhook_url = 'https://labngoprek.my.id/webhook/jenkins/'
-payload = {
-    'name': '${params.CLUSTER_NAME}',
-    'build': {
-        'number': int('${BUILD_NUMBER}'),
-        'status': 'failure',
-        'full_url': '${BUILD_URL}'
-    },
-    'action': 'destroy',
-    'cluster_name': '${params.CLUSTER_NAME}'
-}
-
-try:
-    response = requests.post(webhook_url, json=payload, timeout=30)
-    print(f'Django webhook response: {response.status_code}')
-except Exception as e:
-    print(f'Failed to notify Django: {e}')
-"
+                        echo "Notifying Django about destruction failure..."
+                        
+                        WEBHOOK_URL="https://labngoprek.my.id/webhook/jenkins/"
+                        PAYLOAD='{"name":"${params.CLUSTER_NAME}","build":{"number":${BUILD_NUMBER},"status":"failure","full_url":"${BUILD_URL}"},"action":"destroy","cluster_name":"${params.CLUSTER_NAME}"}'
+                        
+                        RESPONSE=\$(curl -s -w "%{http_code}" \\
+                            -X POST \\
+                            -H "Content-Type: application/json" \\
+                            -d "\$PAYLOAD" \\
+                            --connect-timeout 10 \\
+                            --max-time 30 \\
+                            "\$WEBHOOK_URL")
+                        
+                        HTTP_CODE=\$(echo "\$RESPONSE" | tail -c 4)
+                        echo "Django failure webhook response: HTTP \$HTTP_CODE"
                     """
                 } catch (Exception e) {
                     echo "Warning: Failed to notify Django about failure: ${e.getMessage()}"
