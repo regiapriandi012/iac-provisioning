@@ -350,7 +350,7 @@ Failed to destroy: ${failedVMs.size()} ${failedVMs.size() > 0 ? '(' + failedVMs.
                             echo "Sending destroy notification to Django..."
                             
                             WEBHOOK_URL="https://labngoprek.my.id/webhook/jenkins/"
-                            PAYLOAD='{"name":"${params.CLUSTER_NAME}","build":{"number":${BUILD_NUMBER},"status":"success","full_url":"${BUILD_URL}"},"action":"destroy","cluster_name":"${params.CLUSTER_NAME}"}'
+                            PAYLOAD='{"name":"${JOB_NAME}","build":{"number":${BUILD_NUMBER},"status":"success","full_url":"${BUILD_URL}"},"action":"destroy","cluster_name":"${params.CLUSTER_NAME}"}'
                             
                             RESPONSE=\$(curl -s -w "%{http_code}" \\
                                 -X POST \\
@@ -479,7 +479,7 @@ Next steps:
                         echo "Notifying Django about destruction failure..."
                         
                         WEBHOOK_URL="https://labngoprek.my.id/webhook/jenkins/"
-                        PAYLOAD='{"name":"${params.CLUSTER_NAME}","build":{"number":${BUILD_NUMBER},"status":"failure","full_url":"${BUILD_URL}"},"action":"destroy","cluster_name":"${params.CLUSTER_NAME}"}'
+                        PAYLOAD='{"name":"${JOB_NAME}","build":{"number":${BUILD_NUMBER},"status":"failure","full_url":"${BUILD_URL}"},"action":"destroy","cluster_name":"${params.CLUSTER_NAME}"}'
                         
                         RESPONSE=\$(curl -s -w "%{http_code}" \\
                             -X POST \\
