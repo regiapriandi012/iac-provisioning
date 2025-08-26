@@ -71,12 +71,31 @@ else
     run_playbook "08-cilium.yml" "Cilium network plugin"
 fi
 
+# Run cluster enhancements (Zsh, LABNGOPREK banner, kubectl alias, metrics server)
+ENHANCEMENT_START=$(date +%s)
+echo "🎨 Applying LABNGOPREK cluster enhancements..."
+
+ansible-playbook \
+    -i ${WORKSPACE}/scripts/inventory.py \
+    playbooks/k8s-cluster-enhancements.yml \
+    --forks 50 \
+    --timeout 30
+
+ENHANCEMENT_END=$(date +%s)
+ENHANCEMENT_DURATION=$((ENHANCEMENT_END - ENHANCEMENT_START))
+echo "✅ Cluster enhancements completed in ${ENHANCEMENT_DURATION} seconds"
+
 # Final verification
 FIRST_MASTER=$(python3 ${WORKSPACE}/scripts/get_first_master.py $INVENTORY_FILE)
 
 if [ -n "$FIRST_MASTER" ]; then
-    # Quick cluster health check
+    # Quick cluster health check with enhanced features
+    echo "🔍 Running enhanced cluster verification..."
     ansible $FIRST_MASTER -i ${WORKSPACE}/scripts/inventory.py -m shell -a "kubectl get nodes -o wide && echo '---' && kubectl get pods -A | grep -v Running | head -20" &>/dev/null || true
+    
+    # Test new features
+    echo "🧪 Testing LABNGOPREK enhancements..."
+    ansible $FIRST_MASTER -i ${WORKSPACE}/scripts/inventory.py -m shell -a "echo 'Testing kubectl alias:' && k get nodes --no-headers | wc -l && echo 'Testing metrics server:' && kubectl top nodes" &>/dev/null || echo "Metrics server may still be starting..."
     
     # Get cluster info without jq
     NODE_COUNT=$(ansible $FIRST_MASTER -i ${WORKSPACE}/scripts/inventory.py -m shell -a "kubectl get nodes --no-headers | wc -l" -o | tail -1 | tr -d '\r\n' | grep -o '[0-9]*' || echo "0")

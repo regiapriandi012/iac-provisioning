@@ -1,0 +1,255 @@
+---
+- name: "Kubernetes Cluster Enhancements - Zsh, Banner, Aliases, and Metrics Server"
+  hosts: k8s_cluster
+  become: true
+  gather_facts: true
+  
+  vars:
+    target_user: root
+    user_home: /root
+    ohmyzsh_dest: "{{ user_home }}/.oh-my-zsh"
+    
+  tasks:
+    # Install Zsh and required packages
+    - name: Install Zsh (Debian)
+      apt:
+        name: zsh
+        state: present
+        update_cache: yes
+      when: ansible_os_family == "Debian"
+
+    - name: Install Zsh (CentOS/RedHat)
+      yum:
+        name: zsh
+        state: present
+      when: ansible_os_family == "RedHat"
+
+    - name: Install Git (Debian)
+      apt:
+        name: git
+        state: present
+      when: ansible_os_family == "Debian"
+
+    - name: Install Git (CentOS/RedHat)
+      yum:
+        name: git
+        state: present
+      when: ansible_os_family == "RedHat"
+
+    - name: Install Figlet (Debian)
+      apt:
+        name: figlet
+        state: present
+      when: ansible_os_family == "Debian"
+
+    - name: Install EPEL repository (CentOS/RedHat)
+      yum:
+        name: epel-release
+        state: present
+      when: ansible_os_family == "RedHat"
+
+    - name: Install Figlet (CentOS/RedHat)
+      yum:
+        name: figlet
+        state: present
+      when: ansible_os_family == "RedHat"
+
+    # Change default shell to Zsh
+    - name: Change default shell to Zsh for root (Debian)
+      user:
+        name: "{{ target_user }}"
+        shell: /usr/bin/zsh
+      when: ansible_os_family == "Debian"
+
+    - name: Change default shell to Zsh for root (CentOS/RedHat)
+      user:
+        name: "{{ target_user }}"
+        shell: /bin/zsh
+      when: ansible_os_family == "RedHat"
+
+    # Install Oh-My-Zsh
+    - name: Check if Oh-My-Zsh is already installed
+      stat:
+        path: "{{ ohmyzsh_dest }}"
+      register: ohmyzsh_installed
+
+    - name: Clone Oh-My-Zsh repository
+      git:
+        repo: https://github.com/ohmyzsh/ohmyzsh.git
+        dest: "{{ ohmyzsh_dest }}"
+        version: master
+        update: yes
+      become_user: "{{ target_user }}"
+      when: not ohmyzsh_installed.stat.exists
+
+    - name: Copy .zshrc template from Oh-My-Zsh
+      copy:
+        src: "{{ ohmyzsh_dest }}/templates/zshrc.zsh-template"
+        dest: "{{ user_home }}/.zshrc"
+        owner: "{{ target_user }}"
+        group: "{{ target_user }}"
+        mode: '0644'
+        remote_src: yes
+      when: not ohmyzsh_installed.stat.exists
+
+    # Add kubectl alias to .zshrc
+    - name: Add kubectl alias to .zshrc
+      lineinfile:
+        path: "{{ user_home }}/.zshrc"
+        line: 'alias k=kubectl'
+        create: yes
+        owner: "{{ target_user }}"
+        group: "{{ target_user }}"
+        mode: '0644'
+
+    - name: Add kubectl completion to .zshrc
+      lineinfile:
+        path: "{{ user_home }}/.zshrc"
+        line: 'source <(kubectl completion zsh)'
+        create: yes
+        owner: "{{ target_user }}"
+        group: "{{ target_user }}"
+        mode: '0644'
+
+    # Create LABNGOPREK banner MOTD
+    - name: Generate LABNGOPREK banner with Figlet
+      shell: "figlet LABNGOPREK"
+      register: figlet_banner
+
+    - name: Set MOTD path based on OS
+      set_fact:
+        motd_path: "{{ '/etc/motd.d/cockpit' if ansible_os_family == 'RedHat' else '/etc/motd' }}"
+
+    - name: Create /etc/motd.d directory if using RedHat
+      file:
+        path: /etc/motd.d
+        state: directory
+        owner: root
+        group: root
+        mode: '0755'
+      when: ansible_os_family == "RedHat"
+
+    - name: Deploy LABNGOPREK MOTD banner
+      copy:
+        content: |
+          {{ figlet_banner.stdout }}
+          
+          Welcome to LABNGOPREK Kubernetes Cluster!
+          Node: {{ inventory_hostname }}
+          OS: {{ ansible_distribution }} {{ ansible_distribution_version }}
+          Kernel: {{ ansible_kernel }}
+          
+          Kubernetes Commands:
+          • k get nodes        (alias for kubectl get nodes)
+          • k get pods -A      (get all pods)
+          • k top nodes        (node resource usage)
+          • k top pods -A      (pod resource usage)
+          
+          Cluster Information:
+          • Master Nodes: {{ groups['k8s_masters'] | length }}
+          • Worker Nodes: {{ groups['k8s_workers'] | length if 'k8s_workers' in groups else 0 }}
+          • CNI Plugin: {{ cni_type | default('Unknown') }}
+          
+        dest: "{{ motd_path }}"
+        owner: root
+        group: root
+        mode: '0644'
+
+# Configure master node to allow pod scheduling (remove taints)
+- name: "Configure Master Node Pod Scheduling"
+  hosts: k8s_masters
+  become: true
+  tasks:
+    - name: Remove taint from master nodes to allow pod scheduling
+      shell: kubectl taint nodes {{ inventory_hostname }} node-role.kubernetes.io/control-plane:NoSchedule-
+      ignore_errors: true
+      register: taint_removal
+      
+    - name: Check taint removal status
+      debug:
+        msg: "Taint removal result: {{ taint_removal.stdout | default('Already removed or not present') }}"
+
+# Install and configure Metrics Server on the first master
+- name: "Install Kubernetes Metrics Server"
+  hosts: k8s_masters[0]
+  become: true
+  tasks:
+    - name: Check if Metrics Server is already installed
+      shell: kubectl get deployment metrics-server -n kube-system
+      register: metrics_server_check
+      ignore_errors: true
+
+    - name: Download Metrics Server manifest
+      get_url:
+        url: https://github.com/kubernetes-sigs/metrics-server/releases/latest/download/components.yaml
+        dest: /tmp/metrics-server.yaml
+        mode: '0644'
+      when: metrics_server_check.rc != 0
+
+    - name: Modify Metrics Server for insecure TLS (for dev/test environments)
+      replace:
+        path: /tmp/metrics-server.yaml
+        regexp: '(\s+)- --cert-dir=/tmp'
+        replace: '\1- --cert-dir=/tmp\n\1- --kubelet-insecure-tls'
+      when: metrics_server_check.rc != 0
+
+    - name: Apply Metrics Server manifest
+      shell: kubectl apply -f /tmp/metrics-server.yaml
+      when: metrics_server_check.rc != 0
+
+    - name: Wait for Metrics Server to be ready
+      shell: kubectl get pods -n kube-system -l k8s-app=metrics-server --field-selector=status.phase=Running | wc -l
+      register: metrics_server_ready
+      until: metrics_server_ready.stdout | int > 0
+      retries: 30
+      delay: 10
+      when: metrics_server_check.rc != 0
+
+    - name: Verify Metrics Server installation
+      shell: kubectl top nodes
+      register: metrics_test
+      ignore_errors: true
+      retries: 5
+      delay: 10
+      until: metrics_test.rc == 0
+
+    - name: Display Metrics Server status
+      debug:
+        msg: "Metrics Server status: {{ 'Working' if metrics_test.rc == 0 else 'Still starting up, may take a few more minutes' }}"
+
+# Final verification and status display
+- name: "Final Cluster Enhancement Verification"
+  hosts: k8s_masters[0]
+  become: true
+  tasks:
+    - name: Test kubectl alias
+      shell: k get nodes
+      become_user: "{{ target_user }}"
+      register: kubectl_alias_test
+      ignore_errors: true
+
+    - name: Get cluster node information with metrics
+      shell: kubectl get nodes -o wide && echo "--- Node Metrics ---" && kubectl top nodes
+      register: cluster_status
+      ignore_errors: true
+
+    - name: Display final cluster enhancement status
+      debug:
+        msg: |
+          === LABNGOPREK Kubernetes Cluster Enhancement Complete ===
+          
+          ✅ Zsh and Oh-My-Zsh installed
+          ✅ LABNGOPREK banner configured in MOTD
+          ✅ kubectl alias (k) configured
+          ✅ Master node taint removed (can schedule pods)
+          ✅ Metrics Server installed
+          
+          Cluster Status:
+          {{ cluster_status.stdout }}
+          
+          kubectl alias test: {{ 'Working' if kubectl_alias_test.rc == 0 else 'May require shell restart' }}
+          
+          Next steps:
+          - SSH to any node and run 'k get nodes' to test the alias
+          - Run 'k top nodes' and 'k top pods -A' to test metrics
+          - The master node can now run pods alongside workers

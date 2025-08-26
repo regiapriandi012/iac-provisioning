@@ -173,6 +173,24 @@ PHASE5_DURATION=$((PHASE5_END - PHASE5_START))
 echo "✅ Phase 5 completed in ${PHASE5_DURATION}s"
 echo ""
 
+# Phase 6: LABNGOPREK Cluster Enhancements
+echo "🎨 PHASE 6: LABNGOPREK Cluster Enhancements"
+echo "==========================================="
+PHASE6_START=$(date +%s)
+
+ansible-playbook \
+    -i ${INVENTORY_SCRIPT} \
+    ../ansible/playbooks/k8s-cluster-enhancements.yml \
+    --timeout=600 \
+    --ssh-extra-args='-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=10' \
+    -f 50 \
+    -v
+
+PHASE6_END=$(date +%s)
+PHASE6_DURATION=$((PHASE6_END - PHASE6_START))
+echo "✅ Phase 6 completed in ${PHASE6_DURATION}s"
+echo ""
+
 # Record overall end time
 OVERALL_END_TIME=$(date +%s)
 TOTAL_DURATION=$((OVERALL_END_TIME - OVERALL_START_TIME))
@@ -189,6 +207,7 @@ echo "Phase 2 (Container Runtime): ${PHASE2_DURATION}s"
 echo "Phase 3 (K8s Packages):     ${PHASE3_DURATION}s"
 echo "Phase 4 (Cluster Init):     ${PHASE4_DURATION}s"
 echo "Phase 5 (CNI Install):      ${PHASE5_DURATION}s"
+echo "Phase 6 (LABNGOPREK Enhancements): ${PHASE6_DURATION}s"
 echo "----------------------"
 echo "TOTAL TIME: ${TOTAL_MINUTES}m ${TOTAL_SECONDS}s"
 echo ""
@@ -229,6 +248,14 @@ if [ -n "$FIRST_MASTER" ]; then
     echo ""
     echo "🌐 CNI Status:"
     ansible $FIRST_MASTER -i ${INVENTORY_SCRIPT} -m shell -a "kubectl get pods -n kube-system | grep -E '(cilium|flannel|calico|weave)'" --timeout=30 | grep -A 10 "CHANGED" || true
+    
+    echo ""
+    echo "🎨 LABNGOPREK Enhancements Status:"
+    ansible $FIRST_MASTER -i ${INVENTORY_SCRIPT} -m shell -a "echo 'kubectl alias test:' && k get nodes --no-headers | wc -l && echo 'metrics server test:' && kubectl top nodes" --timeout=30 | grep -A 10 "CHANGED" || true
+    
+    echo ""
+    echo "🏷️  LABNGOPREK Banner Test:"
+    ansible $FIRST_MASTER -i ${INVENTORY_SCRIPT} -m shell -a "cat /etc/motd | head -10" --timeout=30 | grep -A 15 "CHANGED" || true
 fi
 
 echo ""
