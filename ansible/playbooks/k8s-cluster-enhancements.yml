@@ -224,7 +224,6 @@
   tasks:
     - name: Test kubectl alias
       shell: k get nodes
-      become_user: "{{ target_user }}"
       register: kubectl_alias_test
       ignore_errors: true
 
@@ -247,7 +246,7 @@
           Cluster Status:
           {{ cluster_status.stdout }}
           
-          kubectl alias test: {{ 'Working' if kubectl_alias_test.rc == 0 else 'May require shell restart' }}
+          kubectl alias test: {{ 'Working' if kubectl_alias_test.rc|default(1) == 0 else 'May require shell restart' }}
           
           Next steps:
           - SSH to any node and run 'k get nodes' to test the alias
