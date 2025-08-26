@@ -287,7 +287,12 @@ TF_VAR_vm_memory: ${env.TF_VAR_vm_memory}
                             echo "Sending cluster metadata to Django..."
                             sh """
                                 cd ${WORKSPACE}
-                                python3 scripts/send_metadata_to_django.py "${params.CLUSTER_NAME}" "https://labngoprek.my.id"
+                                # Try installing requests if not available
+                                pip3 install --user requests || echo "Warning: Could not install requests module"
+                                
+                                # Try main script first, fallback to urllib-only version
+                                python3 scripts/send_metadata_to_django.py "${params.CLUSTER_NAME}" "https://labngoprek.my.id" || \
+                                python3 scripts/send_metadata_fallback.py "${params.CLUSTER_NAME}" "https://labngoprek.my.id"
                             """
                             echo "Successfully sent metadata to Django!"
                         } catch (Exception e) {
