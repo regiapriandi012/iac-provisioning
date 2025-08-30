@@ -160,14 +160,64 @@
   hosts: k8s_masters
   become: true
   tasks:
+    - name: Get actual node name from Kubernetes
+      shell: kubectl get nodes -o jsonpath='{.items[?(@.status.addresses[0].address=="{{ ansible_default_ipv4.address }}")].metadata.name}'
+      register: k8s_node_name
+      ignore_errors: true
+
+    - name: Fallback - get node name by hostname
+      shell: kubectl get nodes --no-headers | grep -i "{{ inventory_hostname }}" | awk '{print $1}' | head -1
+      register: k8s_node_name_fallback
+      when: k8s_node_name.stdout == ""
+      ignore_errors: true
+
+    - name: Set final node name
+      set_fact:
+        final_node_name: "{{ k8s_node_name.stdout if k8s_node_name.stdout != '' else k8s_node_name_fallback.stdout | default(inventory_hostname) }}"
+
+    - name: Show node name being used
+      debug:
+        msg: "Using node name: {{ final_node_name }}"
+
     - name: Remove taint from master nodes to allow pod scheduling
-      shell: kubectl taint nodes {{ inventory_hostname }} node-role.kubernetes.io/control-plane:NoSchedule-
+      shell: kubectl taint nodes {{ final_node_name }} node-role.kubernetes.io/control-plane:NoSchedule-
       ignore_errors: true
       register: taint_removal
       
-    - name: Check taint removal status
+    - name: Check if taint was successfully removed
+      shell: kubectl describe node {{ final_node_name }} | grep -i taint
+      register: taint_check
+      ignore_errors: true
+      
+    - name: Display taint removal status
       debug:
-        msg: "Taint removal result: {{ taint_removal.stdout | default('Already removed or not present') }}"
+        msg: |
+          Taint removal result: {{ taint_removal.stdout | default('Command executed') }}
+          Current taints on {{ final_node_name }}: {{ taint_check.stdout | default('No taints or node not found') }}
+
+# Verify taint removal before proceeding with Metrics Server
+- name: "Verify Master Node Taint Removal"
+  hosts: k8s_masters[0]
+  become: true
+  tasks:
+    - name: Wait for all nodes to be Ready
+      shell: kubectl get nodes --no-headers | grep -v Ready | wc -l
+      register: not_ready_nodes
+      until: not_ready_nodes.stdout | int == 0
+      retries: 30
+      delay: 5
+      
+    - name: Check if master nodes can schedule pods (verify taint removal)
+      shell: kubectl get nodes -o jsonpath='{range .items[*]}{.metadata.name}{"\t"}{.spec.taints[?(@.key=="node-role.kubernetes.io/control-plane")]}{"\n"}{end}'
+      register: master_taints_check
+      
+    - name: Display current taint status on all nodes
+      debug:
+        msg: |
+          Master node taint check:
+          {{ master_taints_check.stdout }}
+          
+          If you see 'NoSchedule' above, taint removal failed and Metrics Server deployment may fail.
 
 # Install and configure Metrics Server on the first master
 - name: "Install Kubernetes Metrics Server"
@@ -186,11 +236,25 @@
         mode: '0644'
       when: metrics_server_check.rc != 0
 
-    - name: Modify Metrics Server for insecure TLS (for dev/test environments)
+    - name: Modify Metrics Server for insecure TLS and tolerations (for dev/test environments)
       replace:
         path: /tmp/metrics-server.yaml
         regexp: '(\s+)- --cert-dir=/tmp'
         replace: '\1- --cert-dir=/tmp\n\1- --kubelet-insecure-tls'
+      when: metrics_server_check.rc != 0
+      
+    - name: Add tolerations to Metrics Server to schedule on master nodes if needed
+      lineinfile:
+        path: /tmp/metrics-server.yaml
+        insertafter: 'serviceAccountName: metrics-server'
+        line: |2
+              tolerations:
+              - key: node-role.kubernetes.io/control-plane
+                effect: NoSchedule
+                operator: Exists
+              - key: node-role.kubernetes.io/master
+                effect: NoSchedule
+                operator: Exists
       when: metrics_server_check.rc != 0
 
     - name: Apply Metrics Server manifest
