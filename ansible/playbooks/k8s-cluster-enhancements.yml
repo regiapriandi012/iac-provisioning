@@ -246,9 +246,31 @@
       shell: kubectl get nodes -l node-role.kubernetes.io/control-plane -o jsonpath='{.items[*].status.addresses[?(@.type=="InternalIP")].address}'
       register: master_ips
 
-    - name: Calculate MetalLB IP range from master IPs
+    - name: Process master IPs for MetalLB pool
       set_fact:
-        metallb_ip_range: "{{ master_ips.stdout.split(' ') | map('regex_replace', '(\\d+\\.\\d+\\.\\d+\\.)\\d+', '\\1') | first }}{{ (master_ips.stdout.split(' ') | map('regex_replace', '\\d+\\.\\d+\\.\\d+\\.(\\d+)', '\\1') | map('int') | min) + 100 }}-{{ (master_ips.stdout.split(' ') | map('regex_replace', '\\d+\\.\\d+\\.\\d+\\.(\\d+)', '\\1') | map('int') | max) + 150 }}"
+        # Convert space-separated IPs to list and remove empty entries
+        master_ip_list: "{{ master_ips.stdout.split(' ') | select('match', '^\\d+\\.\\d+\\.\\d+\\.\\d+$') | list }}"
+        
+    - name: Create MetalLB IP addresses list
+      set_fact:
+        # Use actual master node IPs for LoadBalancer services
+        metallb_addresses: "{{ master_ip_list }}"
+        
+    - name: Debug MetalLB IP configuration
+      debug:
+        msg: |
+          Master IPs detected: {{ master_ips.stdout }}
+          Processed IP list: {{ master_ip_list }}
+          MetalLB will use these IPs: {{ metallb_addresses }}
+          Number of available LoadBalancer IPs: {{ metallb_addresses | length }}
+          
+    - name: Validate MetalLB configuration
+      assert:
+        that:
+          - metallb_addresses | length > 0
+          - metallb_addresses is defined
+        fail_msg: "No valid master IPs found for MetalLB: {{ master_ips.stdout }}"
+        success_msg: "MetalLB will use {{ metallb_addresses | length }} IP(s): {{ metallb_addresses | join(', ') }}"
 
     - name: Create MetalLB IPAddressPool configuration
       copy:
@@ -260,7 +282,9 @@
             namespace: {{ metallb_namespace }}
           spec:
             addresses:
-            - {{ metallb_ip_range }}
+{% for ip in metallb_addresses %}
+            - {{ ip }}/32
+{% endfor %}
           ---
           apiVersion: metallb.io/v1beta1
           kind: L2Advertisement
@@ -284,7 +308,8 @@
       debug:
         msg: |
           ✅ MetalLB Load Balancer installed successfully
-          IP Range: {{ metallb_ip_range }}
+          Available LoadBalancer IPs: {{ metallb_addresses | join(', ') }}
+          Total IPs available: {{ metallb_addresses | length }}
           Master IPs: {{ master_ips.stdout }}
           
           MetalLB Pods:
