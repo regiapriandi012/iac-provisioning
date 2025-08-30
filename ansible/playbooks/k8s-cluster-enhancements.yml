@@ -347,126 +347,6 @@
         msg: "⏭️  Metricbeat already installed, skipping deployment"
       when: metricbeat_check.rc == 0
 
-# Install and configure Nginx Ingress Controller
-- name: "Install Nginx Ingress Controller"
-  hosts: k8s_masters[0]
-  become: true
-  vars:
-    ingress_namespace: ingress-nginx
-    ingress_version: v1.9.5
-  tasks:
-    - name: Check if Nginx Ingress is already installed
-      shell: kubectl get namespace {{ ingress_namespace }}
-      register: ingress_namespace_check
-      ignore_errors: true
-
-    - name: Apply Nginx Ingress Controller manifest
-      shell: kubectl apply -f https://raw.githubusercontent.com/kubernetes/ingress-nginx/controller-{{ ingress_version }}/deploy/static/provider/baremetal/deploy.yaml
-      when: ingress_namespace_check.rc != 0
-
-    - name: Wait for Nginx Ingress Controller to be ready
-      shell: kubectl wait --namespace {{ ingress_namespace }} --for=condition=ready pod --selector=app.kubernetes.io/component=controller --timeout=300s
-      when: ingress_namespace_check.rc != 0
-
-    - name: Patch Nginx Ingress Controller service to use MetalLB
-      shell: |
-        kubectl patch service ingress-nginx-controller -n {{ ingress_namespace }} -p '{"spec":{"type":"LoadBalancer"}}'
-      when: ingress_namespace_check.rc != 0
-
-    - name: Wait for LoadBalancer IP assignment
-      shell: kubectl get service ingress-nginx-controller -n {{ ingress_namespace }} -o jsonpath='{.status.loadBalancer.ingress[0].ip}'
-      register: ingress_lb_ip
-      retries: 30
-      delay: 10
-      until: ingress_lb_ip.stdout != ""
-      when: ingress_namespace_check.rc != 0
-
-    - name: Get Nginx Ingress Controller status
-      shell: kubectl get pods,svc -n {{ ingress_namespace }}
-      register: ingress_status
-
-    - name: Create sample ingress test application
-      copy:
-        content: |
-          apiVersion: apps/v1
-          kind: Deployment
-          metadata:
-            name: nginx-test
-            namespace: default
-          spec:
-            replicas: 2
-            selector:
-              matchLabels:
-                app: nginx-test
-            template:
-              metadata:
-                labels:
-                  app: nginx-test
-              spec:
-                containers:
-                - name: nginx
-                  image: nginx:alpine
-                  ports:
-                  - containerPort: 80
-                  resources:
-                    requests:
-                      cpu: 100m
-                      memory: 128Mi
-                    limits:
-                      cpu: 200m
-                      memory: 256Mi
-          ---
-          apiVersion: v1
-          kind: Service
-          metadata:
-            name: nginx-test-service
-            namespace: default
-          spec:
-            selector:
-              app: nginx-test
-            ports:
-            - port: 80
-              targetPort: 80
-            type: ClusterIP
-          ---
-          apiVersion: networking.k8s.io/v1
-          kind: Ingress
-          metadata:
-            name: nginx-test-ingress
-            namespace: default
-            annotations:
-              nginx.ingress.kubernetes.io/rewrite-target: /
-              kubernetes.io/ingress.class: nginx
-          spec:
-            rules:
-            - host: test.labngoprek.local
-              http:
-                paths:
-                - path: /
-                  pathType: Prefix
-                  backend:
-                    service:
-                      name: nginx-test-service
-                      port:
-                        number: 80
-        dest: /tmp/ingress-test-app.yaml
-        mode: '0644'
-
-    - name: Deploy test application for ingress testing
-      shell: kubectl apply -f /tmp/ingress-test-app.yaml
-
-    - name: Display Nginx Ingress status
-      debug:
-        msg: |
-          ✅ Nginx Ingress Controller installed successfully
-          LoadBalancer IP: {{ ingress_lb_ip.stdout | default('Still assigning...') }}
-          
-          Ingress Status:
-          {{ ingress_status.stdout }}
-          
-          Test Application:
-          - Access via: http://{{ ingress_lb_ip.stdout | default('LOADBALANCER_IP') }}/
-          - Add to /etc/hosts: {{ ingress_lb_ip.stdout | default('LOADBALANCER_IP') }} test.labngoprek.local
 
 # Final verification and status display
 - name: "Final Cluster Enhancement Verification"
@@ -483,13 +363,10 @@
       register: cluster_status
       ignore_errors: true
 
-    - name: Get MetalLB and Ingress services status
+    - name: Get MetalLB services status
       shell: |
         echo "=== MetalLB Services ==="
         kubectl get svc -n metallb-system
-        echo ""
-        echo "=== Nginx Ingress Services ==="
-        kubectl get svc -n ingress-nginx
         echo ""
         echo "=== LoadBalancer Services ==="
         kubectl get svc --all-namespaces -o wide | grep LoadBalancer
@@ -506,7 +383,6 @@
           ✅ Master node taint removed (can schedule pods)
           ✅ Metrics Server installed
           ✅ MetalLB Load Balancer installed
-          ✅ Nginx Ingress Controller installed
           
           Cluster Status:
           {{ cluster_status.stdout }}
@@ -519,7 +395,6 @@
           Next steps:
           - SSH to any node and run 'k get nodes' to test the alias
           - Run 'k top nodes' and 'k top pods -A' to test metrics
-          - Test LoadBalancer: k get svc -n ingress-nginx
-          - Test Ingress: curl http://LOADBALANCER_IP/
-          - Create your own ingress resources for applications
+          - Test LoadBalancer: k get svc -A | grep LoadBalancer
+          - Deploy your own applications and services
           - The master node can now run pods alongside workers
