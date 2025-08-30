@@ -296,6 +296,57 @@
           MetalLB Pods:
           {{ metallb_pods.stdout }}
 
+# Install and configure Metricbeat for monitoring
+- name: "Install Metricbeat Monitoring"
+  hosts: k8s_masters[0]
+  become: true
+  vars:
+    elasticsearch_host: "172.16.20.90"
+    elasticsearch_port: "9200"
+    elasticsearch_username: "elastic"
+    elasticsearch_password: "xrUW620aXmqkw*ErAWGC"
+  tasks:
+    - name: Check if Metricbeat is already installed
+      shell: kubectl get daemonset metricbeat -n kube-system
+      register: metricbeat_check
+      ignore_errors: true
+
+    - name: Create Metricbeat configuration
+      template:
+        src: metricbeat-deployment.yaml.j2
+        dest: /tmp/metricbeat-deployment.yaml
+        mode: '0644'
+      when: metricbeat_check.rc != 0
+
+    - name: Apply Metricbeat deployment
+      shell: kubectl apply -f /tmp/metricbeat-deployment.yaml
+      when: metricbeat_check.rc != 0
+
+    - name: Wait for Metricbeat DaemonSet to be ready
+      shell: kubectl rollout status daemonset/metricbeat -n kube-system --timeout=300s
+      when: metricbeat_check.rc != 0
+
+    - name: Verify Metricbeat installation
+      shell: kubectl get pods -n kube-system -l k8s-app=metricbeat
+      register: metricbeat_pods
+      when: metricbeat_check.rc != 0
+
+    - name: Display Metricbeat status
+      debug:
+        msg: |
+          ✅ Metricbeat Monitoring installed successfully
+          Elasticsearch Host: {{ elasticsearch_host }}:{{ elasticsearch_port }}
+          Username: {{ elasticsearch_username }}
+          
+          Metricbeat Pods:
+          {{ metricbeat_pods.stdout | default('Already installed - skipped') }}
+      when: metricbeat_check.rc != 0 or metricbeat_pods is defined
+
+    - name: Display Metricbeat skip message
+      debug:
+        msg: "⏭️  Metricbeat already installed, skipping deployment"
+      when: metricbeat_check.rc == 0
+
 # Install and configure Nginx Ingress Controller
 - name: "Install Nginx Ingress Controller"
   hosts: k8s_masters[0]
