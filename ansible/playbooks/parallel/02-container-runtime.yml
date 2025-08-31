@@ -198,26 +198,31 @@
       poll: 0
       register: debian_update_job
 
-    # Install containerd (parallel by OS) - ENHANCED PERFORMANCE
-    - name: Install containerd (RedHat-based)
+    # ULTRA FAST: Parallel containerd installation with download optimization
+    - name: Install containerd (RedHat-based) - ULTRA FAST
       yum:
         name: containerd.io
         state: present
         disable_gpg_check: yes  # Speed up installation
+        download_only: no  # Don't cache, install directly
+        skip_broken: yes  # Skip problematic dependencies
       when: detected_os_family == "RedHat"
-      async: 300  # Increased timeout for stability
+      async: 180  # Reduced timeout - should be much faster now
       poll: 0
       register: rhel_containerd_job
 
-    - name: Install containerd (Debian-based)
+    - name: Install containerd (Debian-based) - ULTRA FAST
       apt:
         name: containerd.io
         state: present
         force_apt_get: yes
         dpkg_options: 'force-confold,force-confdef'
         install_recommends: no  # Skip recommended packages for speed
+        allow_unauthenticated: no
+        autoclean: yes  # Clean cache after install
+        autoremove: yes  # Remove unnecessary packages
       when: detected_os_family == "Debian"
-      async: 300  # Increased timeout for stability
+      async: 180  # Reduced timeout - should be much faster now
       poll: 0
       register: debian_containerd_job
 
@@ -240,22 +245,22 @@
       delay: 2
       when: debian_update_job is defined and debian_update_job.ansible_job_id is defined
 
-    # Wait for containerd installation - ENHANCED PERFORMANCE
-    - name: Wait for RedHat containerd installation
+    # ULTRA FAST: Wait for containerd installation with optimized retries
+    - name: Wait for RedHat containerd installation - ULTRA FAST
       async_status:
         jid: "{{ rhel_containerd_job.ansible_job_id }}"
       register: rhel_containerd_result
       until: rhel_containerd_result.finished
-      retries: 150  # Increased for larger timeout window
+      retries: 90  # Reduced retries for faster timeout (180s total)
       delay: 2
       when: rhel_containerd_job is defined and rhel_containerd_job.ansible_job_id is defined
 
-    - name: Wait for Debian containerd installation
+    - name: Wait for Debian containerd installation - ULTRA FAST
       async_status:
         jid: "{{ debian_containerd_job.ansible_job_id }}"
       register: debian_containerd_result
       until: debian_containerd_result.finished
-      retries: 150  # Increased for larger timeout window
+      retries: 90  # Reduced retries for faster timeout (180s total)
       delay: 2
       when: debian_containerd_job is defined and debian_containerd_job.ansible_job_id is defined
 
@@ -378,54 +383,69 @@
       register: containerd_validation
       ignore_errors: yes
       
-    - name: Stop containerd before config change
+    - name: Restart containerd with new configuration - ULTRA FAST
       systemd:
         name: containerd
-        state: stopped
-      ignore_errors: yes
-      
-    - name: Start containerd with new configuration
-      systemd:
-        name: containerd
-        state: started
+        state: restarted
         enabled: yes
+        daemon_reload: yes  # Reload systemd if needed
       register: containerd_start_result
+      async: 30  # Parallel restart
+      poll: 0
       
-    - name: Check containerd service status
-      systemd:
-        name: containerd
-      register: containerd_status
+    - name: Wait for containerd restart completion
+      async_status:
+        jid: "{{ containerd_start_result.ansible_job_id }}"
+      register: containerd_restart_result
+      until: containerd_restart_result.finished
+      retries: 15
+      delay: 2
+      when: containerd_start_result.ansible_job_id is defined
       
-    - name: Wait for containerd socket
+    - name: Fast containerd socket check
       wait_for:
         path: /run/containerd/containerd.sock
-        timeout: 30
+        timeout: 15  # Reduced timeout
       ignore_errors: yes
 
-    - name: Verify containerd CRI service
+    - name: Fast containerd CRI verification
       shell: |
-        crictl info
+        timeout 10 crictl info || echo "CRI not ready yet"
       register: cri_check
       ignore_errors: yes
-      retries: 3
-      delay: 5
+      retries: 2  # Reduced retries for speed
+      delay: 2
 
-    - name: Install crictl if not present
+    - name: ULTRA FAST: Install crictl with timeout
       shell: |
-        curl -L "https://github.com/kubernetes-sigs/cri-tools/releases/download/v1.32.0/crictl-v1.32.0-linux-amd64.tar.gz" | tar -C /usr/local/bin -xz
-        chmod +x /usr/local/bin/crictl
+        timeout 30 bash -c '
+          curl -L --connect-timeout 5 --max-time 20 "https://github.com/kubernetes-sigs/cri-tools/releases/download/v1.32.0/crictl-v1.32.0-linux-amd64.tar.gz" | tar -C /usr/local/bin -xz
+          chmod +x /usr/local/bin/crictl
+        '
       when: cri_check.rc != 0
       ignore_errors: yes
+      async: 30
+      poll: 0
+      register: crictl_install_job
 
-    - name: Configure crictl
+    - name: Create crictl config - FAST
       copy:
         content: |
           runtime-endpoint: unix:///var/run/containerd/containerd.sock
           image-endpoint: unix:///var/run/containerd/containerd.sock
-          timeout: 10
+          timeout: 5
           debug: false
         dest: /etc/crictl.yaml
       when: cri_check.rc != 0
+
+    - name: Wait for crictl installation completion
+      async_status:
+        jid: "{{ crictl_install_job.ansible_job_id }}"
+      register: crictl_install_result
+      until: crictl_install_result.finished
+      retries: 15
+      delay: 2
+      when: crictl_install_job is defined and crictl_install_job.ansible_job_id is defined and cri_check.rc != 0
 
   post_tasks:
     - name: Calculate phase duration

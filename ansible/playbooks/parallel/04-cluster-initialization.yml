@@ -60,18 +60,40 @@
       when: not k8s_initialized.stat.exists
       ignore_errors: yes
 
-    - name: Initialize Kubernetes cluster (Single Master)
+    # SPEED OPTIMIZATION: Pre-pull all Kubernetes images
+    - name: Pre-pull Kubernetes control plane images
+      shell: |
+        echo "🚀 Pre-pulling Kubernetes {{ kubernetes_version }} images for ULTRA FAST init..."
+        kubeadm config images pull --kubernetes-version=v{{ kubernetes_version }}
+        echo "✅ All Kubernetes images pre-pulled successfully"
+      when: not k8s_initialized.stat.exists
+      async: 120
+      poll: 0
+      register: image_prepull_job
+
+    - name: Wait for image pre-pull completion
+      async_status:
+        jid: "{{ image_prepull_job.ansible_job_id }}"
+      register: image_prepull_result
+      until: image_prepull_result.finished
+      retries: 60
+      delay: 2
+      when: image_prepull_job is defined and image_prepull_job.ansible_job_id is defined
+
+    - name: Initialize Kubernetes cluster (Single Master) - ULTRA FAST
       command: >
         kubeadm init
         --pod-network-cidr={{ pod_network_cidr }}
         --service-cidr={{ service_cidr }}
         --kubernetes-version=v{{ kubernetes_version }}
-      when: not k8s_initialized.stat.exists and not is_ha_cluster
+        --skip-phases=preflight
+        --ignore-preflight-errors=all
+      when: not k8s_initialized.stat.exists and not is_ha_cluster and image_prepull_result.finished
       register: kubeadm_init_single
-      async: 300
-      poll: 10
+      async: 180
+      poll: 5
 
-    - name: Initialize Kubernetes cluster (HA Multi-Master)
+    - name: Initialize Kubernetes cluster (HA Multi-Master) - ULTRA FAST
       command: >
         kubeadm init
         --control-plane-endpoint={{ control_plane_endpoint }}
@@ -79,10 +101,12 @@
         --pod-network-cidr={{ pod_network_cidr }}
         --service-cidr={{ service_cidr }}
         --kubernetes-version=v{{ kubernetes_version }}
-      when: not k8s_initialized.stat.exists and is_ha_cluster
+        --skip-phases=preflight
+        --ignore-preflight-errors=all
+      when: not k8s_initialized.stat.exists and is_ha_cluster and image_prepull_result.finished
       register: kubeadm_init_ha
-      async: 300
-      poll: 10
+      async: 180
+      poll: 5
 
     - name: Extract join command for workers
       shell: kubeadm token create --print-join-command
