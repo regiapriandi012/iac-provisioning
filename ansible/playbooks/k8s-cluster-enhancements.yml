@@ -603,6 +603,9 @@
 - name: "Final Cluster Enhancement Verification"
   hosts: k8s_masters[0]
   become: true
+  vars:
+    target_user: root
+    user_home: /root
   tasks:
     - name: Create kubectl alias in bash profile for immediate availability
       lineinfile:
