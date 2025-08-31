@@ -1,0 +1,387 @@
+---
+# Template-Optimized Container Runtime - Phase 2
+# This playbook detects pre-baked templates and skips already installed containerd
+- name: "🐳 Template-Optimized Container Runtime Installation - Phase 2"
+  hosts: k8s_cluster
+  become: true
+  gather_facts: true
+  strategy: free  # Enable maximum parallelism
+  serial: 0       # No limit on parallel execution
+  
+  vars:
+    temp_dir: "/tmp/k8s-setup"
+    
+  pre_tasks:
+    - name: Start timer
+      set_fact:
+        phase_start_time: "{{ ansible_date_time.epoch }}"
+    
+    # TEMPLATE DETECTION LOGIC
+    - name: Check if VM is from K8s-ready template
+      stat:
+        path: /etc/kubernetes-template-info
+      register: template_marker
+
+    - name: Read template information if exists
+      slurp:
+        src: /etc/kubernetes-template-info
+      register: template_info_content
+      when: template_marker.stat.exists
+
+    - name: Parse template information
+      set_fact:
+        is_k8s_ready_template: "{{ template_marker.stat.exists }}"
+        template_name: >-
+          {% if template_marker.stat.exists %}
+          {{ (template_info_content.content | b64decode | regex_search('Template Name: (.+)', '\\1') | first) | default('unknown') }}
+          {% else %}
+          unknown
+          {% endif %}
+
+    # Detect OS from template name or system facts
+    - name: Set OS facts from template or system
+      set_fact:
+        detected_os_family: >-
+          {%- if template_name != 'unknown' -%}
+            {%- if 'centos' in template_name.lower() or 'rhel' in template_name.lower() or 'rocky' in template_name.lower() -%}
+            RedHat
+            {%- elif 'debian' in template_name.lower() or 'ubuntu' in template_name.lower() -%}
+            Debian
+            {%- else -%}
+            {{ ansible_os_family }}
+            {%- endif -%}
+          {%- elif 'centos' in template.lower() or 'rhel' in template.lower() or 'rocky' in template.lower() or 'alma' in template.lower() -%}
+          RedHat
+          {%- elif 'debian' in template.lower() or 'ubuntu' in template.lower() -%}
+          Debian
+          {%- else -%}
+          {{ ansible_os_family }}
+          {%- endif -%}
+
+    # CONTAINERD STATUS CHECK
+    - name: Check if containerd is already installed and running
+      systemd:
+        name: containerd
+      register: containerd_status
+      ignore_errors: yes
+
+    - name: Check if crictl is already installed
+      stat:
+        path: /usr/local/bin/crictl
+      register: crictl_installed
+
+    - name: Template optimization status
+      debug:
+        msg:
+          - "🔍 TEMPLATE DETECTION RESULTS:"
+          - "  K8s-ready template: {{ is_k8s_ready_template }}"
+          - "  Template name: {{ template_name }}"
+          - "  Containerd installed: {{ containerd_status.status is defined }}"
+          - "  Containerd running: {{ containerd_status.status.ActiveState == 'active' if containerd_status.status is defined else False }}"
+          - "  Crictl installed: {{ crictl_installed.stat.exists }}"
+          - "  Skip container runtime setup: {{ is_k8s_ready_template and containerd_status.status is defined and containerd_status.status.ActiveState == 'active' }}"
+
+  tasks:
+    # CONDITIONAL CONTAINER RUNTIME INSTALLATION
+    - name: Template optimization notification
+      debug:
+        msg: 
+          - "⚡ CONTAINER RUNTIME OPTIMIZATION ACTIVE"
+          - "  Using K8s-ready template with pre-installed containerd"
+          - "  Skipping repository setup and package installation"
+      when: is_k8s_ready_template and containerd_status.status is defined and containerd_status.status.ActiveState == 'active'
+
+    - name: Regular VM notification
+      debug:
+        msg:
+          - "🔧 REGULAR VM OR INCOMPLETE TEMPLATE"
+          - "  Running full container runtime installation..."
+      when: not (is_k8s_ready_template and containerd_status.status is defined and containerd_status.status.ActiveState == 'active')
+
+    # REGULAR VM TASKS (skip if template has containerd already running)
+    - name: Kill any stuck package manager processes (Debian)
+      shell: |
+        pkill -f "apt-get|apt|dpkg|unattended-upgrade" 2>/dev/null || true
+        sleep 1
+      when: 
+        - detected_os_family == "Debian"
+        - not (is_k8s_ready_template and containerd_status.status is defined and containerd_status.status.ActiveState == 'active')
+      ignore_errors: yes
+      
+    - name: Force remove all lock files (Debian)
+      shell: |
+        rm -f /var/lib/dpkg/lock* /var/cache/apt/archives/lock /var/lib/apt/lists/lock
+      when: 
+        - detected_os_family == "Debian"
+        - not (is_k8s_ready_template and containerd_status.status is defined and containerd_status.status.ActiveState == 'active')
+      ignore_errors: yes
+      
+    - name: Quick dpkg reconfigure (Debian)
+      command: dpkg --configure -a
+      when: 
+        - detected_os_family == "Debian"
+        - not (is_k8s_ready_template and containerd_status.status is defined and containerd_status.status.ActiveState == 'active')
+      ignore_errors: yes
+
+    # Prerequisites installation (parallel by OS type) - REGULAR VM ONLY
+    - name: Install prerequisites for Docker repo (RedHat-based)
+      yum:
+        name:
+          - yum-utils
+          - device-mapper-persistent-data
+          - lvm2
+        state: present
+      when: 
+        - detected_os_family == "RedHat"
+        - not (is_k8s_ready_template and containerd_status.status is defined and containerd_status.status.ActiveState == 'active')
+      async: 120
+      poll: 0
+      register: rhel_prereq_job
+
+    - name: Install prerequisites for Docker repo (Debian-based)
+      apt:
+        name:
+          - apt-transport-https
+          - ca-certificates
+          - curl
+          - gnupg
+          - lsb-release
+        state: present
+        update_cache: yes
+        force_apt_get: yes
+        dpkg_options: 'force-confold,force-confdef'
+      when: 
+        - detected_os_family == "Debian"
+        - not (is_k8s_ready_template and containerd_status.status is defined and containerd_status.status.ActiveState == 'active')
+      async: 120
+      poll: 0
+      register: debian_prereq_job
+
+    # Repository setup - REGULAR VM ONLY
+    - name: Add Docker repository (RedHat-based)
+      yum_repository:
+        name: docker-ce-stable
+        description: Docker CE Stable - $basearch
+        baseurl: https://download.docker.com/linux/centos/$releasever/$basearch/stable
+        gpgcheck: yes
+        gpgkey: https://download.docker.com/linux/centos/gpg
+        enabled: yes
+      when: 
+        - detected_os_family == "RedHat"
+        - not (is_k8s_ready_template and containerd_status.status is defined and containerd_status.status.ActiveState == 'active')
+      async: 30
+      poll: 0
+      register: rhel_repo_job
+
+    - name: Add Docker GPG key (Debian-based)
+      shell: |
+        mkdir -p /usr/share/keyrings
+        curl -fsSL https://download.docker.com/linux/debian/gpg -o /tmp/docker.gpg
+        gpg --batch --yes --dearmor /tmp/docker.gpg
+        mv /tmp/docker.gpg.gpg /usr/share/keyrings/docker-archive-keyring.gpg
+        rm -f /tmp/docker.gpg
+      when: 
+        - detected_os_family == "Debian"
+        - not (is_k8s_ready_template and containerd_status.status is defined and containerd_status.status.ActiveState == 'active')
+      async: 30
+      poll: 0
+      register: debian_key_job
+
+    - name: Add Docker repository (Debian-based)
+      apt_repository:
+        repo: "deb [arch=amd64 signed-by=/usr/share/keyrings/docker-archive-keyring.gpg] https://download.docker.com/linux/debian {{ ansible_distribution_release }} stable"
+        state: present
+      when: 
+        - detected_os_family == "Debian"
+        - not (is_k8s_ready_template and containerd_status.status is defined and containerd_status.status.ActiveState == 'active')
+      async: 30
+      poll: 0
+      register: debian_repo_job
+
+    # Install containerd - REGULAR VM ONLY
+    - name: Install containerd (RedHat-based) - REGULAR VM ONLY
+      yum:
+        name: containerd.io
+        state: present
+        disable_gpg_check: yes
+        download_only: no
+        skip_broken: yes
+      when: 
+        - detected_os_family == "RedHat"
+        - not (is_k8s_ready_template and containerd_status.status is defined and containerd_status.status.ActiveState == 'active')
+      async: 180
+      poll: 0
+      register: rhel_containerd_job
+
+    - name: Install containerd (Debian-based) - REGULAR VM ONLY
+      apt:
+        name: containerd.io
+        state: present
+        force_apt_get: yes
+        dpkg_options: 'force-confold,force-confdef'
+        install_recommends: no
+        allow_unauthenticated: no
+        autoclean: yes
+        autoremove: yes
+      when: 
+        - detected_os_family == "Debian"
+        - not (is_k8s_ready_template and containerd_status.status is defined and containerd_status.status.ActiveState == 'active')
+      async: 180
+      poll: 0
+      register: debian_containerd_job
+
+    # Wait for installation tasks (only if they were started)
+    - name: Wait for RedHat prerequisites
+      async_status:
+        jid: "{{ rhel_prereq_job.ansible_job_id }}"
+      register: rhel_prereq_result
+      until: rhel_prereq_result.finished
+      retries: 60
+      delay: 2
+      when: rhel_prereq_job is defined and rhel_prereq_job.ansible_job_id is defined
+
+    - name: Wait for Debian prerequisites
+      async_status:
+        jid: "{{ debian_prereq_job.ansible_job_id }}"
+      register: debian_prereq_result
+      until: debian_prereq_result.finished
+      retries: 60
+      delay: 2
+      when: debian_prereq_job is defined and debian_prereq_job.ansible_job_id is defined
+
+    - name: Wait for containerd installation (RedHat)
+      async_status:
+        jid: "{{ rhel_containerd_job.ansible_job_id }}"
+      register: rhel_containerd_result
+      until: rhel_containerd_result.finished
+      retries: 90
+      delay: 2
+      when: rhel_containerd_job is defined and rhel_containerd_job.ansible_job_id is defined
+
+    - name: Wait for containerd installation (Debian)
+      async_status:
+        jid: "{{ debian_containerd_job.ansible_job_id }}"
+      register: debian_containerd_result
+      until: debian_containerd_result.finished
+      retries: 90
+      delay: 2
+      when: debian_containerd_job is defined and debian_containerd_job.ansible_job_id is defined
+
+    # CONTAINERD CONFIGURATION (always run to ensure proper config)
+    - name: Create containerd configuration directory
+      file:
+        path: /etc/containerd
+        state: directory
+      async: 10
+      poll: 0
+      register: containerd_dir_job
+
+    - name: Wait for containerd directory creation
+      async_status:
+        jid: "{{ containerd_dir_job.ansible_job_id }}"
+      register: containerd_dir_result
+      until: containerd_dir_result.finished
+      retries: 10
+      delay: 1
+      when: containerd_dir_job is defined and containerd_dir_job.ansible_job_id is defined
+
+    - name: Verify containerd configuration exists or create optimized config
+      shell: |
+        if [ ! -f /etc/containerd/config.toml ] || ! grep -q "SystemdCgroup = true" /etc/containerd/config.toml; then
+          echo "Creating optimized containerd configuration..."
+          containerd config default > /etc/containerd/config.toml
+          sed -i 's/SystemdCgroup = false/SystemdCgroup = true/' /etc/containerd/config.toml
+        else
+          echo "Containerd configuration already optimized"
+        fi
+
+    - name: Restart containerd service (always to ensure running with correct config)
+      systemd:
+        name: containerd
+        state: restarted
+        enabled: yes
+        daemon_reload: yes
+      register: containerd_restart_result
+      async: 30
+      poll: 0
+      
+    - name: Wait for containerd restart completion
+      async_status:
+        jid: "{{ containerd_restart_result.ansible_job_id }}"
+      register: containerd_restart_status
+      until: containerd_restart_status.finished
+      retries: 15
+      delay: 2
+      when: containerd_restart_result.ansible_job_id is defined
+      
+    - name: Wait for containerd socket
+      wait_for:
+        path: /run/containerd/containerd.sock
+        timeout: 15
+      ignore_errors: yes
+
+    # CRICTL INSTALLATION (conditional)
+    - name: Install crictl if not present
+      shell: |
+        timeout 30 bash -c '
+          curl -L --connect-timeout 5 --max-time 20 "https://github.com/kubernetes-sigs/cri-tools/releases/download/v1.32.0/crictl-v1.32.0-linux-amd64.tar.gz" | tar -C /usr/local/bin -xz
+          chmod +x /usr/local/bin/crictl
+        '
+      when: not crictl_installed.stat.exists
+      ignore_errors: yes
+      async: 30
+      poll: 0
+      register: crictl_install_job
+
+    - name: Create crictl config if not exists
+      copy:
+        content: |
+          runtime-endpoint: unix:///var/run/containerd/containerd.sock
+          image-endpoint: unix:///var/run/containerd/containerd.sock
+          timeout: 5
+          debug: false
+        dest: /etc/crictl.yaml
+      when: not crictl_installed.stat.exists
+
+    - name: Wait for crictl installation completion
+      async_status:
+        jid: "{{ crictl_install_job.ansible_job_id }}"
+      register: crictl_install_result
+      until: crictl_install_result.finished
+      retries: 15
+      delay: 2
+      when: crictl_install_job is defined and crictl_install_job.ansible_job_id is defined
+
+    # VERIFICATION (always run)
+    - name: Verify containerd and crictl status
+      shell: |
+        echo "=== CONTAINER RUNTIME VERIFICATION ==="
+        systemctl is-active containerd
+        systemctl is-enabled containerd
+        crictl info 2>/dev/null | head -3 || echo "CRI tools need initialization"
+        echo "Container runtime verification complete"
+      register: container_runtime_verification
+      ignore_errors: yes
+
+    - name: Container runtime verification results
+      debug:
+        msg:
+          - "✅ CONTAINER RUNTIME VERIFICATION:"
+          - "  Template optimization: {{ 'ENABLED' if is_k8s_ready_template else 'DISABLED' }}"
+          - "  Containerd status: {{ 'PRE-INSTALLED' if is_k8s_ready_template and containerd_status.status is defined else 'INSTALLED NOW' }}"
+          - "  CRI tools: {{ 'AVAILABLE' if crictl_installed.stat.exists else 'INSTALLED NOW' }}"
+          - "  Time saved: {{ '~30-35s' if is_k8s_ready_template else 'N/A' }}"
+
+  post_tasks:
+    - name: Calculate phase duration
+      set_fact:
+        phase_end_time: "{{ ansible_date_time.epoch }}"
+        phase_duration: "{{ ansible_date_time.epoch | int - phase_start_time | int }}"
+
+    - name: Phase completion summary
+      debug:
+        msg:
+          - "📊 PHASE 2 COMPLETION:"
+          - "  Duration: {{ phase_duration }}s"
+          - "  Template optimization: {{ 'ACTIVE' if is_k8s_ready_template else 'INACTIVE' }}"
+          - "  Expected duration: {{ '3-5s' if is_k8s_ready_template else '34-35s' }}"

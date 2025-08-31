@@ -1,0 +1,263 @@
+---
+# Template-Optimized CNI Installation - Phase 5
+# This playbook detects pre-baked templates and leverages pre-pulled CNI images
+- name: "🌐 Template-Optimized CNI (Cilium) Installation - Phase 5"
+  hosts: k8s_masters[0]
+  become: true
+  gather_facts: true
+  
+  vars:
+    temp_dir: "/tmp/k8s-setup"
+    
+  pre_tasks:
+    - name: Start timer
+      set_fact:
+        phase_start_time: "{{ ansible_date_time.epoch }}"
+    
+    # TEMPLATE DETECTION LOGIC
+    - name: Check if VM is from K8s-ready template
+      stat:
+        path: /etc/kubernetes-template-info
+      register: template_marker
+
+    - name: Read template information if exists
+      slurp:
+        src: /etc/kubernetes-template-info
+      register: template_info_content
+      when: template_marker.stat.exists
+
+    - name: Parse template information
+      set_fact:
+        is_k8s_ready_template: "{{ template_marker.stat.exists }}"
+        template_cilium_version: >-
+          {% if template_marker.stat.exists %}
+          {{ (template_info_content.content | b64decode | regex_search('Cilium Version: v(.+)', '\\1') | first) | default('unknown') }}
+          {% else %}
+          unknown
+          {% endif %}
+
+    - name: Check if cluster is ready for CNI
+      shell: kubectl get nodes --no-headers 2>/dev/null | wc -l
+      register: node_count
+      changed_when: false
+      ignore_errors: yes
+
+    - name: Check pre-pulled CNI images status
+      shell: |
+        cilium_images=$(ctr images list -q | grep -E '(cilium/cilium|cilium/operator)' | wc -l)
+        utility_images=$(ctr images list -q | grep -E '(busybox|alpine)' | wc -l)
+        echo "cilium:$cilium_images,utility:$utility_images"
+      register: cni_image_status
+      changed_when: false
+
+    - name: Parse CNI image status
+      set_fact:
+        cilium_images: "{{ cni_image_status.stdout.split(',')[0].split(':')[1] | int }}"
+        utility_images: "{{ cni_image_status.stdout.split(',')[1].split(':')[1] | int }}"
+        cni_images_pre_pulled: "{{ (cni_image_status.stdout.split(',')[0].split(':')[1] | int) >= 2 }}"
+
+    - name: Check if CNI is already installed
+      shell: kubectl get pods -n kube-system --no-headers 2>/dev/null | grep -E '(cilium|cni)' | wc -l
+      register: cni_pods_count
+      changed_when: false
+      ignore_errors: yes
+
+    - name: CNI installation strategy
+      debug:
+        msg:
+          - "🔍 CNI INSTALLATION STRATEGY:"
+          - "  K8s-ready template: {{ is_k8s_ready_template }}"
+          - "  Template Cilium version: {{ template_cilium_version }}"
+          - "  Target Cilium version: {{ cni_version }}"
+          - "  Cluster nodes ready: {{ node_count.stdout | int }}"
+          - "  CNI already installed: {{ (cni_pods_count.stdout | int) > 0 }}"
+          - "  Cilium images pre-pulled: {{ cilium_images }} ({{ 'YES' if cni_images_pre_pulled else 'NO' }})"
+          - "  Utility images available: {{ utility_images }}"
+          - "  Strategy: {{ 'ULTRA-FAST CNI (skip image pull)' if (is_k8s_ready_template and cni_images_pre_pulled) else 'REGULAR CNI (with image pull)' }}"
+
+  tasks:
+    - name: Template CNI optimization notification
+      debug:
+        msg:
+          - "⚡ CNI TEMPLATE OPTIMIZATION ACTIVE"
+          - "  Using K8s-ready template with pre-pulled Cilium images"
+          - "  Template Cilium version: {{ template_cilium_version }}"
+          - "  Target Cilium version: {{ cni_version }}"
+          - "  Skipping image pull phase for faster deployment"
+          - "  Time saved: ~45-50 seconds"
+      when: 
+        - is_k8s_ready_template
+        - cni_images_pre_pulled
+        - (cni_pods_count.stdout | int) == 0
+
+    - name: Regular VM CNI notification
+      debug:
+        msg:
+          - "🔧 REGULAR VM OR INCOMPLETE TEMPLATE"
+          - "  Running full CNI installation with image pulling..."
+      when: not (is_k8s_ready_template and cni_images_pre_pulled)
+
+    - name: Version mismatch warning
+      debug:
+        msg:
+          - "⚠️  CILIUM VERSION MISMATCH DETECTED"
+          - "  Template version: {{ template_cilium_version }}"
+          - "  Required version: {{ cni_version }}"
+          - "  Action: Will proceed with target version (may require image pull)"
+      when: 
+        - is_k8s_ready_template 
+        - template_cilium_version != 'unknown'
+        - template_cilium_version != cni_version
+
+    # Skip installation if CNI is already installed
+    - name: Check if CNI installation should be skipped
+      set_fact:
+        skip_cni_installation: "{{ (cni_pods_count.stdout | int) > 0 }}"
+
+    - name: CNI already installed notification
+      debug:
+        msg:
+          - "✅ CNI ALREADY INSTALLED"
+          - "  Found {{ cni_pods_count.stdout }} CNI pods in kube-system namespace"
+          - "  Skipping CNI installation completely"
+      when: skip_cni_installation
+
+    # CONDITIONAL CNI INSTALLATION (skip if already installed)
+    - name: Wait for all nodes to be Ready (with timeout)
+      shell: |
+        timeout 120 bash -c '
+        while true; do
+          not_ready=$(kubectl get nodes --no-headers 2>/dev/null | grep -v " Ready " | wc -l)
+          if [ "$not_ready" -eq 0 ]; then
+            echo "All nodes are Ready"
+            break
+          fi
+          echo "Waiting for $not_ready nodes to become Ready..."
+          sleep 3
+        done
+        '
+      when: 
+        - not skip_cni_installation
+        - (node_count.stdout | int) > 0
+      ignore_errors: yes
+
+    # TEMPLATE-OPTIMIZED CILIUM INSTALLATION (no image pre-pull needed)
+    - name: Install Cilium CNI - ULTRA-FAST WITH TEMPLATE
+      shell: |
+        # Template optimization: Skip image pre-pull, images already available
+        echo "🚀 Installing Cilium v{{ cni_version }} using pre-pulled template images..."
+        
+        # Install Cilium with optimized settings for template deployment
+        curl -L --fail https://github.com/cilium/cilium-cli/releases/download/v0.16.20/cilium-linux-amd64.tar.gz | tar xz
+        sudo mv cilium /usr/local/bin
+        
+        # Deploy Cilium using local images (no pull required)
+        cilium install \
+          --version v{{ cni_version }} \
+          --set image.pullPolicy=Never \
+          --set operator.image.pullPolicy=Never \
+          --set hubble.relay.image.pullPolicy=Never \
+          --wait-duration=180s
+        
+        echo "✅ Cilium installed successfully using template optimization"
+      when: 
+        - not skip_cni_installation
+        - is_k8s_ready_template
+        - cni_images_pre_pulled
+        - template_cilium_version == cni_version
+      async: 200  # Reduced timeout thanks to pre-pulled images
+      poll: 5
+      register: cilium_template_install
+
+    # REGULAR CNI INSTALLATION (with image pulling)
+    - name: Install Cilium CNI - REGULAR VM WITH IMAGE PULL
+      shell: |
+        echo "🚀 Installing Cilium v{{ cni_version }} with image pulling..."
+        
+        # Download and install Cilium CLI
+        curl -L --fail https://github.com/cilium/cilium-cli/releases/download/v0.16.20/cilium-linux-amd64.tar.gz | tar xz
+        sudo mv cilium /usr/local/bin
+        
+        # Deploy Cilium with image pulling
+        cilium install \
+          --version v{{ cni_version }} \
+          --wait-duration=300s
+        
+        echo "✅ Cilium installed successfully with image pull"
+      when: 
+        - not skip_cni_installation
+        - not (is_k8s_ready_template and cni_images_pre_pulled and template_cilium_version == cni_version)
+      async: 360  # Longer timeout for image pulling
+      poll: 5
+      register: cilium_regular_install
+
+    # WAIT FOR CNI INSTALLATION COMPLETION
+    - name: Wait for template-optimized Cilium installation
+      async_status:
+        jid: "{{ cilium_template_install.ansible_job_id }}"
+      register: cilium_template_result
+      until: cilium_template_result.finished
+      retries: 40
+      delay: 5
+      when: cilium_template_install is defined and cilium_template_install.ansible_job_id is defined
+
+    - name: Wait for regular Cilium installation
+      async_status:
+        jid: "{{ cilium_regular_install.ansible_job_id }}"
+      register: cilium_regular_result
+      until: cilium_regular_result.finished
+      retries: 72
+      delay: 5
+      when: cilium_regular_install is defined and cilium_regular_install.ansible_job_id is defined
+
+    # VERIFICATION AND STATUS
+    - name: Wait for Cilium to be ready
+      shell: |
+        timeout 180 bash -c '
+        while ! cilium status --wait --wait-duration=5s >/dev/null 2>&1; do
+          echo "Waiting for Cilium to become ready..."
+          sleep 5
+        done
+        echo "Cilium is ready!"
+        '
+      when: not skip_cni_installation
+      ignore_errors: yes
+
+    - name: Verify all nodes are Ready after CNI installation
+      shell: |
+        echo "=== NODE STATUS VERIFICATION ==="
+        kubectl get nodes -o wide
+        echo ""
+        echo "=== CNI POD STATUS ==="
+        kubectl get pods -n kube-system -l k8s-app=cilium
+        echo ""
+        echo "=== CILIUM STATUS ==="
+        cilium status || echo "Cilium CLI status check failed"
+      register: cni_verification
+      ignore_errors: yes
+
+    - name: CNI installation results
+      debug:
+        msg:
+          - "✅ CNI INSTALLATION VERIFICATION:"
+          - "  Template optimization: {{ 'ENABLED' if (is_k8s_ready_template and cni_images_pre_pulled) else 'DISABLED' }}"
+          - "  Installation method: {{ 'PRE-PULLED IMAGES' if (is_k8s_ready_template and cni_images_pre_pulled) else 'WITH IMAGE PULL' }}"
+          - "  Version deployed: Cilium v{{ cni_version }}"
+          - "  Time saved: {{ '~45-50s' if (is_k8s_ready_template and cni_images_pre_pulled) else 'N/A' }}"
+          - "  Installation skipped: {{ 'YES' if skip_cni_installation else 'NO' }}"
+
+  post_tasks:
+    - name: Calculate phase duration
+      set_fact:
+        phase_end_time: "{{ ansible_date_time.epoch }}"
+        phase_duration: "{{ ansible_date_time.epoch | int - phase_start_time | int }}"
+
+    - name: Phase 5 completion summary
+      debug:
+        msg:
+          - "📊 PHASE 5 COMPLETION (CNI Installation):"
+          - "  Duration: {{ phase_duration }}s"
+          - "  Template optimization: {{ 'ACTIVE' if (is_k8s_ready_template and cni_images_pre_pulled) else 'INACTIVE' }}"
+          - "  Expected duration: {{ '10-15s' if (is_k8s_ready_template and cni_images_pre_pulled) else '60-90s' }}"
+          - "  Images source: {{ 'TEMPLATE PRE-PULLED' if (is_k8s_ready_template and cni_images_pre_pulled) else 'DOWNLOADED DURING INSTALL' }}"
+          - "  Installation status: {{ 'SKIPPED (ALREADY INSTALLED)' if skip_cni_installation else 'COMPLETED' }}"

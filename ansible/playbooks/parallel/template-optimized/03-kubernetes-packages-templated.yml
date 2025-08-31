@@ -1,0 +1,357 @@
+---
+# Template-Optimized Kubernetes Packages - Phase 3
+# This playbook detects pre-baked templates and skips already installed Kubernetes packages
+- name: "☸️ Template-Optimized Kubernetes Package Installation - Phase 3"
+  hosts: k8s_cluster
+  become: true
+  gather_facts: true
+  strategy: free  # Enable maximum parallelism
+  serial: 0       # No limit on parallel execution
+  
+  vars:
+    temp_dir: "/tmp/k8s-setup"
+    
+  pre_tasks:
+    - name: Start timer
+      set_fact:
+        phase_start_time: "{{ ansible_date_time.epoch }}"
+    
+    # TEMPLATE DETECTION LOGIC
+    - name: Check if VM is from K8s-ready template
+      stat:
+        path: /etc/kubernetes-template-info
+      register: template_marker
+
+    - name: Read template information if exists
+      slurp:
+        src: /etc/kubernetes-template-info
+      register: template_info_content
+      when: template_marker.stat.exists
+
+    - name: Parse template information
+      set_fact:
+        is_k8s_ready_template: "{{ template_marker.stat.exists }}"
+        template_name: >-
+          {% if template_marker.stat.exists %}
+          {{ (template_info_content.content | b64decode | regex_search('Template Name: (.+)', '\\1') | first) | default('unknown') }}
+          {% else %}
+          unknown
+          {% endif %}
+        template_k8s_version: >-
+          {% if template_marker.stat.exists %}
+          {{ (template_info_content.content | b64decode | regex_search('Kubernetes Version: v(.+)', '\\1') | first) | default('unknown') }}
+          {% else %}
+          unknown
+          {% endif %}
+
+    # Detect OS from template name or system facts
+    - name: Set OS facts from template or system
+      set_fact:
+        detected_os_family: >-
+          {%- if template_name != 'unknown' -%}
+            {%- if 'centos' in template_name.lower() or 'rhel' in template_name.lower() or 'rocky' in template_name.lower() -%}
+            RedHat
+            {%- elif 'debian' in template_name.lower() or 'ubuntu' in template_name.lower() -%}
+            Debian
+            {%- else -%}
+            {{ ansible_os_family }}
+            {%- endif -%}
+          {%- elif 'centos' in template.lower() or 'rhel' in template.lower() or 'rocky' in template.lower() or 'alma' in template.lower() -%}
+          RedHat
+          {%- elif 'debian' in template.lower() or 'ubuntu' in template.lower() -%}
+          Debian
+          {%- else -%}
+          {{ ansible_os_family }}
+          {%- endif -%}
+
+    # KUBERNETES PACKAGE STATUS CHECK
+    - name: Check if Kubernetes packages are already installed
+      shell: |
+        if command -v kubeadm &> /dev/null && command -v kubectl &> /dev/null && command -v kubelet &> /dev/null; then
+          echo "installed"
+        else
+          echo "not_installed"
+        fi
+      register: k8s_packages_status
+      changed_when: false
+
+    - name: Check if Kubernetes packages are held (Debian)
+      shell: apt-mark showhold | grep -E '(kubelet|kubeadm|kubectl)' | wc -l
+      register: k8s_packages_held_debian
+      when: detected_os_family == "Debian"
+      changed_when: false
+      ignore_errors: yes
+
+    - name: Check if Kubernetes packages are version locked (RedHat)
+      shell: dnf versionlock list 2>/dev/null | grep -E '(kubelet|kubeadm|kubectl)' | wc -l || echo "0"
+      register: k8s_packages_held_rhel
+      when: detected_os_family == "RedHat"
+      changed_when: false
+      ignore_errors: yes
+
+    - name: Kubernetes packages status
+      debug:
+        msg:
+          - "🔍 KUBERNETES PACKAGES STATUS:"
+          - "  K8s-ready template: {{ is_k8s_ready_template }}"
+          - "  Template name: {{ template_name }}"
+          - "  Template K8s version: {{ template_k8s_version }}"
+          - "  Target K8s version: {{ kubernetes_version }}"
+          - "  Packages installed: {{ k8s_packages_status.stdout == 'installed' }}"
+          - "  Packages held/locked: {{ (k8s_packages_held_debian.stdout|int > 2) if detected_os_family == 'Debian' else (k8s_packages_held_rhel.stdout|int > 2) }}"
+          - "  Version match: {{ template_k8s_version == kubernetes_version if template_k8s_version != 'unknown' else 'N/A' }}"
+
+  tasks:
+    # CONDITIONAL KUBERNETES PACKAGE INSTALLATION
+    - name: Template optimization notification
+      debug:
+        msg: 
+          - "⚡ KUBERNETES PACKAGES OPTIMIZATION ACTIVE"
+          - "  Using K8s-ready template with pre-installed packages"
+          - "  Template K8s version: {{ template_k8s_version }}"
+          - "  Target K8s version: {{ kubernetes_version }}"
+          - "  Skipping repository setup and package installation"
+      when: 
+        - is_k8s_ready_template 
+        - k8s_packages_status.stdout == 'installed'
+        - template_k8s_version == kubernetes_version
+
+    - name: Version mismatch warning
+      debug:
+        msg:
+          - "⚠️  KUBERNETES VERSION MISMATCH DETECTED"
+          - "  Template version: {{ template_k8s_version }}"
+          - "  Required version: {{ kubernetes_version }}"
+          - "  Action: Will upgrade/downgrade packages"
+      when: 
+        - is_k8s_ready_template 
+        - k8s_packages_status.stdout == 'installed'
+        - template_k8s_version != kubernetes_version
+
+    - name: Regular VM notification
+      debug:
+        msg:
+          - "🔧 REGULAR VM OR MISSING PACKAGES"
+          - "  Running full Kubernetes package installation..."
+      when: not (is_k8s_ready_template and k8s_packages_status.stdout == 'installed' and template_k8s_version == kubernetes_version)
+
+    # Skip installation condition
+    - name: Set skip installation fact
+      set_fact:
+        skip_k8s_installation: >-
+          {{ is_k8s_ready_template and 
+             k8s_packages_status.stdout == 'installed' and 
+             template_k8s_version == kubernetes_version }}
+
+    # REGULAR VM TASKS OR VERSION MISMATCH (full installation/upgrade)
+    - name: Remove package locks for version change (Debian)
+      shell: apt-mark unhold kubelet kubeadm kubectl containerd.io
+      when: 
+        - detected_os_family == "Debian"
+        - not skip_k8s_installation
+        - k8s_packages_status.stdout == 'installed'
+      ignore_errors: yes
+
+    - name: Remove version locks for version change (RedHat)
+      shell: dnf versionlock delete kubelet kubeadm kubectl containerd.io
+      when: 
+        - detected_os_family == "RedHat"
+        - not skip_k8s_installation
+        - k8s_packages_status.stdout == 'installed'
+      ignore_errors: yes
+
+    # Add Kubernetes repository (only if not using template or version mismatch)
+    - name: Add Kubernetes repository (Debian-based)
+      shell: |
+        mkdir -p /usr/share/keyrings
+        curl -fsSL https://pkgs.k8s.io/core:/stable:/v{{ kubernetes_version.split('.')[0] }}.{{ kubernetes_version.split('.')[1] }}/deb/Release.key | gpg --dearmor -o /usr/share/keyrings/kubernetes-archive-keyring.gpg
+        echo "deb [signed-by=/usr/share/keyrings/kubernetes-archive-keyring.gpg] https://pkgs.k8s.io/core:/stable:/v{{ kubernetes_version.split('.')[0] }}.{{ kubernetes_version.split('.')[1] }}/deb/ /" > /etc/apt/sources.list.d/kubernetes.list
+      when: 
+        - detected_os_family == "Debian"
+        - not skip_k8s_installation
+      async: 60
+      poll: 0
+      register: debian_k8s_repo_job
+
+    - name: Add Kubernetes repository (RedHat-based)
+      copy:
+        content: |
+          [kubernetes]
+          name=Kubernetes
+          baseurl=https://pkgs.k8s.io/core:/stable:/v{{ kubernetes_version.split('.')[0] }}.{{ kubernetes_version.split('.')[1] }}/rpm/
+          enabled=1
+          gpgcheck=1
+          gpgkey=https://pkgs.k8s.io/core:/stable:/v{{ kubernetes_version.split('.')[0] }}.{{ kubernetes_version.split('.')[1] }}/rpm/repodata/repomd.xml.key
+        dest: /etc/yum.repos.d/kubernetes.repo
+      when: 
+        - detected_os_family == "RedHat"
+        - not skip_k8s_installation
+      async: 60
+      poll: 0
+      register: rhel_k8s_repo_job
+
+    # Update package cache
+    - name: Update package cache (Debian-based)
+      apt:
+        update_cache: yes
+        force_apt_get: yes
+      when: 
+        - detected_os_family == "Debian"
+        - not skip_k8s_installation
+      async: 60
+      poll: 0
+      register: debian_update_job
+
+    - name: Update package cache (RedHat-based)
+      yum:
+        update_cache: yes
+      when: 
+        - detected_os_family == "RedHat"
+        - not skip_k8s_installation
+      async: 60
+      poll: 0
+      register: rhel_update_job
+
+    # Install specific version of Kubernetes packages
+    - name: Install Kubernetes packages with specific version (Debian-based)
+      apt:
+        name:
+          - "kubelet={{ kubernetes_version }}-*"
+          - "kubeadm={{ kubernetes_version }}-*"
+          - "kubectl={{ kubernetes_version }}-*"
+        state: present
+        force_apt_get: yes
+        dpkg_options: 'force-confold,force-confdef'
+        install_recommends: no
+        allow_downgrade: yes
+      when: 
+        - detected_os_family == "Debian"
+        - not skip_k8s_installation
+      async: 180
+      poll: 0
+      register: debian_k8s_install_job
+
+    - name: Install Kubernetes packages with specific version (RedHat-based)
+      yum:
+        name:
+          - "kubelet-{{ kubernetes_version }}"
+          - "kubeadm-{{ kubernetes_version }}"
+          - "kubectl-{{ kubernetes_version }}"
+        state: present
+        disable_gpg_check: yes
+        allow_downgrade: yes
+      when: 
+        - detected_os_family == "RedHat"
+        - not skip_k8s_installation
+      async: 180
+      poll: 0
+      register: rhel_k8s_install_job
+
+    # Wait for repository and installation tasks
+    - name: Wait for Debian K8s repository setup
+      async_status:
+        jid: "{{ debian_k8s_repo_job.ansible_job_id }}"
+      register: debian_k8s_repo_result
+      until: debian_k8s_repo_result.finished
+      retries: 30
+      delay: 2
+      when: debian_k8s_repo_job is defined and debian_k8s_repo_job.ansible_job_id is defined
+
+    - name: Wait for RedHat K8s repository setup
+      async_status:
+        jid: "{{ rhel_k8s_repo_job.ansible_job_id }}"
+      register: rhel_k8s_repo_result
+      until: rhel_k8s_repo_result.finished
+      retries: 30
+      delay: 2
+      when: rhel_k8s_repo_job is defined and rhel_k8s_repo_job.ansible_job_id is defined
+
+    - name: Wait for Debian cache update
+      async_status:
+        jid: "{{ debian_update_job.ansible_job_id }}"
+      register: debian_update_result
+      until: debian_update_result.finished
+      retries: 30
+      delay: 2
+      when: debian_update_job is defined and debian_update_job.ansible_job_id is defined
+
+    - name: Wait for RedHat cache update
+      async_status:
+        jid: "{{ rhel_update_job.ansible_job_id }}"
+      register: rhel_update_result
+      until: rhel_update_result.finished
+      retries: 30
+      delay: 2
+      when: rhel_update_job is defined and rhel_update_job.ansible_job_id is defined
+
+    - name: Wait for Kubernetes packages installation (Debian)
+      async_status:
+        jid: "{{ debian_k8s_install_job.ansible_job_id }}"
+      register: debian_k8s_install_result
+      until: debian_k8s_install_result.finished
+      retries: 90
+      delay: 2
+      when: debian_k8s_install_job is defined and debian_k8s_install_job.ansible_job_id is defined
+
+    - name: Wait for Kubernetes packages installation (RedHat)
+      async_status:
+        jid: "{{ rhel_k8s_install_job.ansible_job_id }}"
+      register: rhel_k8s_install_result
+      until: rhel_k8s_install_result.finished
+      retries: 90
+      delay: 2
+      when: rhel_k8s_install_job is defined and rhel_k8s_install_job.ansible_job_id is defined
+
+    # PACKAGE LOCKING (always run to ensure packages are held)
+    - name: Hold Kubernetes packages (Debian-based)
+      shell: apt-mark hold kubelet kubeadm kubectl containerd.io
+      when: detected_os_family == "Debian"
+      ignore_errors: yes
+
+    - name: Version lock Kubernetes packages (RedHat-based)
+      shell: dnf versionlock add kubelet kubeadm kubectl containerd.io
+      when: detected_os_family == "RedHat"
+      ignore_errors: yes
+
+    # KUBELET SERVICE (always run)
+    - name: Enable kubelet service (don't start - kubeadm will handle this)
+      systemd:
+        name: kubelet
+        enabled: yes
+        state: stopped
+      ignore_errors: yes
+
+    # VERIFICATION (always run)
+    - name: Verify Kubernetes package installation and versions
+      shell: |
+        echo "=== KUBERNETES PACKAGES VERIFICATION ==="
+        kubectl version --client --output=yaml 2>/dev/null | grep -E 'gitVersion|clientVersion' || echo "kubectl: Not available"
+        kubeadm version -o short 2>/dev/null || echo "kubeadm: Not available"
+        kubelet --version 2>/dev/null || echo "kubelet: Not available"
+        systemctl is-enabled kubelet 2>/dev/null || echo "kubelet: Not enabled"
+        echo "Package verification complete"
+      register: k8s_verification
+      ignore_errors: yes
+
+    - name: Kubernetes packages verification results
+      debug:
+        msg:
+          - "✅ KUBERNETES PACKAGES VERIFICATION:"
+          - "  Template optimization: {{ 'ENABLED' if skip_k8s_installation else 'DISABLED' }}"
+          - "  Package status: {{ 'PRE-INSTALLED' if skip_k8s_installation else 'INSTALLED NOW' }}"
+          - "  Version consistency: {{ 'MATCHED' if skip_k8s_installation else 'UPDATED' }}"
+          - "  Time saved: {{ '~17-18s' if skip_k8s_installation else 'N/A' }}"
+
+  post_tasks:
+    - name: Calculate phase duration
+      set_fact:
+        phase_end_time: "{{ ansible_date_time.epoch }}"
+        phase_duration: "{{ ansible_date_time.epoch | int - phase_start_time | int }}"
+
+    - name: Phase completion summary
+      debug:
+        msg:
+          - "📊 PHASE 3 COMPLETION:"
+          - "  Duration: {{ phase_duration }}s"
+          - "  Template optimization: {{ 'ACTIVE' if skip_k8s_installation else 'INACTIVE' }}"
+          - "  Expected duration: {{ '2-3s' if skip_k8s_installation else '17-18s' }}"

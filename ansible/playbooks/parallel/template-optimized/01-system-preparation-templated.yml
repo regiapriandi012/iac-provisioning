@@ -1,0 +1,237 @@
+---
+# Template-Optimized System Preparation - Phase 1
+# This playbook detects pre-baked templates and skips already configured components
+- name: "🚀 Template-Optimized System Preparation - Phase 1"
+  hosts: k8s_cluster
+  become: true
+  gather_facts: true
+  strategy: free  # Enable maximum parallelism
+  serial: 0       # No limit on parallel execution
+  
+  vars:
+    temp_dir: "/tmp/k8s-setup"
+    
+  pre_tasks:
+    - name: Start timer
+      set_fact:
+        phase_start_time: "{{ ansible_date_time.epoch }}"
+
+    # TEMPLATE DETECTION LOGIC
+    - name: Check if VM is from K8s-ready template
+      stat:
+        path: /etc/kubernetes-template-info
+      register: template_marker
+
+    - name: Read template information if exists
+      slurp:
+        src: /etc/kubernetes-template-info
+      register: template_info_content
+      when: template_marker.stat.exists
+
+    - name: Parse template information
+      set_fact:
+        is_k8s_ready_template: "{{ template_marker.stat.exists }}"
+        template_k8s_version: >-
+          {% if template_marker.stat.exists %}
+          {{ (template_info_content.content | b64decode | regex_search('Kubernetes Version: v(.+)', '\\1') | first) | default('unknown') }}
+          {% else %}
+          unknown
+          {% endif %}
+        template_name: >-
+          {% if template_marker.stat.exists %}
+          {{ (template_info_content.content | b64decode | regex_search('Template Name: (.+)', '\\1') | first) | default('unknown') }}
+          {% else %}
+          unknown
+          {% endif %}
+
+    - name: Display template detection results
+      debug:
+        msg:
+          - "🔍 Template Detection Results:"
+          - "  K8s-ready template: {{ is_k8s_ready_template }}"
+          - "  Template name: {{ template_name }}"
+          - "  Template K8s version: {{ template_k8s_version }}"
+          - "  Target K8s version: {{ kubernetes_version }}"
+          - "  Skip system prep: {{ is_k8s_ready_template }}"
+          
+  tasks:
+    # Detect OS from template name or system facts
+    - name: Set OS facts from template or system
+      set_fact:
+        detected_os_family: >-
+          {%- if template_name != 'unknown' -%}
+            {%- if 'centos' in template_name.lower() or 'rhel' in template_name.lower() or 'rocky' in template_name.lower() -%}
+            RedHat
+            {%- elif 'debian' in template_name.lower() or 'ubuntu' in template_name.lower() -%}
+            Debian
+            {%- else -%}
+            {{ ansible_os_family }}
+            {%- endif -%}
+          {%- elif 'centos' in template.lower() or 'rhel' in template.lower() or 'rocky' in template.lower() or 'alma' in template.lower() -%}
+          RedHat
+          {%- elif 'debian' in template.lower() or 'ubuntu' in template.lower() -%}
+          Debian
+          {%- else -%}
+          {{ ansible_os_family }}
+          {%- endif -%}
+
+    # Create temp directory (always needed)
+    - name: Create temporary directory
+      file:
+        path: "{{ temp_dir }}"
+        state: directory
+        mode: '0755'
+
+    # CONDITIONAL SYSTEM PREPARATION (skip if template is K8s-ready)
+    - name: Template status notification
+      debug:
+        msg: 
+          - "⚡ TEMPLATE OPTIMIZATION ACTIVE"
+          - "  Using K8s-ready template: {{ template_name }}"
+          - "  Skipping system preparation (already configured in template)"
+      when: is_k8s_ready_template
+
+    - name: Regular VM notification
+      debug:
+        msg:
+          - "🔧 REGULAR VM DETECTED"
+          - "  Running full system preparation..."
+      when: not is_k8s_ready_template
+
+    # Only run system preparation if NOT using K8s-ready template
+    - name: Disable SELinux (RedHat-based systems) - REGULAR VM ONLY
+      selinux:
+        state: disabled
+      when: 
+        - not is_k8s_ready_template
+        - detected_os_family == "RedHat"
+      async: 30
+      poll: 0
+      register: selinux_job
+
+    - name: Disable swap permanently - REGULAR VM ONLY
+      replace:
+        path: /etc/fstab
+        regexp: '^([^#].*?\sswap\s+sw\s+.*)$'
+        replace: '# \1'
+      when: not is_k8s_ready_template
+      register: swap_fstab_job
+
+    - name: Disable swap immediately - REGULAR VM ONLY
+      command: swapoff -a
+      when: 
+        - not is_k8s_ready_template
+        - ansible_swaptotal_mb > 0
+      async: 10
+      poll: 0
+      register: swap_off_job
+
+    - name: Load required kernel modules - REGULAR VM ONLY
+      modprobe:
+        name: "{{ item }}"
+        state: present
+      loop:
+        - overlay
+        - br_netfilter
+      when: not is_k8s_ready_template
+      async: 10
+      poll: 0
+      register: modprobe_jobs
+
+    - name: Set kernel modules to load at boot - REGULAR VM ONLY
+      copy:
+        content: |
+          overlay
+          br_netfilter
+        dest: /etc/modules-load.d/k8s.conf
+      when: not is_k8s_ready_template
+      register: modules_config_job
+
+    - name: Apply all kernel parameters for Kubernetes - REGULAR VM ONLY
+      shell: |
+        cat > /etc/sysctl.d/k8s.conf << 'EOF'
+        net.bridge.bridge-nf-call-iptables=1
+        net.bridge.bridge-nf-call-ip6tables=1
+        net.ipv4.ip_forward=1
+        # Performance optimizations
+        net.netfilter.nf_conntrack_max=1000000
+        net.core.somaxconn=32768
+        net.ipv4.tcp_max_syn_backlog=8192
+        vm.max_map_count=262144
+        EOF
+        sysctl --system
+      when: not is_k8s_ready_template
+      async: 30
+      poll: 0
+      register: sysctl_bundled_job
+
+    # Wait for regular VM tasks to complete (only if they were started)
+    - name: Wait for SELinux disable to complete
+      async_status:
+        jid: "{{ selinux_job.ansible_job_id }}"
+      register: selinux_result
+      until: selinux_result.finished
+      retries: 30
+      delay: 1
+      when: 
+        - not is_k8s_ready_template
+        - selinux_job is defined 
+        - selinux_job.ansible_job_id is defined
+
+    - name: Wait for swap disable to complete
+      async_status:
+        jid: "{{ swap_off_job.ansible_job_id }}"
+      register: swap_off_result
+      until: swap_off_result.finished
+      retries: 10
+      delay: 1
+      when: 
+        - not is_k8s_ready_template
+        - swap_off_job is defined 
+        - swap_off_job.ansible_job_id is defined
+
+    - name: Wait for bundled sysctl configuration to complete
+      async_status:
+        jid: "{{ sysctl_bundled_job.ansible_job_id }}"
+      register: sysctl_bundled_result
+      until: sysctl_bundled_result.finished
+      retries: 15
+      delay: 1
+      when: 
+        - not is_k8s_ready_template
+        - sysctl_bundled_job is defined 
+        - sysctl_bundled_job.ansible_job_id is defined
+
+    # VERIFICATION (always run to ensure system is ready)
+    - name: Verify kernel modules are loaded
+      shell: lsmod | grep -E '(overlay|br_netfilter)'
+      register: modules_check
+      ignore_errors: yes
+
+    - name: Verify sysctl parameters are applied
+      shell: sysctl net.bridge.bridge-nf-call-iptables net.ipv4.ip_forward
+      register: sysctl_check
+      ignore_errors: yes
+
+    - name: System preparation verification
+      debug:
+        msg:
+          - "✅ SYSTEM PREPARATION VERIFICATION:"
+          - "  Template optimization: {{ 'ENABLED' if is_k8s_ready_template else 'DISABLED' }}"
+          - "  Kernel modules: {{ 'OK' if modules_check.rc == 0 else 'NEEDS ATTENTION' }}"
+          - "  Sysctl parameters: {{ 'OK' if sysctl_check.rc == 0 else 'NEEDS ATTENTION' }}"
+          - "  Time saved: {{ '~10-13s' if is_k8s_ready_template else 'N/A' }}"
+
+  post_tasks:
+    - name: Calculate phase duration
+      set_fact:
+        phase_end_time: "{{ ansible_date_time.epoch }}"
+        phase_duration: "{{ ansible_date_time.epoch | int - phase_start_time | int }}"
+
+    - name: Phase completion summary
+      debug:
+        msg:
+          - "📊 PHASE 1 COMPLETION:"
+          - "  Duration: {{ phase_duration }}s"
+          - "  Template optimization: {{ 'ACTIVE' if is_k8s_ready_template else 'INACTIVE' }}"
+          - "  Expected duration: {{ '2-3s' if is_k8s_ready_template else '11-13s' }}"

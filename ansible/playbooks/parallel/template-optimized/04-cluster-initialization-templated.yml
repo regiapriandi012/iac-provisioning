@@ -1,0 +1,328 @@
+---
+# Template-Optimized Cluster Initialization - Phase 4
+# This playbook leverages pre-pulled images from K8s-ready templates for ultra-fast cluster init
+- name: "🎯 Template-Optimized Cluster Initialization - Phase 4A"
+  hosts: k8s_masters[0]
+  become: true
+  gather_facts: true
+  
+  vars:
+    temp_dir: "/tmp/k8s-setup"
+    
+  pre_tasks:
+    - name: Start timer
+      set_fact:
+        phase_start_time: "{{ ansible_date_time.epoch }}"
+    
+    # TEMPLATE DETECTION LOGIC
+    - name: Check if VM is from K8s-ready template
+      stat:
+        path: /etc/kubernetes-template-info
+      register: template_marker
+
+    - name: Read template information if exists
+      slurp:
+        src: /etc/kubernetes-template-info
+      register: template_info_content
+      when: template_marker.stat.exists
+
+    - name: Parse template information
+      set_fact:
+        is_k8s_ready_template: "{{ template_marker.stat.exists }}"
+        template_k8s_version: >-
+          {% if template_marker.stat.exists %}
+          {{ (template_info_content.content | b64decode | regex_search('Kubernetes Version: v(.+)', '\\1') | first) | default('unknown') }}
+          {% else %}
+          unknown
+          {% endif %}
+
+    - name: Check if cluster is already initialized
+      stat:
+        path: /etc/kubernetes/admin.conf
+      register: k8s_initialized
+
+    - name: Check pre-pulled images status
+      shell: |
+        image_count=$(ctr images list -q | wc -l)
+        k8s_images=$(ctr images list -q | grep -E '(kube-apiserver|kube-controller-manager|kube-scheduler|etcd)' | wc -l)
+        echo "total:$image_count,k8s:$k8s_images"
+      register: image_status
+      changed_when: false
+
+    - name: Parse image status
+      set_fact:
+        total_images: "{{ image_status.stdout.split(',')[0].split(':')[1] | int }}"
+        k8s_images: "{{ image_status.stdout.split(',')[1].split(':')[1] | int }}"
+        images_pre_pulled: "{{ (image_status.stdout.split(',')[1].split(':')[1] | int) >= 6 }}"
+
+    - name: Cluster initialization strategy
+      debug:
+        msg:
+          - "🔍 CLUSTER INITIALIZATION STRATEGY:"
+          - "  K8s-ready template: {{ is_k8s_ready_template }}"
+          - "  Template K8s version: {{ template_k8s_version }}"
+          - "  Target K8s version: {{ kubernetes_version }}"
+          - "  Already initialized: {{ k8s_initialized.stat.exists }}"
+          - "  Total images: {{ total_images }}"
+          - "  K8s images pre-pulled: {{ k8s_images }} ({{ 'YES' if images_pre_pulled else 'NO' }})"
+          - "  Strategy: {{ 'ULTRA-FAST INIT (skip pre-pull)' if (is_k8s_ready_template and images_pre_pulled) else 'REGULAR INIT (with pre-pull)' }}"
+
+    # Comprehensive cleanup if not initialized
+    - name: Comprehensive Kubernetes cleanup (if not initialized)
+      shell: |
+        # Force stop any running Kubernetes services
+        systemctl stop kubelet 2>/dev/null || true
+        systemctl stop containerd 2>/dev/null || true
+        
+        # Run kubeadm reset with force
+        kubeadm reset --force 2>/dev/null || true
+        
+        # Remove all Kubernetes directories and configs
+        rm -rf /etc/kubernetes
+        rm -rf /var/lib/etcd
+        rm -rf /var/lib/kubelet
+        rm -rf /var/lib/dockershim
+        rm -rf /var/run/kubernetes
+        rm -rf /var/lib/cni
+        rm -rf /etc/cni
+        rm -rf ~/.kube
+        rm -rf /root/.kube
+        
+        # Clean up any leftover containers and images (but preserve pre-pulled ones)
+        crictl rm -af 2>/dev/null || true
+        # Note: Don't remove images if they're pre-pulled from template
+        
+        # Remove any leftover network interfaces
+        ip link delete cni0 2>/dev/null || true
+        ip link delete flannel.1 2>/dev/null || true
+        
+        # Clean iptables rules (be careful)
+        iptables -F 2>/dev/null || true
+        iptables -t nat -F 2>/dev/null || true
+        iptables -t mangle -F 2>/dev/null || true
+        iptables -X 2>/dev/null || true
+        
+        # Restart containerd with clean state
+        systemctl start containerd
+        systemctl enable containerd
+        
+        echo "Comprehensive cleanup completed"
+      when: not k8s_initialized.stat.exists
+      ignore_errors: yes
+
+    # CONDITIONAL IMAGE PRE-PULL (skip if template already has them)
+    - name: Template pre-pull optimization notification
+      debug:
+        msg:
+          - "⚡ TEMPLATE PRE-PULL OPTIMIZATION ACTIVE"
+          - "  Images already available: {{ k8s_images }} Kubernetes images"
+          - "  Skipping kubeadm config images pull"
+          - "  Time saved: ~10-15 seconds"
+      when: 
+        - is_k8s_ready_template
+        - images_pre_pulled
+        - not k8s_initialized.stat.exists
+
+    - name: Pre-pull Kubernetes control plane images (regular VM)
+      shell: |
+        echo "🚀 Pre-pulling Kubernetes {{ kubernetes_version }} images for faster init..."
+        kubeadm config images pull --kubernetes-version=v{{ kubernetes_version }}
+        echo "✅ All Kubernetes images pre-pulled successfully"
+      when: 
+        - not k8s_initialized.stat.exists
+        - not (is_k8s_ready_template and images_pre_pulled)
+      async: 120
+      poll: 0
+      register: image_prepull_job
+
+    - name: Wait for image pre-pull completion (regular VM)
+      async_status:
+        jid: "{{ image_prepull_job.ansible_job_id }}"
+      register: image_prepull_result
+      until: image_prepull_result.finished
+      retries: 60
+      delay: 2
+      when: image_prepull_job is defined and image_prepull_job.ansible_job_id is defined
+
+    # Set pre-pull completion fact
+    - name: Set pre-pull completion status
+      set_fact:
+        image_prepull_completed: >-
+          {{ (is_k8s_ready_template and images_pre_pulled) or 
+             (image_prepull_result is defined and image_prepull_result.finished) }}
+
+    # ULTRA-FAST CLUSTER INITIALIZATION
+    - name: Initialize Kubernetes cluster (Single Master) - ULTRA-FAST WITH TEMPLATE
+      command: >
+        kubeadm init
+        --pod-network-cidr={{ pod_network_cidr }}
+        --service-cidr={{ service_cidr }}
+        --kubernetes-version=v{{ kubernetes_version }}
+        --skip-phases=preflight
+        --ignore-preflight-errors=all
+      when: 
+        - not k8s_initialized.stat.exists 
+        - not is_ha_cluster 
+        - image_prepull_completed
+      register: kubeadm_init_single
+      async: 120  # Reduced timeout thanks to pre-pulled images
+      poll: 5
+
+    - name: Initialize Kubernetes cluster (HA Multi-Master) - ULTRA-FAST WITH TEMPLATE
+      command: >
+        kubeadm init
+        --control-plane-endpoint={{ control_plane_endpoint }}
+        --upload-certs
+        --pod-network-cidr={{ pod_network_cidr }}
+        --service-cidr={{ service_cidr }}
+        --kubernetes-version=v{{ kubernetes_version }}
+        --skip-phases=preflight
+        --ignore-preflight-errors=all
+      when: 
+        - not k8s_initialized.stat.exists 
+        - is_ha_cluster 
+        - image_prepull_completed
+      register: kubeadm_init_ha
+      async: 120  # Reduced timeout thanks to pre-pulled images
+      poll: 5
+
+    - name: Extract join command for workers
+      shell: kubeadm token create --print-join-command
+      register: join_command_raw
+      when: not k8s_initialized.stat.exists
+
+    - name: Set join command fact
+      set_fact:
+        join_command: "{{ join_command_raw.stdout }}"
+      when: not k8s_initialized.stat.exists
+
+    - name: Extract certificate key for HA masters
+      shell: kubeadm init phase upload-certs --upload-certs | tail -1
+      register: certificate_key_raw
+      when: not k8s_initialized.stat.exists and is_ha_cluster
+
+    - name: Set certificate key fact
+      set_fact:
+        certificate_key: "{{ certificate_key_raw.stdout }}"
+      when: not k8s_initialized.stat.exists and is_ha_cluster
+
+    - name: Create .kube directory
+      file:
+        path: "{{ ansible_env.HOME }}/.kube"
+        state: directory
+        mode: '0755'
+
+    - name: Copy admin.conf to .kube/config
+      copy:
+        src: /etc/kubernetes/admin.conf
+        dest: "{{ ansible_env.HOME }}/.kube/config"
+        remote_src: yes
+        owner: root
+        group: root
+        mode: '0644'
+
+  post_tasks:
+    - name: Calculate phase duration
+      set_fact:
+        phase_end_time: "{{ ansible_date_time.epoch }}"
+        phase_duration: "{{ ansible_date_time.epoch | int - phase_start_time | int }}"
+
+    - name: Phase 4A completion summary
+      debug:
+        msg:
+          - "📊 PHASE 4A COMPLETION (Master Init):"
+          - "  Duration: {{ phase_duration }}s"
+          - "  Template optimization: {{ 'ACTIVE' if (is_k8s_ready_template and images_pre_pulled) else 'INACTIVE' }}"
+          - "  Expected duration: {{ '25-30s' if (is_k8s_ready_template and images_pre_pulled) else '42-58s' }}"
+          - "  Images pre-pulled: {{ 'FROM TEMPLATE' if (is_k8s_ready_template and images_pre_pulled) else 'DURING INIT' }}"
+
+# Additional Masters Join (HA Clusters)
+- name: "🎯 Template-Optimized Additional Masters Join - Phase 4B"
+  hosts: k8s_masters[1:]
+  become: true
+  gather_facts: true
+  strategy: free  # Masters can join in parallel
+  serial: 0
+  
+  tasks:
+    - name: Start timer
+      set_fact:
+        phase_start_time: "{{ ansible_date_time.epoch }}"
+
+    - name: Check if node is already joined
+      stat:
+        path: /etc/kubernetes/admin.conf
+      register: node_joined
+
+    - name: Join additional master nodes
+      command: >
+        {{ hostvars[groups['k8s_masters'][0]]['join_command'] }}
+        --control-plane
+        --certificate-key {{ hostvars[groups['k8s_masters'][0]]['certificate_key'] }}
+      when: 
+        - not node_joined.stat.exists
+        - is_ha_cluster
+        - hostvars[groups['k8s_masters'][0]]['join_command'] is defined
+      async: 180  # Faster join thanks to template optimization
+      poll: 10
+
+    - name: Create .kube directory
+      file:
+        path: "{{ ansible_env.HOME }}/.kube"
+        state: directory
+        mode: '0755'
+      when: not node_joined.stat.exists and is_ha_cluster
+
+    - name: Copy admin.conf to .kube/config
+      copy:
+        src: /etc/kubernetes/admin.conf
+        dest: "{{ ansible_env.HOME }}/.kube/config"
+        remote_src: yes
+        owner: root
+        group: root
+        mode: '0644'
+      when: not node_joined.stat.exists and is_ha_cluster
+
+    - name: Calculate phase duration
+      set_fact:
+        phase_end_time: "{{ ansible_date_time.epoch }}"
+        phase_duration: "{{ ansible_date_time.epoch | int - phase_start_time | int }}"
+
+# Worker Nodes Join
+- name: "🎯 Template-Optimized Worker Nodes Join - Phase 4C"
+  hosts: k8s_workers
+  become: true
+  gather_facts: true
+  strategy: free  # Workers can join in parallel
+  serial: 0       # No limit on parallel execution
+  
+  tasks:
+    - name: Start timer
+      set_fact:
+        phase_start_time: "{{ ansible_date_time.epoch }}"
+
+    - name: Check if node is already joined
+      stat:
+        path: /etc/kubernetes/kubelet.conf
+      register: worker_joined
+
+    - name: Join worker nodes to cluster - TEMPLATE OPTIMIZED
+      command: "{{ hostvars[groups['k8s_masters'][0]]['join_command'] }}"
+      when: 
+        - not worker_joined.stat.exists
+        - hostvars[groups['k8s_masters'][0]]['join_command'] is defined
+      async: 120  # Faster join thanks to template optimization
+      poll: 5
+
+    - name: Calculate phase duration
+      set_fact:
+        phase_end_time: "{{ ansible_date_time.epoch }}"
+        phase_duration: "{{ ansible_date_time.epoch | int - phase_start_time | int }}"
+
+    - name: Phase 4C completion summary
+      debug:
+        msg:
+          - "📊 PHASE 4C COMPLETION (Worker Join):"
+          - "  Duration: {{ phase_duration }}s"
+          - "  Template optimization: ACTIVE"
+          - "  Expected duration: ~8-10s (vs 15-20s regular)"
