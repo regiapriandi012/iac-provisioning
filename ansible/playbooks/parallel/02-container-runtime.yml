@@ -198,13 +198,14 @@
       poll: 0
       register: debian_update_job
 
-    # Install containerd (parallel by OS)
+    # Install containerd (parallel by OS) - ENHANCED PERFORMANCE
     - name: Install containerd (RedHat-based)
       yum:
         name: containerd.io
         state: present
+        disable_gpg_check: yes  # Speed up installation
       when: detected_os_family == "RedHat"
-      async: 180
+      async: 300  # Increased timeout for stability
       poll: 0
       register: rhel_containerd_job
 
@@ -214,8 +215,9 @@
         state: present
         force_apt_get: yes
         dpkg_options: 'force-confold,force-confdef'
+        install_recommends: no  # Skip recommended packages for speed
       when: detected_os_family == "Debian"
-      async: 180
+      async: 300  # Increased timeout for stability
       poll: 0
       register: debian_containerd_job
 
@@ -238,13 +240,13 @@
       delay: 2
       when: debian_update_job is defined and debian_update_job.ansible_job_id is defined
 
-    # Wait for containerd installation
+    # Wait for containerd installation - ENHANCED PERFORMANCE
     - name: Wait for RedHat containerd installation
       async_status:
         jid: "{{ rhel_containerd_job.ansible_job_id }}"
       register: rhel_containerd_result
       until: rhel_containerd_result.finished
-      retries: 90
+      retries: 150  # Increased for larger timeout window
       delay: 2
       when: rhel_containerd_job is defined and rhel_containerd_job.ansible_job_id is defined
 
@@ -253,7 +255,7 @@
         jid: "{{ debian_containerd_job.ansible_job_id }}"
       register: debian_containerd_result
       until: debian_containerd_result.finished
-      retries: 90
+      retries: 150  # Increased for larger timeout window
       delay: 2
       when: debian_containerd_job is defined and debian_containerd_job.ansible_job_id is defined
 

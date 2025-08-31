@@ -51,13 +51,22 @@
       delay: 2
       when: cilium_cli_job is defined and cilium_cli_job.ansible_job_id is defined
 
-    - name: Install Cilium CNI
-      shell: cilium install --version {{ cni_version }}
+    - name: Install Cilium CNI with ultra-fast configuration
+      shell: |
+        cilium install \
+          --version {{ cni_version }} \
+          --set operator.replicas=2 \
+          --set config.ipam=cluster-pool \
+          --set-string config.cluster-pool-ipv4-cidr={{ pod_network_cidr }} \
+          --set hubble.relay.enabled=true \
+          --set hubble.ui.enabled=true \
+          --set kubeProxyReplacement=partial \
+          --wait=false
       when: 
         - cni_installed.stdout == "0"
         - cni_type == "cilium"
         - cilium_cli_result is defined and cilium_cli_result.finished
-      async: 180
+      async: 240  # Increased timeout
       poll: 0
       register: cilium_install_job
 
@@ -114,13 +123,13 @@
       poll: 0
       register: weave_install_job
 
-    # Wait for installations to complete
+    # Wait for installations to complete - ENHANCED TIMEOUTS
     - name: Wait for Cilium CNI installation
       async_status:
         jid: "{{ cilium_install_job.ansible_job_id }}"
       register: cilium_install_result
       until: cilium_install_result.finished
-      retries: 90
+      retries: 120  # Increased for 240s timeout
       delay: 2
       when: cilium_install_job is defined and cilium_install_job.ansible_job_id is defined
 
@@ -160,15 +169,23 @@
       delay: 2
       when: weave_install_job is defined and weave_install_job.ansible_job_id is defined
 
-    # Special handling for Cilium status check
-    - name: Wait for Cilium to be ready
-      shell: cilium status --wait
+    # Special handling for Cilium status check - ULTRA OPTIMIZED
+    - name: Wait for Cilium to be ready with fast polling
+      shell: |
+        # Fast Cilium readiness check with timeout
+        timeout 180 bash -c '
+        while ! cilium status --brief | grep -q "OK"; do
+          echo "Waiting for Cilium readiness..."
+          sleep 5
+        done
+        echo "Cilium is ready!"
+        '
       when: 
         - cni_installed.stdout == "0"
         - cni_type == "cilium"
         - cilium_install_result is defined and cilium_install_result.finished
-      async: 300
-      poll: 10
+      async: 240
+      poll: 5  # Faster polling
 
     # Generic wait for CNI pods to be ready (parallel check)
     - name: Wait for CNI pods to be ready
