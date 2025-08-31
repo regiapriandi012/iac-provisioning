@@ -17,11 +17,8 @@
 
 - name: "🚀 Template-Optimized Kubernetes Cluster Deployment"
   hosts: localhost
-  gather_facts: false
+  gather_facts: true
   
-  vars:
-    deployment_start_time: "{{ ansible_date_time.epoch }}"
-    
   pre_tasks:
     - name: Start deployment timer
       set_fact:
