@@ -60,6 +60,10 @@ log "📦 Phase 1: Basic system setup and updates"
 log "Updating package lists..."
 dnf update -y -q
 
+# Install EPEL repository for additional packages
+log "Installing EPEL repository..."
+dnf install -y -q epel-release
+
 log "Installing essential packages..."
 dnf install -y -q \
     openssh-server \
@@ -310,7 +314,7 @@ log "🎨 Phase 10: Pre-installing LABNGOPREK cluster enhancements"
 
 # Install Zsh for better terminal experience
 log "Installing Zsh..."
-dnf install -y zsh git curl wget
+dnf install -y -q zsh git curl wget
 
 # Install Oh My Zsh for root user (non-interactive)
 log "Installing Oh My Zsh for root..."
