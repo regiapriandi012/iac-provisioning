@@ -48,13 +48,13 @@
         has_pre_installed_enhancements: "{{ enhancement_marker.stat.exists }}"
         template_name: >-
           {% if template_marker.stat.exists %}
-          {{ (template_info_content.content | b64decode | regex_search('Template Name: (.+)', '\\1') | first) | default('unknown') }}
+          {{ (template_info_content.content | b64decode | regex_search('Template Name: (.+)', '\\1') ) | default('unknown') }}
           {% else %}
           unknown
           {% endif %}
         enhancement_template_version: >-
           {% if enhancement_marker.stat.exists %}
-          {{ (enhancement_info_content.content | b64decode | regex_search('Template Version: (.+)', '\\1') | first) | default('1.0') }}
+          {{ (enhancement_info_content.content | b64decode | regex_search('Template Version: (.+)', '\\1') ) | default('1.0') }}
           {% else %}
           none
           {% endif %}

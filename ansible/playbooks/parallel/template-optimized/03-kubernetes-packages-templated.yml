@@ -33,13 +33,13 @@
         is_k8s_ready_template: "{{ template_marker.stat.exists }}"
         template_name: >-
           {% if template_marker.stat.exists %}
-          {{ (template_info_content.content | b64decode | regex_search('Template Name: (.+)', '\\1') | first) | default('unknown') }}
+          {{ (template_info_content.content | b64decode | regex_search('Template Name: (.+)', '\\1')) | default('unknown') }}
           {% else %}
           unknown
           {% endif %}
         template_k8s_version: >-
           {% if template_marker.stat.exists %}
-          {{ (template_info_content.content | b64decode | regex_search('Kubernetes Version: v(.+)', '\\1') | first) | default('unknown') }}
+          {{ (template_info_content.content | b64decode | regex_search('Kubernetes Version: v(.+)', '\\1')) | default('unknown') }}
           {% else %}
           unknown
           {% endif %}
