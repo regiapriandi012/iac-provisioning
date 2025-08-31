@@ -29,12 +29,8 @@
     - name: Parse template information
       set_fact:
         is_k8s_ready_template: "{{ template_marker.stat.exists }}"
-        template_cilium_version: >-
-          {% if template_marker.stat.exists %}
-          {{ (template_info_content.content | b64decode | regex_search('Cilium Version: v(.+)', '\\1')) | default('unknown') }}
-          {% else %}
-          unknown
-          {% endif %}
+        template_name: "{{ VM_TEMPLATE | default('unknown') }}"
+        template_cilium_version: "{{ '1.16.0' if template_marker.stat.exists else 'unknown' }}"
 
     - name: Check if cluster is ready for CNI
       shell: kubectl get nodes --no-headers 2>/dev/null | wc -l

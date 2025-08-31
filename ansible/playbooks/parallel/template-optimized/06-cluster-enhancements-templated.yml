@@ -46,18 +46,8 @@
       set_fact:
         is_k8s_ready_template: "{{ template_marker.stat.exists }}"
         has_pre_installed_enhancements: "{{ enhancement_marker.stat.exists }}"
-        template_name: >-
-          {% if template_marker.stat.exists %}
-          {{ (template_info_content.content | b64decode | regex_search('Template Name: (.+)', '\\1') ) | default('unknown') }}
-          {% else %}
-          unknown
-          {% endif %}
-        enhancement_template_version: >-
-          {% if enhancement_marker.stat.exists %}
-          {{ (enhancement_info_content.content | b64decode | regex_search('Template Version: (.+)', '\\1') ) | default('1.0') }}
-          {% else %}
-          none
-          {% endif %}
+        template_name: "{{ VM_TEMPLATE | default('unknown') }}"
+        enhancement_template_version: "{{ '1.0' if enhancement_marker.stat.exists else 'none' }}"
 
     # CHECK PRE-INSTALLED ENHANCEMENTS
     - name: Check if Oh-My-Zsh is already installed

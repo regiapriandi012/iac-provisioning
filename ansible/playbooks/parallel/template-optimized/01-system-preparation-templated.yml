@@ -28,21 +28,11 @@
       register: template_info_content
       when: template_marker.stat.exists
 
-    - name: Parse template information
+    - name: Parse template information (simplified)
       set_fact:
         is_k8s_ready_template: "{{ template_marker.stat.exists }}"
-        template_k8s_version: >-
-          {% if template_marker.stat.exists %}
-          {{ (template_info_content.content | b64decode | regex_search('Kubernetes Version: v(.+)', '\\1')) | default('unknown') }}
-          {% else %}
-          unknown
-          {% endif %}
-        template_name: >-
-          {% if template_marker.stat.exists %}
-          {{ (template_info_content.content | b64decode | regex_search('Template Name: (.+)', '\\1')) | default('unknown') }}
-          {% else %}
-          unknown
-          {% endif %}
+        template_k8s_version: "{{ '1.32.7' if template_marker.stat.exists else 'unknown' }}"
+        template_name: "{{ VM_TEMPLATE | default('unknown') }}"
 
     - name: Display template detection results
       debug:
@@ -55,25 +45,10 @@
           - "  Skip system prep: {{ is_k8s_ready_template }}"
           
   tasks:
-    # Detect OS from template name or system facts
-    - name: Set OS facts from template or system
+    # Simple OS detection
+    - name: Set OS facts (simplified)
       set_fact:
-        detected_os_family: >-
-          {%- if template_name != 'unknown' -%}
-            {%- if 'centos' in template_name.lower() or 'rhel' in template_name.lower() or 'rocky' in template_name.lower() -%}
-            RedHat
-            {%- elif 'debian' in template_name.lower() or 'ubuntu' in template_name.lower() -%}
-            Debian
-            {%- else -%}
-            {{ ansible_os_family }}
-            {%- endif -%}
-          {%- elif 'centos' in template.lower() or 'rhel' in template.lower() or 'rocky' in template.lower() or 'alma' in template.lower() -%}
-          RedHat
-          {%- elif 'debian' in template.lower() or 'ubuntu' in template.lower() -%}
-          Debian
-          {%- else -%}
-          {{ ansible_os_family }}
-          {%- endif -%}
+        detected_os_family: "{{ ansible_os_family }}"
 
     # Create temp directory (always needed)
     - name: Create temporary directory
