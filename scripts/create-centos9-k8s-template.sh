@@ -163,9 +163,23 @@ containerd config default > /etc/containerd/config.toml
 # Configure containerd to use systemd cgroup driver (required for Kubernetes)
 sed -i 's/SystemdCgroup = false/SystemdCgroup = true/' /etc/containerd/config.toml
 
+# Enable CRI plugin explicitly
+sed -i 's/disabled_plugins/#disabled_plugins/' /etc/containerd/config.toml
+
+# Registry configuration is handled by default containerd config
+log "Using default containerd registry configuration"
+
+# Ensure CRI plugin is enabled
+if ! grep -q "disabled_plugins.*cri" /etc/containerd/config.toml; then
+    log "CRI plugin configuration verified"
+fi
+
 # Enable and start containerd
 systemctl enable containerd
-systemctl start containerd
+systemctl restart containerd
+
+# Wait a moment for containerd to fully start
+sleep 3
 
 # Verify containerd is running
 if systemctl is-active --quiet containerd; then
@@ -195,11 +209,25 @@ EOF
 
 log "Created crictl configuration"
 
-# Verify crictl works
+# Verify crictl works with improved error handling
+log "Verifying crictl and CRI runtime..."
 if crictl info > /dev/null 2>&1; then
     log "✅ crictl configured successfully"
+    log "✅ CRI runtime API is working"
 else
-    warning "crictl configuration may need adjustment"
+    warning "Testing CRI runtime with containerd restart..."
+    systemctl restart containerd
+    sleep 5
+    
+    if crictl info > /dev/null 2>&1; then
+        log "✅ crictl working after containerd restart"
+    else
+        error "CRI runtime API still not working. Check containerd configuration."
+        log "Attempting crictl version check..."
+        crictl version || true
+        log "Attempting crictl info with debug..."
+        crictl info || true
+    fi
 fi
 
 # ======================================================================
@@ -224,6 +252,10 @@ dnf update -y -q
 # Install Kubernetes packages
 log "Installing kubelet, kubeadm, and kubectl..."
 dnf install -y -q kubelet kubeadm kubectl
+
+# Install DNF versionlock plugin
+log "Installing DNF versionlock plugin..."
+dnf install -y -q python3-dnf-plugin-versionlock
 
 # Hold packages at current version to prevent unexpected upgrades
 log "Locking Kubernetes packages at current versions..."
@@ -257,8 +289,8 @@ ctr images pull quay.io/cilium/operator-generic:v${CILIUM_VERSION}
 
 # Pre-pull common utility images
 log "Pre-pulling common utility images..."
-ctr images pull busybox:latest
-ctr images pull alpine:latest
+ctr images pull docker.io/library/busybox:latest
+ctr images pull docker.io/library/alpine:latest
 
 log "✅ CNI and utility images pre-pulled successfully"
 
