@@ -1,0 +1,56 @@
+---
+# Simplified Kubernetes Deployment - No Complex Template Detection
+# This approach uses simple checks instead of fragile regex parsing
+- name: "🚀 Simplified Kubernetes Cluster Deployment"
+  hosts: localhost
+  gather_facts: true
+  
+  vars:
+    deployment_name: "{{ CLUSTER_NAME }}"
+    
+  pre_tasks:
+    - name: Start deployment timer
+      set_fact:
+        deployment_start_time: "{{ ansible_date_time.epoch }}"
+    
+    - name: Deployment configuration
+      debug:
+        msg:
+          - "🎯 SIMPLIFIED DEPLOYMENT CONFIGURATION:"
+          - "  Cluster: {{ CLUSTER_NAME }}"
+          - "  Template: {{ VM_TEMPLATE }}"
+          - "  Kubernetes: v{{ KUBERNETES_VERSION }}"
+          - "  Strategy: Auto-detect optimization opportunities"
+
+  tasks:
+    - name: Phase 1 - System Preparation
+      include: parallel/simple/01-system-preparation-simple.yml
+      
+    - name: Phase 2 - Container Runtime
+      include: parallel/simple/02-container-runtime-simple.yml
+      
+    - name: Phase 3 - Kubernetes Packages
+      include: parallel/simple/03-kubernetes-packages-simple.yml
+      
+    - name: Phase 4 - Cluster Initialization
+      include: parallel/simple/04-cluster-initialization-simple.yml
+      
+    - name: Phase 5 - CNI Installation
+      include: parallel/simple/05-cni-installation-simple.yml
+      
+    - name: Phase 6 - Cluster Enhancements
+      include: parallel/simple/06-cluster-enhancements-simple.yml
+
+  post_tasks:
+    - name: Calculate total deployment time
+      set_fact:
+        deployment_end_time: "{{ ansible_date_time.epoch }}"
+        total_deployment_time: "{{ ansible_date_time.epoch | int - deployment_start_time | int }}"
+
+    - name: Deployment completion summary
+      debug:
+        msg:
+          - "🎉 KUBERNETES DEPLOYMENT COMPLETED:"
+          - "  Total time: {{ total_deployment_time }}s"
+          - "  Template: {{ VM_TEMPLATE }}"
+          - "  Strategy: Simplified with smart optimization"

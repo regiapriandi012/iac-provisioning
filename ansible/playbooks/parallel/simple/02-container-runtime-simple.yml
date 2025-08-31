@@ -1,0 +1,97 @@
+---
+# Simple Container Runtime Setup - No Complex Template Parsing
+- name: "🐳 Simple Container Runtime - Phase 2"
+  hosts: k8s_cluster
+  become: true
+  gather_facts: true
+  strategy: free
+  serial: 0
+  
+  pre_tasks:
+    - name: Start timer
+      set_fact:
+        phase_start_time: "{{ ansible_date_time.epoch }}"
+    
+    # Simple check - is containerd already running?
+    - name: Check containerd status
+      systemd:
+        name: containerd
+      register: containerd_status
+      ignore_errors: yes
+
+    - name: Set optimization flag
+      set_fact:
+        skip_containerd: "{{ 'k8s-ready' in VM_TEMPLATE and containerd_status.status is defined and containerd_status.status.ActiveState == 'active' }}"
+
+  tasks:
+    - name: Containerd already configured
+      debug:
+        msg: 
+          - "⚡ CONTAINERD OPTIMIZATION - Already running from template"
+          - "  Status: {{ containerd_status.status.ActiveState if containerd_status.status is defined else 'unknown' }}"
+      when: skip_containerd
+
+    - name: Install containerd (Debian/Ubuntu)
+      block:
+        - name: Add Docker repository key
+          shell: |
+            curl -fsSL https://download.docker.com/linux/debian/gpg | gpg --dearmor -o /usr/share/keyrings/docker-archive-keyring.gpg
+            echo "deb [arch=amd64 signed-by=/usr/share/keyrings/docker-archive-keyring.gpg] https://download.docker.com/linux/debian $(lsb_release -cs) stable" > /etc/apt/sources.list.d/docker.list
+          when: ansible_os_family == "Debian"
+
+        - name: Install containerd
+          apt:
+            name: containerd.io
+            state: present
+            update_cache: yes
+          when: ansible_os_family == "Debian"
+      when: not skip_containerd and ansible_os_family == "Debian"
+
+    - name: Install containerd (RedHat/CentOS)
+      block:
+        - name: Add Docker repository
+          yum_repository:
+            name: docker-ce-stable
+            description: Docker CE Stable
+            baseurl: https://download.docker.com/linux/centos/$releasever/$basearch/stable
+            gpgkey: https://download.docker.com/linux/centos/gpg
+            gpgcheck: yes
+
+        - name: Install containerd
+          yum:
+            name: containerd.io
+            state: present
+      when: not skip_containerd and ansible_os_family == "RedHat"
+
+    # Always ensure proper containerd configuration
+    - name: Configure containerd
+      shell: |
+        mkdir -p /etc/containerd
+        containerd config default > /etc/containerd/config.toml
+        sed -i 's/SystemdCgroup = false/SystemdCgroup = true/' /etc/containerd/config.toml
+
+    - name: Start and enable containerd
+      systemd:
+        name: containerd
+        state: restarted
+        enabled: yes
+        daemon_reload: yes
+
+    - name: Install crictl
+      shell: |
+        curl -L "https://github.com/kubernetes-sigs/cri-tools/releases/download/v1.32.0/crictl-v1.32.0-linux-amd64.tar.gz" | tar -C /usr/local/bin -xz
+        chmod +x /usr/local/bin/crictl
+        echo "runtime-endpoint: unix:///var/run/containerd/containerd.sock" > /etc/crictl.yaml
+      ignore_errors: yes
+
+  post_tasks:
+    - name: Calculate phase duration
+      set_fact:
+        phase_end_time: "{{ ansible_date_time.epoch }}"
+        phase_duration: "{{ ansible_date_time.epoch | int - phase_start_time | int }}"
+
+    - name: Phase 2 completion
+      debug:
+        msg:
+          - "✅ PHASE 2 COMPLETE: {{ phase_duration }}s"
+          - "  Optimization: {{ 'ACTIVE' if skip_containerd else 'DISABLED' }}"

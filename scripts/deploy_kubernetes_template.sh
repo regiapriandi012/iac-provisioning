@@ -16,8 +16,8 @@ echo "============================================"
 echo "Expected Performance: 60s (template) vs 180s (regular)"
 echo "============================================"
 
-# Configuration
-TEMPLATE_PLAYBOOK="../ansible/playbooks/template-optimized-k8s-deploy.yml"
+# Configuration - SIMPLIFIED APPROACH
+SIMPLE_PLAYBOOK="../ansible/playbooks/simple-k8s-deploy.yml"
 INVENTORY_FILE="inventory/k8s-inventory.json"
 INVENTORY_SCRIPT="../scripts/inventory.py"
 TEMPLATE_CONFIG="../ansible/ansible.cfg"
@@ -102,7 +102,7 @@ echo "========================================"
 
 ansible-playbook \
     -i ${INVENTORY_SCRIPT} \
-    ${TEMPLATE_PLAYBOOK} \
+    ${SIMPLE_PLAYBOOK} \
     --timeout=1200 \
     --ssh-extra-args='-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=10' \
     -f 50 \

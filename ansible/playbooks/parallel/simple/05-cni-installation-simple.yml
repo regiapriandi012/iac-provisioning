@@ -1,0 +1,109 @@
+---
+# Simple CNI Installation - No Complex Template Parsing
+- name: "🌐 Simple CNI Installation - Phase 5"
+  hosts: k8s_masters[0]
+  become: true
+  gather_facts: true
+  
+  pre_tasks:
+    - name: Start timer
+      set_fact:
+        phase_start_time: "{{ ansible_date_time.epoch }}"
+    
+    - name: Check if CNI already installed
+      shell: kubectl get pods -n kube-system --no-headers 2>/dev/null | grep -E '(cilium|cni)' | wc -l
+      register: cni_pods_count
+      changed_when: false
+      ignore_errors: yes
+
+    # Simple check for Cilium images
+    - name: Check for Cilium images
+      shell: ctr images list -q | grep -E '(cilium/cilium|cilium/operator)' | wc -l
+      register: cilium_images_count
+      changed_when: false
+
+    - name: Set optimization flag
+      set_fact:
+        skip_cni_install: "{{ (cni_pods_count.stdout|int) > 0 }}"
+        cilium_images_available: "{{ 'k8s-ready' in VM_TEMPLATE and (cilium_images_count.stdout|int) >= 2 }}"
+
+  tasks:
+    - name: CNI already installed
+      debug:
+        msg: 
+          - "✅ CNI ALREADY INSTALLED"
+          - "  Found {{ cni_pods_count.stdout }} CNI pods running"
+          - "  Skipping CNI installation"
+      when: skip_cni_install
+
+    - name: Cilium images optimization
+      debug:
+        msg: 
+          - "⚡ CILIUM IMAGE OPTIMIZATION - Using template images"
+          - "  Found {{ cilium_images_count.stdout }} Cilium images"
+          - "  Skipping image pull phase"
+      when: cilium_images_available and not skip_cni_install
+
+    - name: Wait for nodes to be ready
+      shell: |
+        timeout 60 bash -c '
+        while true; do
+          not_ready=$(kubectl get nodes --no-headers 2>/dev/null | grep -v " Ready " | wc -l)
+          if [ "$not_ready" -eq 0 ]; then
+            break
+          fi
+          sleep 3
+        done'
+      when: not skip_cni_install
+      ignore_errors: yes
+
+    - name: Install Cilium CNI (with template optimization)
+      shell: |
+        echo "Installing Cilium v{{ cni_version }}..."
+        curl -L --fail https://github.com/cilium/cilium-cli/releases/download/v0.16.20/cilium-linux-amd64.tar.gz | tar xz
+        sudo mv cilium /usr/local/bin
+        
+        {% if cilium_images_available %}
+        # Use local images from template
+        cilium install \
+          --version v{{ cni_version }} \
+          --set image.pullPolicy=Never \
+          --set operator.image.pullPolicy=Never \
+          --wait-duration=120s
+        {% else %}
+        # Normal installation with image pull
+        cilium install \
+          --version v{{ cni_version }} \
+          --wait-duration=180s
+        {% endif %}
+      when: not skip_cni_install
+
+    - name: Wait for Cilium to be ready
+      shell: |
+        timeout 120 bash -c '
+        while ! cilium status --wait --wait-duration=5s >/dev/null 2>&1; do
+          echo "Waiting for Cilium..."
+          sleep 5
+        done'
+      when: not skip_cni_install
+      ignore_errors: yes
+
+    - name: Verify cluster nodes are ready
+      shell: |
+        kubectl get nodes -o wide
+        kubectl get pods -n kube-system -l k8s-app=cilium
+      register: cni_verification
+      ignore_errors: yes
+
+  post_tasks:
+    - name: Calculate phase duration
+      set_fact:
+        phase_end_time: "{{ ansible_date_time.epoch }}"
+        phase_duration: "{{ ansible_date_time.epoch | int - phase_start_time | int }}"
+
+    - name: Phase 5 completion
+      debug:
+        msg:
+          - "✅ PHASE 5 COMPLETE: {{ phase_duration }}s"
+          - "  CNI Status: {{ 'SKIPPED (ALREADY INSTALLED)' if skip_cni_install else 'INSTALLED' }}"
+          - "  Optimization: {{ 'ACTIVE' if cilium_images_available else 'DISABLED' }}"

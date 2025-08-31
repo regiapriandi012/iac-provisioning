@@ -1,0 +1,105 @@
+---
+# Simple Kubernetes Packages - No Complex Template Parsing
+- name: "☸️ Simple Kubernetes Packages - Phase 3"
+  hosts: k8s_cluster
+  become: true
+  gather_facts: true
+  strategy: free
+  serial: 0
+  
+  pre_tasks:
+    - name: Start timer
+      set_fact:
+        phase_start_time: "{{ ansible_date_time.epoch }}"
+    
+    # Simple check - are Kubernetes packages installed?
+    - name: Check if Kubernetes packages exist
+      shell: |
+        if command -v kubeadm &> /dev/null && command -v kubectl &> /dev/null && command -v kubelet &> /dev/null; then
+          echo "installed"
+        else
+          echo "not_installed"
+        fi
+      register: k8s_packages_status
+      changed_when: false
+
+    - name: Set optimization flag
+      set_fact:
+        skip_k8s_packages: "{{ 'k8s-ready' in VM_TEMPLATE and k8s_packages_status.stdout == 'installed' }}"
+
+  tasks:
+    - name: Kubernetes packages already installed
+      debug:
+        msg: 
+          - "⚡ KUBERNETES PACKAGES OPTIMIZATION - Already installed from template"
+          - "  kubeadm: Available"
+          - "  kubectl: Available"
+          - "  kubelet: Available"
+      when: skip_k8s_packages
+
+    - name: Install Kubernetes packages (Debian/Ubuntu)
+      block:
+        - name: Add Kubernetes repository key and repo
+          shell: |
+            curl -fsSL https://pkgs.k8s.io/core:/stable:/v{{ kubernetes_version.split('.')[0] }}.{{ kubernetes_version.split('.')[1] }}/deb/Release.key | gpg --dearmor -o /usr/share/keyrings/kubernetes-archive-keyring.gpg
+            echo "deb [signed-by=/usr/share/keyrings/kubernetes-archive-keyring.gpg] https://pkgs.k8s.io/core:/stable:/v{{ kubernetes_version.split('.')[0] }}.{{ kubernetes_version.split('.')[1] }}/deb/ /" > /etc/apt/sources.list.d/kubernetes.list
+
+        - name: Install Kubernetes packages
+          apt:
+            name:
+              - "kubelet={{ kubernetes_version }}-*"
+              - "kubeadm={{ kubernetes_version }}-*"
+              - "kubectl={{ kubernetes_version }}-*"
+            state: present
+            update_cache: yes
+            allow_downgrade: yes
+
+        - name: Hold Kubernetes packages
+          shell: apt-mark hold kubelet kubeadm kubectl
+      when: not skip_k8s_packages and ansible_os_family == "Debian"
+
+    - name: Install Kubernetes packages (RedHat/CentOS)
+      block:
+        - name: Add Kubernetes repository
+          copy:
+            content: |
+              [kubernetes]
+              name=Kubernetes
+              baseurl=https://pkgs.k8s.io/core:/stable:/v{{ kubernetes_version.split('.')[0] }}.{{ kubernetes_version.split('.')[1] }}/rpm/
+              enabled=1
+              gpgcheck=1
+              gpgkey=https://pkgs.k8s.io/core:/stable:/v{{ kubernetes_version.split('.')[0] }}.{{ kubernetes_version.split('.')[1] }}/rpm/repodata/repomd.xml.key
+            dest: /etc/yum.repos.d/kubernetes.repo
+
+        - name: Install Kubernetes packages
+          yum:
+            name:
+              - "kubelet-{{ kubernetes_version }}"
+              - "kubeadm-{{ kubernetes_version }}"
+              - "kubectl-{{ kubernetes_version }}"
+            state: present
+            disable_gpg_check: yes
+
+        - name: Lock Kubernetes packages
+          shell: dnf versionlock add kubelet kubeadm kubectl
+          ignore_errors: yes
+      when: not skip_k8s_packages and ansible_os_family == "RedHat"
+
+    # Always enable kubelet
+    - name: Enable kubelet service
+      systemd:
+        name: kubelet
+        enabled: yes
+        state: stopped  # Don't start yet - kubeadm will handle this
+
+  post_tasks:
+    - name: Calculate phase duration
+      set_fact:
+        phase_end_time: "{{ ansible_date_time.epoch }}"
+        phase_duration: "{{ ansible_date_time.epoch | int - phase_start_time | int }}"
+
+    - name: Phase 3 completion
+      debug:
+        msg:
+          - "✅ PHASE 3 COMPLETE: {{ phase_duration }}s"
+          - "  Optimization: {{ 'ACTIVE' if skip_k8s_packages else 'DISABLED' }}"

@@ -1,0 +1,130 @@
+---
+# Simple Cluster Initialization - No Complex Template Parsing
+- name: "🎯 Simple Cluster Initialization - Phase 4"
+  hosts: k8s_masters[0]
+  become: true
+  gather_facts: true
+  
+  pre_tasks:
+    - name: Start timer
+      set_fact:
+        phase_start_time: "{{ ansible_date_time.epoch }}"
+    
+    - name: Check if cluster already initialized
+      stat:
+        path: /etc/kubernetes/admin.conf
+      register: k8s_initialized
+
+    # Simple optimization - if template has k8s-ready AND some images exist, skip pre-pull
+    - name: Check for pre-pulled images
+      shell: ctr images list -q | wc -l
+      register: image_count
+      changed_when: false
+
+    - name: Set optimization flag
+      set_fact:
+        skip_image_prepull: "{{ 'k8s-ready' in VM_TEMPLATE and (image_count.stdout|int) > 10 }}"
+
+  tasks:
+    - name: Clean up any previous cluster state
+      shell: |
+        kubeadm reset --force 2>/dev/null || true
+        rm -rf /etc/kubernetes /var/lib/etcd /var/lib/kubelet ~/.kube
+        systemctl start containerd
+      when: not k8s_initialized.stat.exists
+      ignore_errors: yes
+
+    - name: Pre-pull optimization active
+      debug:
+        msg: 
+          - "⚡ IMAGE PRE-PULL OPTIMIZATION - Using template images"
+          - "  Found {{ image_count.stdout }} images in template"
+          - "  Skipping image pre-pull phase"
+      when: skip_image_prepull and not k8s_initialized.stat.exists
+
+    - name: Pre-pull Kubernetes images
+      shell: kubeadm config images pull --kubernetes-version=v{{ kubernetes_version }}
+      when: not skip_image_prepull and not k8s_initialized.stat.exists
+      ignore_errors: yes
+
+    - name: Initialize Kubernetes cluster (Single Master)
+      command: >
+        kubeadm init
+        --pod-network-cidr={{ pod_network_cidr }}
+        --service-cidr={{ service_cidr }}
+        --kubernetes-version=v{{ kubernetes_version }}
+        --ignore-preflight-errors=all
+      when: 
+        - not k8s_initialized.stat.exists 
+        - not is_ha_cluster
+      register: kubeadm_init_single
+
+    - name: Initialize Kubernetes cluster (HA Multi-Master)
+      command: >
+        kubeadm init
+        --control-plane-endpoint={{ control_plane_endpoint }}
+        --upload-certs
+        --pod-network-cidr={{ pod_network_cidr }}
+        --service-cidr={{ service_cidr }}
+        --kubernetes-version=v{{ kubernetes_version }}
+        --ignore-preflight-errors=all
+      when: 
+        - not k8s_initialized.stat.exists 
+        - is_ha_cluster
+      register: kubeadm_init_ha
+
+    - name: Set up kubeconfig
+      block:
+        - name: Create .kube directory
+          file:
+            path: "{{ ansible_env.HOME }}/.kube"
+            state: directory
+            mode: '0755'
+
+        - name: Copy admin.conf to .kube/config
+          copy:
+            src: /etc/kubernetes/admin.conf
+            dest: "{{ ansible_env.HOME }}/.kube/config"
+            remote_src: yes
+            mode: '0644'
+
+    - name: Generate join command for workers
+      shell: kubeadm token create --print-join-command
+      register: join_command_raw
+      when: not k8s_initialized.stat.exists
+
+    - name: Set join command fact
+      set_fact:
+        join_command: "{{ join_command_raw.stdout }}"
+      when: not k8s_initialized.stat.exists
+
+  post_tasks:
+    - name: Calculate phase duration
+      set_fact:
+        phase_end_time: "{{ ansible_date_time.epoch }}"
+        phase_duration: "{{ ansible_date_time.epoch | int - phase_start_time | int }}"
+
+    - name: Phase 4 completion
+      debug:
+        msg:
+          - "✅ PHASE 4 COMPLETE: {{ phase_duration }}s"
+          - "  Optimization: {{ 'ACTIVE' if skip_image_prepull else 'DISABLED' }}"
+
+# Worker nodes join
+- name: "🎯 Worker Nodes Join - Phase 4B"
+  hosts: k8s_workers
+  become: true
+  strategy: free
+  serial: 0
+  
+  tasks:
+    - name: Check if worker already joined
+      stat:
+        path: /etc/kubernetes/kubelet.conf
+      register: worker_joined
+
+    - name: Join worker nodes to cluster
+      command: "{{ hostvars[groups['k8s_masters'][0]]['join_command'] }}"
+      when: 
+        - not worker_joined.stat.exists
+        - hostvars[groups['k8s_masters'][0]]['join_command'] is defined

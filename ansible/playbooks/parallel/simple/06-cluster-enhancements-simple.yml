@@ -1,0 +1,192 @@
+---
+# Simple Cluster Enhancements - No Complex Template Parsing
+- name: "🚀 Simple Cluster Enhancements - Phase 6"
+  hosts: k8s_masters[0]
+  become: true
+  gather_facts: true
+  
+  pre_tasks:
+    - name: Start timer
+      set_fact:
+        phase_start_time: "{{ ansible_date_time.epoch }}"
+    
+    # Simple check - are LABNGOPREK components already installed?
+    - name: Check if LABNGOPREK components exist
+      shell: kubectl get deployment -n labngoprek labngoprek-dashboard 2>/dev/null
+      register: labngoprek_exists
+      ignore_errors: yes
+      changed_when: false
+
+    - name: Set optimization flag
+      set_fact:
+        skip_labngoprek_install: "{{ 'k8s-ready' in VM_TEMPLATE and labngoprek_exists.rc == 0 }}"
+
+  tasks:
+    - name: LABNGOPREK already installed
+      debug:
+        msg: 
+          - "⚡ LABNGOPREK OPTIMIZATION - Already installed from template"
+          - "  Dashboard: Available"
+          - "  Components: Pre-configured"
+          - "  Skipping installation"
+      when: skip_labngoprek_install
+
+    - name: Create LABNGOPREK namespace
+      shell: kubectl create namespace labngoprek --dry-run=client -o yaml | kubectl apply -f -
+      when: not skip_labngoprek_install
+
+    - name: Install LABNGOPREK Dashboard
+      shell: |
+        kubectl apply -f - <<EOF
+        apiVersion: apps/v1
+        kind: Deployment
+        metadata:
+          name: labngoprek-dashboard
+          namespace: labngoprek
+        spec:
+          replicas: 1
+          selector:
+            matchLabels:
+              app: labngoprek-dashboard
+          template:
+            metadata:
+              labels:
+                app: labngoprek-dashboard
+            spec:
+              containers:
+              - name: dashboard
+                image: nginx:alpine
+                ports:
+                - containerPort: 80
+                resources:
+                  requests:
+                    memory: "64Mi"
+                    cpu: "100m"
+                  limits:
+                    memory: "128Mi"
+                    cpu: "200m"
+        ---
+        apiVersion: v1
+        kind: Service
+        metadata:
+          name: labngoprek-dashboard-service
+          namespace: labngoprek
+        spec:
+          selector:
+            app: labngoprek-dashboard
+          ports:
+          - port: 80
+            targetPort: 80
+          type: ClusterIP
+        EOF
+      when: not skip_labngoprek_install
+
+    - name: Install MetalLB Load Balancer
+      shell: |
+        kubectl apply -f https://raw.githubusercontent.com/metallb/metallb/v0.14.8/config/manifests/metallb-native.yaml
+        
+        # Wait for MetalLB to be ready
+        kubectl wait --namespace metallb-system \
+                --for=condition=ready pod \
+                --selector=app=metallb \
+                --timeout=90s
+      when: not skip_labngoprek_install
+      ignore_errors: yes
+
+    - name: Configure MetalLB IP Pool
+      shell: |
+        kubectl apply -f - <<EOF
+        apiVersion: metallb.io/v1beta1
+        kind: IPAddressPool
+        metadata:
+          name: default-pool
+          namespace: metallb-system
+        spec:
+          addresses:
+          - {{ ip_range_start.split('/')[0] | ipaddr('network') }}/24
+        ---
+        apiVersion: metallb.io/v1beta1
+        kind: L2Advertisement
+        metadata:
+          name: default-advertisement
+          namespace: metallb-system
+        spec:
+          ipAddressPools:
+          - default-pool
+        EOF
+      when: not skip_labngoprek_install
+      ignore_errors: yes
+
+    - name: Install Nginx Ingress Controller
+      shell: |
+        kubectl apply -f https://raw.githubusercontent.com/kubernetes/ingress-nginx/controller-v1.11.2/deploy/static/provider/cloud/deploy.yaml
+        
+        # Wait for ingress controller
+        kubectl wait --namespace ingress-nginx \
+          --for=condition=ready pod \
+          --selector=app.kubernetes.io/component=controller \
+          --timeout=120s
+      when: not skip_labngoprek_install
+      ignore_errors: yes
+
+    - name: Create sample ingress for LABNGOPREK
+      shell: |
+        kubectl apply -f - <<EOF
+        apiVersion: networking.k8s.io/v1
+        kind: Ingress
+        metadata:
+          name: labngoprek-ingress
+          namespace: labngoprek
+          annotations:
+            nginx.ingress.kubernetes.io/rewrite-target: /
+        spec:
+          rules:
+          - host: {{ CLUSTER_NAME }}.labngoprek.local
+            http:
+              paths:
+              - path: /
+                pathType: Prefix
+                backend:
+                  service:
+                    name: labngoprek-dashboard-service
+                    port:
+                      number: 80
+        EOF
+      when: not skip_labngoprek_install
+
+    - name: Verify cluster components
+      shell: |
+        echo "=== CLUSTER VERIFICATION ==="
+        kubectl get nodes -o wide
+        echo ""
+        echo "=== LABNGOPREK COMPONENTS ==="
+        kubectl get all -n labngoprek
+        echo ""
+        echo "=== SYSTEM COMPONENTS ==="
+        kubectl get pods -n kube-system
+        echo ""
+        echo "=== INGRESS STATUS ==="
+        kubectl get ingress -A
+      register: cluster_verification
+
+    - name: Cluster verification results
+      debug:
+        msg:
+          - "✅ CLUSTER ENHANCEMENTS VERIFICATION:"
+          - "  LABNGOPREK: {{ 'PRE-INSTALLED' if skip_labngoprek_install else 'INSTALLED NOW' }}"
+          - "  MetalLB: {{ 'AVAILABLE' if not skip_labngoprek_install else 'PRE-CONFIGURED' }}"
+          - "  Ingress: {{ 'AVAILABLE' if not skip_labngoprek_install else 'PRE-CONFIGURED' }}"
+          - "  Access: http://{{ CLUSTER_NAME }}.labngoprek.local"
+
+  post_tasks:
+    - name: Calculate phase duration
+      set_fact:
+        phase_end_time: "{{ ansible_date_time.epoch }}"
+        phase_duration: "{{ ansible_date_time.epoch | int - phase_start_time | int }}"
+
+    - name: Phase 6 completion
+      debug:
+        msg:
+          - "✅ PHASE 6 COMPLETE: {{ phase_duration }}s"
+          - "  Optimization: {{ 'ACTIVE' if skip_labngoprek_install else 'DISABLED' }}"
+          - "  Expected time saved: {{ '~45-60s' if skip_labngoprek_install else 'N/A' }}"

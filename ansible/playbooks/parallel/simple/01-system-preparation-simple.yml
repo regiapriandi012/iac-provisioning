@@ -1,0 +1,131 @@
+---
+# Simple System Preparation - No Complex Template Parsing
+- name: "🚀 Simple System Preparation - Phase 1"
+  hosts: k8s_cluster
+  become: true
+  gather_facts: true
+  strategy: free
+  serial: 0
+  
+  pre_tasks:
+    - name: Start timer
+      set_fact:
+        phase_start_time: "{{ ansible_date_time.epoch }}"
+    
+    # Simple optimization check - just look for Kubernetes binaries
+    - name: Check if system is pre-configured (simple check)
+      stat:
+        path: /usr/bin/kubelet
+      register: kubelet_exists
+
+    - name: Check if containerd is running
+      systemd:
+        name: containerd
+      register: containerd_status
+      ignore_errors: yes
+
+    - name: Set optimization flag (simple logic)
+      set_fact:
+        # If template has k8s-ready in name AND kubelet exists, skip heavy setup
+        is_optimized: "{{ 'k8s-ready' in VM_TEMPLATE and kubelet_exists.stat.exists }}"
+
+    - name: Display optimization status
+      debug:
+        msg:
+          - "🔍 Simple Optimization Check:"
+          - "  Template: {{ VM_TEMPLATE }}"
+          - "  Kubelet exists: {{ kubelet_exists.stat.exists }}"
+          - "  Containerd running: {{ containerd_status.status.ActiveState == 'active' if containerd_status.status is defined else false }}"
+          - "  Skip system prep: {{ is_optimized }}"
+
+  tasks:
+    - name: Template optimization active
+      debug:
+        msg: 
+          - "⚡ OPTIMIZATION ACTIVE - Using pre-configured template"
+          - "  Template: {{ VM_TEMPLATE }}"
+          - "  Skipping system preparation (already done in template)"
+      when: is_optimized
+
+    - name: Regular setup needed
+      debug:
+        msg:
+          - "🔧 REGULAR SETUP - Running full system preparation"
+      when: not is_optimized
+
+    # System preparation tasks (only if not optimized)
+    - name: Disable SELinux (RedHat systems)
+      selinux:
+        state: disabled
+      when: 
+        - not is_optimized
+        - ansible_os_family == "RedHat"
+      ignore_errors: yes
+
+    - name: Disable swap permanently
+      replace:
+        path: /etc/fstab
+        regexp: '^([^#].*?\sswap\s+sw\s+.*)$'
+        replace: '# \1'
+      when: not is_optimized
+
+    - name: Disable swap immediately
+      command: swapoff -a
+      when: 
+        - not is_optimized
+        - ansible_swaptotal_mb > 0
+      ignore_errors: yes
+
+    - name: Load kernel modules
+      modprobe:
+        name: "{{ item }}"
+        state: present
+      loop:
+        - overlay
+        - br_netfilter
+      when: not is_optimized
+      ignore_errors: yes
+
+    - name: Set kernel modules to load at boot
+      copy:
+        content: |
+          overlay
+          br_netfilter
+        dest: /etc/modules-load.d/k8s.conf
+      when: not is_optimized
+
+    - name: Configure sysctl parameters
+      copy:
+        content: |
+          net.bridge.bridge-nf-call-iptables=1
+          net.bridge.bridge-nf-call-ip6tables=1
+          net.ipv4.ip_forward=1
+          net.netfilter.nf_conntrack_max=1000000
+          net.core.somaxconn=32768
+          net.ipv4.tcp_max_syn_backlog=8192
+          vm.max_map_count=262144
+        dest: /etc/sysctl.d/k8s.conf
+      when: not is_optimized
+      notify: reload sysctl
+
+    - name: Create temp directory
+      file:
+        path: /tmp/k8s-setup
+        state: directory
+        mode: '0755'
+
+  handlers:
+    - name: reload sysctl
+      command: sysctl --system
+
+  post_tasks:
+    - name: Calculate phase duration
+      set_fact:
+        phase_end_time: "{{ ansible_date_time.epoch }}"
+        phase_duration: "{{ ansible_date_time.epoch | int - phase_start_time | int }}"
+
+    - name: Phase 1 completion
+      debug:
+        msg:
+          - "✅ PHASE 1 COMPLETE: {{ phase_duration }}s"
+          - "  Optimization: {{ 'ACTIVE' if is_optimized else 'DISABLED' }}"
