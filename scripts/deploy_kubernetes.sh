@@ -9,9 +9,14 @@ if [ -f "../config/environment.conf" ]; then
     source ../config/environment.conf
 fi
 
-# Check if parallel deployment is enabled
+# Check deployment mode preference
+TEMPLATE_DEPLOYMENT=${TEMPLATE_DEPLOYMENT:-false}
 PARALLEL_DEPLOYMENT=${PARALLEL_DEPLOYMENT:-false}
-if [ "$PARALLEL_DEPLOYMENT" = "true" ]; then
+
+if [ "$TEMPLATE_DEPLOYMENT" = "true" ]; then
+    echo "🚀 Template-optimized deployment enabled - using ultra-fast template VMs"
+    exec ${WORKSPACE}/scripts/deploy_kubernetes_template.sh
+elif [ "$PARALLEL_DEPLOYMENT" = "true" ]; then
     echo "🚀 Parallel deployment enabled - using ultra-fast parallel execution"
     exec ${WORKSPACE}/scripts/deploy_kubernetes_parallel.sh
 fi

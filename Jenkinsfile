@@ -6,7 +6,7 @@ pipeline {
         string(name: 'CLUSTER_NAME', defaultValue: 'k8s-cluster', description: 'Name of the Kubernetes cluster')
         string(name: 'DESCRIPTION', defaultValue: 'Kubernetes cluster deployed from Django', description: 'Cluster description')
         choice(name: 'PROXMOX_NODE', choices: ['thinkcentre', 'proxmox'], description: 'Proxmox node to deploy on')
-        choice(name: 'VM_TEMPLATE', choices: ['t-debian12-kube', 't-centos9-kube'], description: 'VM template to use')
+        choice(name: 'VM_TEMPLATE', choices: ['t-debian12-k8s-ready', 't-centos9-k8s-ready', 't-debian12-kube', 't-centos9-kube'], description: 'VM template to use')
         string(name: 'MASTER_COUNT', defaultValue: '3', description: 'Number of master nodes')
         string(name: 'WORKER_COUNT', defaultValue: '2', description: 'Number of worker nodes')
         string(name: 'CORES', defaultValue: '2', description: 'CPU cores per VM')
@@ -14,7 +14,7 @@ pipeline {
         string(name: 'DISK_SIZE', defaultValue: '10G', description: 'Disk size per VM')
         string(name: 'KUBERNETES_VERSION', defaultValue: '1.32.7', description: 'Kubernetes version')
         string(name: 'CNI_TYPE', defaultValue: 'cilium', description: 'CNI type')
-        string(name: 'CNI_VERSION', defaultValue: '1.14.5', description: 'CNI version')
+        string(name: 'CNI_VERSION', defaultValue: '1.16.0', description: 'CNI version')
         string(name: 'POD_NETWORK_CIDR', defaultValue: '10.244.0.0/16', description: 'Pod network CIDR')
         string(name: 'SERVICE_CIDR', defaultValue: '10.96.0.0/12', description: 'Service CIDR')
         string(name: 'CONTAINER_RUNTIME', defaultValue: 'containerd', description: 'Container runtime')
@@ -64,11 +64,12 @@ pipeline {
 Cluster Name: ${params.CLUSTER_NAME}
 Description: ${params.DESCRIPTION}
 Proxmox Node: ${params.PROXMOX_NODE}
-VM Template: ${params.VM_TEMPLATE}
+VM Template: ${params.VM_TEMPLATE} ${params.VM_TEMPLATE.contains('k8s-ready') ? '(🚀 OPTIMIZED TEMPLATE)' : '(🔧 REGULAR TEMPLATE)'}
 Masters: ${params.MASTER_COUNT}
 Workers: ${params.WORKER_COUNT}
 VM Specs: ${params.CORES} cores, ${params.MEMORY}MB RAM, ${params.DISK_SIZE} disk
 Kubernetes: ${params.KUBERNETES_VERSION} with ${params.CNI_TYPE} ${params.CNI_VERSION}
+Expected deployment time: ${params.VM_TEMPLATE.contains('k8s-ready') ? '~60s (template-optimized)' : '~180s (regular)'}
 Parameters passed from Django REST API successfully!
 
 === TERRAFORM ENVIRONMENT VARIABLES ===
@@ -130,8 +131,12 @@ TF_VAR_vm_memory: ${env.TF_VAR_vm_memory}
                     env.USE_CACHE = configProps.OVERRIDE_USE_CACHE ?: (configProps.USE_CACHE ?: 'true')
                     env.RUN_ANSIBLE = configProps.OVERRIDE_RUN_ANSIBLE ?: (configProps.RUN_ANSIBLE ?: 'true')
                     env.CNI_TYPE = configProps.OVERRIDE_CNI_TYPE ?: (configProps.DEFAULT_CNI_TYPE ?: 'cilium')
-                    env.CNI_VERSION = configProps.OVERRIDE_CNI_VERSION ?: (configProps.DEFAULT_CNI_VERSION ?: '1.14.5')
-                    env.KUBERNETES_VERSION = configProps.OVERRIDE_KUBERNETES_VERSION ?: (configProps.DEFAULT_KUBERNETES_VERSION ?: '1.28.0')
+                    env.CNI_VERSION = configProps.OVERRIDE_CNI_VERSION ?: (configProps.DEFAULT_CNI_VERSION ?: '1.16.0')
+                    env.KUBERNETES_VERSION = configProps.OVERRIDE_KUBERNETES_VERSION ?: (configProps.DEFAULT_KUBERNETES_VERSION ?: '1.32.7')
+                    
+                    // Deployment mode configuration
+                    env.TEMPLATE_DEPLOYMENT = configProps.TEMPLATE_DEPLOYMENT ?: 'true'
+                    env.PARALLEL_DEPLOYMENT = configProps.PARALLEL_DEPLOYMENT ?: 'false'
                     
                     env.PROXMOX_CREDENTIALS_PREFIX = configProps.PROXMOX_CREDENTIALS_PREFIX ?: 'proxmox'
                     env.SLACK_WEBHOOK_CREDENTIAL_ID = configProps.SLACK_WEBHOOK_CREDENTIAL_ID ?: 'slack-webhook-url'
@@ -235,13 +240,35 @@ TF_VAR_vm_memory: ${env.TF_VAR_vm_memory}
                     script {
                         def startTime = System.currentTimeMillis()
                         
-                        sh '../scripts/deploy_kubernetes.sh'
+                        // Choose deployment strategy based on configuration
+                        if (env.TEMPLATE_DEPLOYMENT && env.TEMPLATE_DEPLOYMENT.toBoolean()) {
+                            echo "🚀 Using TEMPLATE-OPTIMIZED deployment (target: ~60s)"
+                            sh '../scripts/deploy_kubernetes_template.sh'
+                        } else if (env.PARALLEL_DEPLOYMENT && env.PARALLEL_DEPLOYMENT.toBoolean()) {
+                            echo "⚡ Using PARALLEL deployment (target: ~120s)"
+                            sh '../scripts/deploy_kubernetes_parallel.sh'
+                        } else {
+                            echo "🔧 Using STANDARD deployment (target: ~180s)"
+                            sh '../scripts/deploy_kubernetes.sh'
+                        }
                         
                         def duration = ((System.currentTimeMillis() - startTime) / 1000).intValue()
                         def minutes = duration / 60
                         def seconds = duration % 60
                         
-                        echo "Kubernetes deployed in ${minutes}m ${seconds}s"
+                        // Display deployment results based on strategy used
+                        if (env.TEMPLATE_DEPLOYMENT && env.TEMPLATE_DEPLOYMENT.toBoolean()) {
+                            echo "🚀 Template-optimized Kubernetes deployed in ${minutes}m ${seconds}s"
+                            if (duration < 90) {
+                                echo "✅ EXCELLENT: Template optimization achieved target performance!"
+                            } else if (duration < 120) {
+                                echo "✅ GOOD: Template optimization working (may need template improvements)"
+                            } else {
+                                echo "⚠️ Template optimization may need attention (check template detection logs)"
+                            }
+                        } else {
+                            echo "Kubernetes deployed in ${minutes}m ${seconds}s"
+                        }
                     }
                 }
             }

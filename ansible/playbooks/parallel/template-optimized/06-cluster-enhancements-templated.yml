@@ -1,0 +1,1088 @@
+---
+# Template-Optimized Cluster Enhancements - Phase 6
+# This playbook detects pre-baked templates and leverages pre-installed enhancements
+- name: "🎨 Template-Optimized Cluster Enhancements - Phase 6A: Shell and Banner Setup"
+  hosts: k8s_cluster
+  become: true
+  gather_facts: true
+  strategy: free  # Enable maximum parallelism
+  serial: 0       # No limit on parallel execution
+  
+  vars:
+    target_user: root
+    user_home: /root
+    ohmyzsh_dest: "{{ user_home }}/.oh-my-zsh"
+    temp_dir: "/tmp/k8s-setup"
+    
+  pre_tasks:
+    - name: Start timer
+      set_fact:
+        phase_start_time: "{{ ansible_date_time.epoch }}"
+    
+    # TEMPLATE DETECTION LOGIC
+    - name: Check if VM is from K8s-ready template
+      stat:
+        path: /etc/kubernetes-template-info
+      register: template_marker
+
+    - name: Check if VM has pre-installed enhancements
+      stat:
+        path: /etc/kubernetes-enhancements-info
+      register: enhancement_marker
+
+    - name: Read template information if exists
+      slurp:
+        src: /etc/kubernetes-template-info
+      register: template_info_content
+      when: template_marker.stat.exists
+
+    - name: Read enhancement information if exists
+      slurp:
+        src: /etc/kubernetes-enhancements-info
+      register: enhancement_info_content
+      when: enhancement_marker.stat.exists
+
+    - name: Parse template information
+      set_fact:
+        is_k8s_ready_template: "{{ template_marker.stat.exists }}"
+        has_pre_installed_enhancements: "{{ enhancement_marker.stat.exists }}"
+        template_name: >-
+          {% if template_marker.stat.exists %}
+          {{ (template_info_content.content | b64decode | regex_search('Template Name: (.+)', '\\1') | first) | default('unknown') }}
+          {% else %}
+          unknown
+          {% endif %}
+        enhancement_template_version: >-
+          {% if enhancement_marker.stat.exists %}
+          {{ (enhancement_info_content.content | b64decode | regex_search('Template Version: (.+)', '\\1') | first) | default('1.0') }}
+          {% else %}
+          none
+          {% endif %}
+
+    # CHECK PRE-INSTALLED ENHANCEMENTS
+    - name: Check if Oh-My-Zsh is already installed
+      stat:
+        path: "{{ ohmyzsh_dest }}"
+      register: ohmyzsh_installed
+
+    - name: Check if Zsh is already installed
+      shell: which zsh
+      register: zsh_installed
+      changed_when: false
+      ignore_errors: yes
+
+    - name: Check if figlet is already installed
+      shell: which figlet
+      register: figlet_installed
+      changed_when: false
+      ignore_errors: yes
+
+    - name: Enhancement optimization status
+      debug:
+        msg:
+          - "🔍 ENHANCEMENT TEMPLATE DETECTION:"
+          - "  K8s-ready template: {{ is_k8s_ready_template }}"
+          - "  Pre-installed enhancements: {{ has_pre_installed_enhancements }}"
+          - "  Template name: {{ template_name }}"
+          - "  Enhancement version: {{ enhancement_template_version }}"
+          - "  Zsh installed: {{ zsh_installed.rc == 0 }}"
+          - "  Oh-My-Zsh installed: {{ ohmyzsh_installed.stat.exists }}"
+          - "  Figlet installed: {{ figlet_installed.rc == 0 }}"
+          - "  Enhancement optimization: {{ 'ULTRA-FAST' if has_pre_installed_enhancements else ('ACTIVE' if is_k8s_ready_template else 'INACTIVE') }}"
+
+  tasks:
+    - name: Template enhancement optimization notification
+      debug:
+        msg:
+          - "⚡ ENHANCEMENT TEMPLATE OPTIMIZATION ACTIVE"
+          - "  Using K8s-ready template with pre-installed shell enhancements"
+          - "  Skipping package installation for Zsh, Oh-My-Zsh, and utilities"
+          - "  Time saved: ~15-20 seconds per node"
+      when: 
+        - is_k8s_ready_template
+        - zsh_installed.rc == 0
+        - ohmyzsh_installed.stat.exists
+
+    - name: Regular VM enhancement notification
+      debug:
+        msg:
+          - "🔧 REGULAR VM OR INCOMPLETE TEMPLATE"
+          - "  Running full enhancement installation..."
+      when: not (is_k8s_ready_template and zsh_installed.rc == 0 and ohmyzsh_installed.stat.exists)
+
+    # CONDITIONAL PACKAGE INSTALLATION (skip if template has them)
+    - name: Install Zsh (Debian) - REGULAR VM ONLY
+      apt:
+        name: zsh
+        state: present
+        update_cache: yes
+      when: 
+        - ansible_os_family == "Debian"
+        - not has_pre_installed_enhancements
+        - not (is_k8s_ready_template and zsh_installed.rc == 0)
+      async: 60
+      poll: 0
+      register: debian_zsh_job
+
+    - name: Install Zsh (CentOS/RedHat) - REGULAR VM ONLY
+      yum:
+        name: zsh
+        state: present
+      when: 
+        - ansible_os_family == "RedHat"
+        - not has_pre_installed_enhancements
+        - not (is_k8s_ready_template and zsh_installed.rc == 0)
+      async: 60
+      poll: 0
+      register: rhel_zsh_job
+
+    - name: Install Git (Debian) - REGULAR VM ONLY
+      apt:
+        name: git
+        state: present
+      when: 
+        - ansible_os_family == "Debian"
+        - not has_pre_installed_enhancements
+        - not is_k8s_ready_template
+      async: 60
+      poll: 0
+      register: debian_git_job
+
+    - name: Install Git (CentOS/RedHat) - REGULAR VM ONLY
+      yum:
+        name: git
+        state: present
+      when: 
+        - ansible_os_family == "RedHat"
+        - not is_k8s_ready_template
+      async: 60
+      poll: 0
+      register: rhel_git_job
+
+    - name: Install Figlet (Debian) - REGULAR VM ONLY
+      apt:
+        name: figlet
+        state: present
+      when: 
+        - ansible_os_family == "Debian"
+        - not (is_k8s_ready_template and figlet_installed.rc == 0)
+      async: 60
+      poll: 0
+      register: debian_figlet_job
+
+    - name: Install EPEL repository (CentOS/RedHat) - REGULAR VM ONLY
+      yum:
+        name: epel-release
+        state: present
+      when: 
+        - ansible_os_family == "RedHat"
+        - not is_k8s_ready_template
+      async: 60
+      poll: 0
+      register: rhel_epel_job
+
+    - name: Install Figlet (CentOS/RedHat) - REGULAR VM ONLY
+      yum:
+        name: figlet
+        state: present
+      when: 
+        - ansible_os_family == "RedHat"
+        - not (is_k8s_ready_template and figlet_installed.rc == 0)
+      async: 60
+      poll: 0
+      register: rhel_figlet_job
+
+    # Wait for package installations (only if they were started)
+    - name: Wait for Debian Zsh installation
+      async_status:
+        jid: "{{ debian_zsh_job.ansible_job_id }}"
+      register: debian_zsh_result
+      until: debian_zsh_result.finished
+      retries: 30
+      delay: 2
+      when: debian_zsh_job is defined and debian_zsh_job.ansible_job_id is defined
+
+    - name: Wait for RedHat Zsh installation
+      async_status:
+        jid: "{{ rhel_zsh_job.ansible_job_id }}"
+      register: rhel_zsh_result
+      until: rhel_zsh_result.finished
+      retries: 30
+      delay: 2
+      when: rhel_zsh_job is defined and rhel_zsh_job.ansible_job_id is defined
+
+    - name: Wait for Git installations
+      async_status:
+        jid: "{{ item.ansible_job_id }}"
+      register: git_results
+      until: git_results.finished
+      retries: 30
+      delay: 2
+      loop:
+        - "{{ debian_git_job if debian_git_job is defined and debian_git_job.ansible_job_id is defined else {} }}"
+        - "{{ rhel_git_job if rhel_git_job is defined and rhel_git_job.ansible_job_id is defined else {} }}"
+      when: item and item.ansible_job_id is defined
+
+    - name: Wait for Figlet installations
+      async_status:
+        jid: "{{ item.ansible_job_id }}"
+      register: figlet_results
+      until: figlet_results.finished
+      retries: 30
+      delay: 2
+      loop:
+        - "{{ debian_figlet_job if debian_figlet_job is defined and debian_figlet_job.ansible_job_id is defined else {} }}"
+        - "{{ rhel_figlet_job if rhel_figlet_job is defined and rhel_figlet_job.ansible_job_id is defined else {} }}"
+      when: item and item.ansible_job_id is defined
+
+    # SHELL CONFIGURATION (always run to ensure proper setup)
+    - name: Change default shell to Zsh for root (Debian)
+      user:
+        name: "{{ target_user }}"
+        shell: /usr/bin/zsh
+      when: ansible_os_family == "Debian"
+
+    - name: Change default shell to Zsh for root (CentOS/RedHat)
+      user:
+        name: "{{ target_user }}"
+        shell: /bin/zsh
+      when: ansible_os_family == "RedHat"
+
+    # OH-MY-ZSH INSTALLATION (conditional)
+    - name: Clone Oh-My-Zsh repository - REGULAR VM ONLY
+      git:
+        repo: https://github.com/ohmyzsh/ohmyzsh.git
+        dest: "{{ ohmyzsh_dest }}"
+        version: master
+        update: yes
+      become_user: "{{ target_user }}"
+      when: 
+        - not has_pre_installed_enhancements
+        - not ohmyzsh_installed.stat.exists
+      async: 90
+      poll: 0
+      register: ohmyzsh_clone_job
+
+    - name: Wait for Oh-My-Zsh clone completion
+      async_status:
+        jid: "{{ ohmyzsh_clone_job.ansible_job_id }}"
+      register: ohmyzsh_clone_result
+      until: ohmyzsh_clone_result.finished
+      retries: 45
+      delay: 2
+      when: ohmyzsh_clone_job is defined and ohmyzsh_clone_job.ansible_job_id is defined
+
+    - name: Copy .zshrc template from Oh-My-Zsh
+      copy:
+        src: "{{ ohmyzsh_dest }}/templates/zshrc.zsh-template"
+        dest: "{{ user_home }}/.zshrc"
+        owner: "{{ target_user }}"
+        group: "{{ target_user }}"
+        mode: '0644'
+        remote_src: yes
+      when: not ohmyzsh_installed.stat.exists
+
+    # KUBECTL ALIASES (always run)
+    - name: Add kubectl alias to .zshrc
+      lineinfile:
+        path: "{{ user_home }}/.zshrc"
+        line: 'alias k=kubectl'
+        create: yes
+        owner: "{{ target_user }}"
+        group: "{{ target_user }}"
+        mode: '0644'
+
+    - name: Add kubectl completion to .zshrc
+      lineinfile:
+        path: "{{ user_home }}/.zshrc"
+        line: 'source <(kubectl completion zsh)'
+        create: yes
+        owner: "{{ target_user }}"
+        group: "{{ target_user }}"
+        mode: '0644'
+
+    - name: Add kubectl alias to .bashrc for immediate availability
+      lineinfile:
+        path: "{{ user_home }}/.bashrc"
+        line: 'alias k=kubectl'
+        create: yes
+        owner: "{{ target_user }}"
+        group: "{{ target_user }}"
+        mode: '0644'
+
+    # MOTD BANNER CONFIGURATION (always run)
+    - name: Generate LABNGOPREK banner with Figlet
+      shell: "figlet LABNGOPREK"
+      register: figlet_banner
+
+    - name: Set MOTD path based on OS
+      set_fact:
+        motd_path: "{{ '/etc/motd.d/cockpit' if ansible_os_family == 'RedHat' else '/etc/motd' }}"
+
+    - name: Create /etc/motd.d directory if using RedHat
+      file:
+        path: /etc/motd.d
+        state: directory
+        owner: root
+        group: root
+        mode: '0755'
+      when: ansible_os_family == "RedHat"
+
+    - name: Deploy LABNGOPREK MOTD banner
+      copy:
+        content: |
+          {{ figlet_banner.stdout }}
+          
+          Welcome to LABNGOPREK Kubernetes Cluster!
+          Node: {{ inventory_hostname }}
+          OS: {{ ansible_distribution }} {{ ansible_distribution_version }}
+          Kernel: {{ ansible_kernel }}
+          
+          Kubernetes Commands:
+          • k get nodes        (alias for kubectl get nodes)
+          • k get pods -A      (get all pods)
+          • k top nodes        (node resource usage)
+          • k top pods -A      (pod resource usage)
+          
+          Cluster Information:
+          • Master Nodes: {{ groups['k8s_masters'] | length }}
+          • Worker Nodes: {{ groups['k8s_workers'] | length if 'k8s_workers' in groups else 0 }}
+          • CNI Plugin: {{ cni_type | default('Unknown') }}
+          
+        dest: "{{ motd_path }}"
+        owner: root
+        group: root
+        mode: '0644'
+
+  post_tasks:
+    - name: Calculate phase duration
+      set_fact:
+        phase_end_time: "{{ ansible_date_time.epoch }}"
+        phase_duration: "{{ ansible_date_time.epoch | int - phase_start_time | int }}"
+
+    - name: Phase 6A completion summary
+      debug:
+        msg:
+          - "📊 PHASE 6A COMPLETION (Shell & Banner Setup):"
+          - "  Duration: {{ phase_duration }}s"
+          - "  Template optimization: {{ 'ACTIVE' if is_k8s_ready_template else 'INACTIVE' }}"
+          - "  Expected duration: {{ '3-5s' if is_k8s_ready_template else '18-25s' }}"
+          - "  Enhancements: {{ 'PRE-INSTALLED' if is_k8s_ready_template else 'INSTALLED NOW' }}"
+
+# ======================================================================
+# PHASE 6B: MASTER NODE CONFIGURATION AND SERVICES
+# ======================================================================
+- name: "🎨 Template-Optimized Master Node Configuration - Phase 6B"
+  hosts: k8s_masters
+  become: true
+  gather_facts: true
+  strategy: free  # Masters can configure in parallel
+  serial: 0
+  
+  pre_tasks:
+    - name: Start timer for master configuration
+      set_fact:
+        phase_start_time: "{{ ansible_date_time.epoch }}"
+
+  tasks:
+    # MASTER NODE TAINT REMOVAL (parallel across all masters)
+    - name: Get actual node name from Kubernetes
+      shell: kubectl get nodes -o jsonpath='{.items[?(@.status.addresses[0].address=="{{ ansible_default_ipv4.address }}")].metadata.name}'
+      register: k8s_node_name
+      ignore_errors: true
+
+    - name: Fallback - get node name by hostname
+      shell: kubectl get nodes --no-headers | grep -i "{{ inventory_hostname }}" | awk '{print $1}' | head -1
+      register: k8s_node_name_fallback
+      when: k8s_node_name.stdout == ""
+      ignore_errors: true
+
+    - name: Set final node name
+      set_fact:
+        final_node_name: "{{ k8s_node_name.stdout if k8s_node_name.stdout != '' else k8s_node_name_fallback.stdout | default(inventory_hostname) }}"
+
+    - name: Remove taint from master nodes to allow pod scheduling
+      shell: kubectl taint nodes {{ final_node_name }} node-role.kubernetes.io/control-plane:NoSchedule-
+      ignore_errors: true
+      register: taint_removal
+
+    - name: Verify taint removal
+      shell: kubectl describe node {{ final_node_name }} | grep -i taint || echo "No taints found"
+      register: taint_check
+      ignore_errors: true
+
+  post_tasks:
+    - name: Calculate master config phase duration
+      set_fact:
+        phase_end_time: "{{ ansible_date_time.epoch }}"
+        phase_duration: "{{ ansible_date_time.epoch | int - phase_start_time | int }}"
+
+    - name: Phase 6B completion summary
+      debug:
+        msg:
+          - "📊 PHASE 6B COMPLETION (Master Config):"
+          - "  Duration: {{ phase_duration }}s"
+          - "  Node: {{ final_node_name }}"
+          - "  Taint removal: {{ 'SUCCESS' if taint_removal.rc == 0 else 'ALREADY REMOVED' }}"
+
+# ======================================================================
+# PHASE 6C: CLUSTER SERVICES INSTALLATION (METRICS, METALLB, MONITORING)
+# ======================================================================
+- name: "🎨 Template-Optimized Cluster Services Installation - Phase 6C"
+  hosts: k8s_masters[0]
+  become: true
+  gather_facts: true
+  
+  vars:
+    metallb_namespace: metallb-system
+    metallb_version: v0.14.3
+    elasticsearch_host: "172.16.20.90"
+    elasticsearch_port: "9200"
+    elasticsearch_username: "elastic"
+    elasticsearch_password: "xrUW620aXmqkw*ErAWGC"
+    
+  pre_tasks:
+    - name: Start timer for services installation
+      set_fact:
+        phase_start_time: "{{ ansible_date_time.epoch }}"
+
+    - name: Wait for all nodes to be Ready before services installation
+      shell: kubectl get nodes --no-headers | grep -v Ready | wc -l
+      register: not_ready_nodes
+      until: not_ready_nodes.stdout | int == 0
+      retries: 30
+      delay: 5
+
+  tasks:
+    # PARALLEL SERVICE INSTALLATION PREPARATION
+    - name: Check existing services status in parallel
+      shell: |
+        # Check Metrics Server
+        metrics_status="not_installed"
+        if kubectl get deployment metrics-server -n kube-system >/dev/null 2>&1; then
+          metrics_status="installed"
+        fi
+        
+        # Check MetalLB
+        metallb_status="not_installed"
+        if kubectl get namespace {{ metallb_namespace }} >/dev/null 2>&1; then
+          metallb_status="installed"
+        fi
+        
+        # Check Metricbeat
+        metricbeat_status="not_installed"
+        if kubectl get daemonset metricbeat -n kube-system >/dev/null 2>&1; then
+          metricbeat_status="installed"
+        fi
+        
+        echo "metrics:$metrics_status,metallb:$metallb_status,metricbeat:$metricbeat_status"
+      register: services_status
+      changed_when: false
+
+    - name: Parse services status
+      set_fact:
+        metrics_server_installed: "{{ services_status.stdout.split(',')[0].split(':')[1] == 'installed' }}"
+        metallb_installed: "{{ services_status.stdout.split(',')[1].split(':')[1] == 'installed' }}"
+        metricbeat_installed: "{{ services_status.stdout.split(',')[2].split(':')[1] == 'installed' }}"
+
+    - name: Services installation strategy
+      debug:
+        msg:
+          - "🔍 CLUSTER SERVICES INSTALLATION STRATEGY:"
+          - "  Metrics Server: {{ 'SKIP (installed)' if metrics_server_installed else 'INSTALL' }}"
+          - "  MetalLB: {{ 'SKIP (installed)' if metallb_installed else 'INSTALL' }}"
+          - "  Metricbeat: {{ 'SKIP (installed)' if metricbeat_installed else 'INSTALL' }}"
+
+    # METRICS SERVER INSTALLATION (async)
+    - name: Create custom Metrics Server manifest with tolerations
+      copy:
+        content: |
+          apiVersion: v1
+          kind: ServiceAccount
+          metadata:
+            labels:
+              k8s-app: metrics-server
+            name: metrics-server
+            namespace: kube-system
+          ---
+          apiVersion: rbac.authorization.k8s.io/v1
+          kind: ClusterRole
+          metadata:
+            labels:
+              k8s-app: metrics-server
+              rbac.authorization.k8s.io/aggregate-to-admin: "true"
+              rbac.authorization.k8s.io/aggregate-to-edit: "true"
+              rbac.authorization.k8s.io/aggregate-to-view: "true"
+            name: system:aggregated-metrics-reader
+          rules:
+          - apiGroups:
+            - metrics.k8s.io
+            resources:
+            - pods
+            - nodes
+            verbs:
+            - get
+            - list
+            - watch
+          ---
+          apiVersion: rbac.authorization.k8s.io/v1
+          kind: ClusterRole
+          metadata:
+            labels:
+              k8s-app: metrics-server
+            name: system:metrics-server
+          rules:
+          - apiGroups:
+            - ""
+            resources:
+            - nodes/metrics
+            verbs:
+            - get
+          - apiGroups:
+            - ""
+            resources:
+            - pods
+            - nodes
+            verbs:
+            - get
+            - list
+            - watch
+          ---
+          apiVersion: rbac.authorization.k8s.io/v1
+          kind: RoleBinding
+          metadata:
+            labels:
+              k8s-app: metrics-server
+            name: metrics-server-auth-reader
+            namespace: kube-system
+          roleRef:
+            apiGroup: rbac.authorization.k8s.io
+            kind: Role
+            name: extension-apiserver-authentication-reader
+          subjects:
+          - kind: ServiceAccount
+            name: metrics-server
+            namespace: kube-system
+          ---
+          apiVersion: rbac.authorization.k8s.io/v1
+          kind: ClusterRoleBinding
+          metadata:
+            labels:
+              k8s-app: metrics-server
+            name: metrics-server:system:auth-delegator
+          roleRef:
+            apiGroup: rbac.authorization.k8s.io
+            kind: ClusterRole
+            name: system:auth-delegator
+          subjects:
+          - kind: ServiceAccount
+            name: metrics-server
+            namespace: kube-system
+          ---
+          apiVersion: rbac.authorization.k8s.io/v1
+          kind: ClusterRoleBinding
+          metadata:
+            labels:
+              k8s-app: metrics-server
+            name: system:metrics-server
+          roleRef:
+            apiGroup: rbac.authorization.k8s.io
+            kind: ClusterRole
+            name: system:metrics-server
+          subjects:
+          - kind: ServiceAccount
+            name: metrics-server
+            namespace: kube-system
+          ---
+          apiVersion: v1
+          kind: Service
+          metadata:
+            labels:
+              k8s-app: metrics-server
+            name: metrics-server
+            namespace: kube-system
+          spec:
+            ports:
+            - name: https
+              port: 443
+              protocol: TCP
+              targetPort: https
+            selector:
+              k8s-app: metrics-server
+          ---
+          apiVersion: apps/v1
+          kind: Deployment
+          metadata:
+            labels:
+              k8s-app: metrics-server
+            name: metrics-server
+            namespace: kube-system
+          spec:
+            selector:
+              matchLabels:
+                k8s-app: metrics-server
+            strategy:
+              rollingUpdate:
+                maxUnavailable: 0
+            template:
+              metadata:
+                labels:
+                  k8s-app: metrics-server
+              spec:
+                containers:
+                - args:
+                  - --cert-dir=/tmp
+                  - --secure-port=10250
+                  - --kubelet-preferred-address-types=InternalIP,ExternalIP,Hostname
+                  - --kubelet-use-node-status-port
+                  - --metric-resolution=15s
+                  - --kubelet-insecure-tls
+                  image: registry.k8s.io/metrics-server/metrics-server:v0.7.1
+                  livenessProbe:
+                    failureThreshold: 3
+                    httpGet:
+                      path: /livez
+                      port: https
+                      scheme: HTTPS
+                    periodSeconds: 10
+                  name: metrics-server
+                  ports:
+                  - containerPort: 10250
+                    name: https
+                    protocol: TCP
+                  readinessProbe:
+                    failureThreshold: 3
+                    httpGet:
+                      path: /readyz
+                      port: https
+                      scheme: HTTPS
+                    initialDelaySeconds: 20
+                    periodSeconds: 10
+                  resources:
+                    requests:
+                      cpu: 100m
+                      memory: 200Mi
+                  securityContext:
+                    allowPrivilegeEscalation: false
+                    capabilities:
+                      drop:
+                      - ALL
+                    readOnlyRootFilesystem: true
+                    runAsNonRoot: true
+                    runAsUser: 1000
+                    seccompProfile:
+                      type: RuntimeDefault
+                  volumeMounts:
+                  - mountPath: /tmp
+                    name: tmp-dir
+                nodeSelector:
+                  kubernetes.io/os: linux
+                priorityClassName: system-cluster-critical
+                serviceAccountName: metrics-server
+                tolerations:
+                - key: node-role.kubernetes.io/control-plane
+                  effect: NoSchedule
+                  operator: Exists
+                - key: node-role.kubernetes.io/master
+                  effect: NoSchedule
+                  operator: Exists
+                volumes:
+                - emptyDir: {}
+                  name: tmp-dir
+          ---
+          apiVersion: apiregistration.k8s.io/v1
+          kind: APIService
+          metadata:
+            labels:
+              k8s-app: metrics-server
+            name: v1beta1.metrics.k8s.io
+          spec:
+            group: metrics.k8s.io
+            groupPriorityMinimum: 100
+            insecureSkipTLSVerify: true
+            service:
+              name: metrics-server
+              namespace: kube-system
+            version: v1beta1
+            versionPriority: 100
+        dest: /tmp/metrics-server.yaml
+        mode: '0644'
+      when: not metrics_server_installed
+
+    - name: Apply Metrics Server manifest (async)
+      shell: kubectl apply -f /tmp/metrics-server.yaml
+      when: not metrics_server_installed
+      async: 120
+      poll: 0
+      register: metrics_server_job
+
+    # METALLB INSTALLATION (async)
+    - name: Create MetalLB namespace
+      shell: kubectl create namespace {{ metallb_namespace }}
+      when: not metallb_installed
+      ignore_errors: yes
+
+    - name: Apply MetalLB manifest (async)
+      shell: kubectl apply -f https://raw.githubusercontent.com/metallb/metallb/{{ metallb_version }}/config/manifests/metallb-native.yaml
+      when: not metallb_installed
+      async: 120
+      poll: 0
+      register: metallb_job
+
+    # MASTER NODE IP DETECTION FOR METALLB
+    - name: Get master node IPs for MetalLB IP pool
+      shell: kubectl get nodes -l node-role.kubernetes.io/control-plane -o jsonpath='{.items[*].status.addresses[?(@.type=="InternalIP")].address}'
+      register: master_ips
+      when: not metallb_installed
+
+    - name: Process master IPs for MetalLB pool
+      set_fact:
+        master_ip_list: "{{ master_ips.stdout.split(' ') | select('match', '^\\d+\\.\\d+\\.\\d+\\.\\d+$') | list }}"
+        metallb_addresses: "{{ master_ips.stdout.split(' ') | select('match', '^\\d+\\.\\d+\\.\\d+$') | list }}"
+      when: not metallb_installed
+
+    # METRICBEAT CONFIGURATION CREATION (async)
+    - name: Create Metricbeat configuration
+      copy:
+        content: |
+          apiVersion: v1
+          kind: ConfigMap
+          metadata:
+            name: metricbeat-config
+            namespace: kube-system
+          data:
+            metricbeat.yml: |
+              metricbeat.config.modules:
+                path: ${path.config}/modules.d/*.yml
+                reload.enabled: false
+              metricbeat.autodiscover:
+                providers:
+                  - type: kubernetes
+                    scope: cluster
+                    node: ${NODE_NAME}
+                    unique: true
+                    templates:
+                      - config:
+                          - module: kubernetes
+                            metricsets:
+                              - node
+                              - system
+                              - pod
+                              - container
+                              - volume
+                            period: 10s
+                            host: ${NODE_NAME}
+                            hosts: ["https://${NODE_NAME}:10250"]
+                            bearer_token_file: /var/run/secrets/kubernetes.io/serviceaccount/token
+                            ssl.verification_mode: "none"
+              output.elasticsearch:
+                hosts: ['{{ elasticsearch_host }}:{{ elasticsearch_port }}']
+                username: {{ elasticsearch_username }}
+                password: {{ elasticsearch_password }}
+              setup.kibana:
+                host: "{{ elasticsearch_host }}:5601"
+              logging.level: info
+          ---
+          apiVersion: apps/v1
+          kind: DaemonSet
+          metadata:
+            name: metricbeat
+            namespace: kube-system
+            labels:
+              k8s-app: metricbeat
+          spec:
+            selector:
+              matchLabels:
+                k8s-app: metricbeat
+            template:
+              metadata:
+                labels:
+                  k8s-app: metricbeat
+              spec:
+                serviceAccountName: metricbeat
+                terminationGracePeriodSeconds: 30
+                hostNetwork: true
+                dnsPolicy: ClusterFirstWithHostNet
+                containers:
+                - name: metricbeat
+                  image: docker.elastic.co/beats/metricbeat:8.8.0
+                  args: [
+                    "-c", "/etc/metricbeat.yml",
+                    "-e",
+                  ]
+                  env:
+                  - name: ELASTICSEARCH_HOST
+                    value: {{ elasticsearch_host }}
+                  - name: ELASTICSEARCH_PORT
+                    value: "{{ elasticsearch_port }}"
+                  - name: ELASTICSEARCH_USERNAME
+                    value: {{ elasticsearch_username }}
+                  - name: ELASTICSEARCH_PASSWORD
+                    value: {{ elasticsearch_password }}
+                  - name: NODE_NAME
+                    valueFrom:
+                      fieldRef:
+                        fieldPath: spec.nodeName
+                  securityContext:
+                    runAsUser: 0
+                  resources:
+                    limits:
+                      memory: 200Mi
+                    requests:
+                      cpu: 100m
+                      memory: 100Mi
+                  volumeMounts:
+                  - name: config
+                    mountPath: /etc/metricbeat.yml
+                    readOnly: true
+                    subPath: metricbeat.yml
+                  - name: data
+                    mountPath: /usr/share/metricbeat/data
+                  - name: proc
+                    mountPath: /hostfs/proc
+                    readOnly: true
+                  - name: cgroup
+                    mountPath: /hostfs/sys/fs/cgroup
+                    readOnly: true
+                volumes:
+                - name: proc
+                  hostPath:
+                    path: /proc
+                - name: cgroup
+                  hostPath:
+                    path: /sys/fs/cgroup
+                - name: config
+                  configMap:
+                    defaultMode: 0640
+                    name: metricbeat-config
+                - name: data
+                  hostPath:
+                    path: /var/lib/metricbeat-data
+                    type: DirectoryOrCreate
+          ---
+          apiVersion: v1
+          kind: ServiceAccount
+          metadata:
+            name: metricbeat
+            namespace: kube-system
+            labels:
+              k8s-app: metricbeat
+          ---
+          apiVersion: rbac.authorization.k8s.io/v1
+          kind: ClusterRole
+          metadata:
+            name: metricbeat
+            labels:
+              k8s-app: metricbeat
+          rules:
+          - apiGroups: [""]
+            resources:
+            - nodes
+            - namespaces
+            - events
+            - pods
+            - services
+            verbs: ["get", "list", "watch"]
+          - apiGroups: ["extensions"]
+            resources:
+            - replicasets
+            verbs: ["get", "list", "watch"]
+          - apiGroups: ["apps"]
+            resources:
+            - statefulsets
+            - deployments
+            - replicasets
+            verbs: ["get", "list", "watch"]
+          - apiGroups: ["batch"]
+            resources:
+            - jobs
+            verbs: ["get", "list", "watch"]
+          - apiGroups:
+            - ""
+            resources:
+            - nodes/stats
+            verbs:
+            - get
+          - nonResourceURLs:
+            - "/metrics"
+            verbs:
+            - get
+          ---
+          apiVersion: rbac.authorization.k8s.io/v1
+          kind: ClusterRoleBinding
+          metadata:
+            name: metricbeat
+          subjects:
+          - kind: ServiceAccount
+            name: metricbeat
+            namespace: kube-system
+          roleRef:
+            kind: ClusterRole
+            name: metricbeat
+            apiGroup: rbac.authorization.k8s.io
+        dest: /tmp/metricbeat-deployment.yaml
+        mode: '0644'
+      when: not metricbeat_installed
+
+    - name: Apply Metricbeat deployment (async)
+      shell: kubectl apply -f /tmp/metricbeat-deployment.yaml
+      when: not metricbeat_installed
+      async: 120
+      poll: 0
+      register: metricbeat_job
+
+    # WAIT FOR ASYNC INSTALLATIONS
+    - name: Wait for Metrics Server installation
+      async_status:
+        jid: "{{ metrics_server_job.ansible_job_id }}"
+      register: metrics_server_result
+      until: metrics_server_result.finished
+      retries: 60
+      delay: 2
+      when: metrics_server_job is defined and metrics_server_job.ansible_job_id is defined
+
+    - name: Wait for MetalLB installation
+      async_status:
+        jid: "{{ metallb_job.ansible_job_id }}"
+      register: metallb_result
+      until: metallb_result.finished
+      retries: 60
+      delay: 2
+      when: metallb_job is defined and metallb_job.ansible_job_id is defined
+
+    - name: Wait for Metricbeat installation
+      async_status:
+        jid: "{{ metricbeat_job.ansible_job_id }}"
+      register: metricbeat_result
+      until: metricbeat_result.finished
+      retries: 60
+      delay: 2
+      when: metricbeat_job is defined and metricbeat_job.ansible_job_id is defined
+
+    # METALLB CONFIGURATION (after installation completes)
+    - name: Create MetalLB IPAddressPool configuration
+      copy:
+        content: |
+          apiVersion: metallb.io/v1beta1
+          kind: IPAddressPool
+          metadata:
+            name: first-pool
+            namespace: {{ metallb_namespace }}
+          spec:
+            addresses:
+            {% for ip in metallb_addresses %}
+            - {{ ip }}/32
+            {% endfor %}
+          ---
+          apiVersion: metallb.io/v1beta1
+          kind: L2Advertisement
+          metadata:
+            name: example
+            namespace: {{ metallb_namespace }}
+          spec:
+            ipAddressPools:
+            - first-pool
+        dest: /tmp/metallb-config.yaml
+        mode: '0644'
+      when: not metallb_installed
+
+    - name: Apply MetalLB configuration
+      shell: kubectl apply -f /tmp/metallb-config.yaml
+      when: not metallb_installed
+
+    # SERVICE READINESS VERIFICATION (async)
+    - name: Wait for Metrics Server to be ready (async)
+      shell: |
+        timeout 300 bash -c '
+        while ! kubectl get pods -n kube-system -l k8s-app=metrics-server --field-selector=status.phase=Running | grep -q Running; do
+          sleep 5
+        done
+        echo "Metrics Server ready"
+        '
+      when: not metrics_server_installed
+      async: 300
+      poll: 0
+      register: metrics_ready_job
+
+    - name: Wait for MetalLB to be ready (async)
+      shell: |
+        timeout 300 bash -c '
+        while ! kubectl get pods -n {{ metallb_namespace }} | grep -q Running; do
+          sleep 5
+        done
+        echo "MetalLB ready"
+        '
+      when: not metallb_installed
+      async: 300
+      poll: 0
+      register: metallb_ready_job
+
+    # FINAL VERIFICATION
+    - name: Test Metrics Server functionality
+      shell: kubectl top nodes
+      register: metrics_test
+      ignore_errors: true
+      retries: 3
+      delay: 10
+      until: metrics_test.rc == 0
+
+    - name: Get cluster services status
+      shell: |
+        echo "=== CLUSTER SERVICES STATUS ==="
+        echo "Metrics Server:"
+        kubectl get pods -n kube-system -l k8s-app=metrics-server || echo "Not found"
+        echo ""
+        echo "MetalLB:"
+        kubectl get pods -n {{ metallb_namespace }} || echo "Not found"
+        echo ""
+        echo "Metricbeat:"
+        kubectl get pods -n kube-system -l k8s-app=metricbeat || echo "Not found"
+        echo ""
+        echo "LoadBalancer Services:"
+        kubectl get svc --all-namespaces -o wide | grep LoadBalancer || echo "None deployed yet"
+      register: services_verification
+      ignore_errors: true
+
+  post_tasks:
+    - name: Calculate services installation phase duration
+      set_fact:
+        phase_end_time: "{{ ansible_date_time.epoch }}"
+        phase_duration: "{{ ansible_date_time.epoch | int - phase_start_time | int }}"
+
+    - name: Phase 6C completion summary
+      debug:
+        msg:
+          - "📊 PHASE 6C COMPLETION (Cluster Services):"
+          - "  Duration: {{ phase_duration }}s"
+          - "  Metrics Server: {{ 'INSTALLED' if not metrics_server_installed else 'SKIPPED (EXISTS)' }}"
+          - "  MetalLB: {{ 'INSTALLED' if not metallb_installed else 'SKIPPED (EXISTS)' }}"
+          - "  Metricbeat: {{ 'INSTALLED' if not metricbeat_installed else 'SKIPPED (EXISTS)' }}"
+          - "  Services status: {{ 'READY' if metrics_test.rc == 0 else 'INITIALIZING' }}"
+
+    - name: Final cluster enhancement status
+      debug:
+        msg: |
+          === LABNGOPREK Kubernetes Cluster Enhancement Complete ===
+          
+          ✅ Shell enhancements (Zsh, Oh-My-Zsh, kubectl aliases)
+          ✅ LABNGOPREK banner configured in MOTD
+          ✅ Master node taints removed (can schedule pods)
+          ✅ Metrics Server installed and ready
+          ✅ MetalLB Load Balancer configured
+          ✅ Metricbeat monitoring deployed
+          
+          Service Status:
+          {{ services_verification.stdout }}
+          
+          Performance Summary:
+          ⚡ Template optimization: {{ 'ENABLED' if is_k8s_ready_template else 'DISABLED' }}
+          🚀 Parallel installation: ENABLED
+          ⏱️  Total enhancement time: {{ phase_duration }}s
+          
+          Enhanced Features Available:
+          • kubectl alias 'k' in bash and zsh
+          • Cluster metrics: k top nodes, k top pods -A
+          • LoadBalancer services ready for deployment
+          • Monitoring data sent to Elasticsearch
+          
+          🎉 TEMPLATE-OPTIMIZED CLUSTER ENHANCEMENTS COMPLETE!

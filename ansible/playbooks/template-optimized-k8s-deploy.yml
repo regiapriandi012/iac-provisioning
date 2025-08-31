@@ -36,7 +36,7 @@
           - "  Masters: {{ groups['k8s_masters'] | length }}"
           - "  Workers: {{ groups['k8s_workers'] | length }}"
           - "  Total nodes: {{ groups['k8s_cluster'] | length }}"
-          - "  Expected time: 50s (template) | 174s (regular)"
+          - "  Expected time: 60s (template) | 180s (regular)"
 
   tasks:
     - name: Execute template detection and analysis
@@ -72,7 +72,12 @@
 - import_playbook: parallel/template-optimized/05-cni-installation-templated.yml
 
 # ======================================================================
-# PHASE 6: FINAL VERIFICATION AND REPORTING
+# PHASE 6: TEMPLATE-OPTIMIZED CLUSTER ENHANCEMENTS
+# ======================================================================
+- import_playbook: parallel/template-optimized/06-cluster-enhancements-templated.yml
+
+# ======================================================================
+# PHASE 7: FINAL VERIFICATION AND REPORTING
 # ======================================================================
 - name: "✅ Template-Optimized Deployment Verification and Reporting"
   hosts: k8s_masters[0]
@@ -102,6 +107,10 @@
         
         echo "CNI Status:"
         cilium status 2>/dev/null || echo "Cilium status not available"
+        echo ""
+        
+        echo "Cluster Services:"
+        kubectl get svc -A | grep -E '(metallb|metrics|metricbeat)' || echo "Enhanced services not found"
         echo ""
         
         echo "Cluster Health:"
@@ -147,9 +156,9 @@
           - ""
           - "📊 PERFORMANCE METRICS:"
           - "  Total deployment time: {{ deployment_duration }}s ({{ (deployment_duration | int / 60) | round(1) }}m)"
-          - "  Expected template time: ~50s (0m 50s)"
-          - "  Expected regular time: ~174s (2m 54s)"
-          - "  Performance improvement: {{ ((174 - deployment_duration | int) / 174 * 100) | round(1) if deployment_duration | int < 174 else 0 }}%"
+          - "  Expected template time: ~60s (1m 0s)"
+          - "  Expected regular time: ~180s (3m 0s)"
+          - "  Performance improvement: {{ ((180 - deployment_duration | int) / 180 * 100) | round(1) if deployment_duration | int < 180 else 0 }}%"
           - ""
           - "🏗️ DEPLOYMENT ARCHITECTURE:"
           - "  Kubernetes version: v{{ kubernetes_version }}"
@@ -163,6 +172,7 @@
           - "  Conditional installation: ACTIVE"
           - "  Image pre-pulling optimization: ACTIVE"
           - "  Parallel execution: ENABLED"
+          - "  Cluster enhancements: INCLUDED"
           - ""
           - "✅ CLUSTER STATUS: READY FOR USE"
 
@@ -182,9 +192,9 @@
           total_nodes={{ groups['k8s_cluster'] | length }}
           
           # Template optimization metrics
-          expected_template_time=50
-          expected_regular_time=174
-          performance_improvement_percent={{ ((174 - deployment_duration | int) / 174 * 100) | round(1) if deployment_duration | int < 174 else 0 }}
+          expected_template_time=60
+          expected_regular_time=180
+          performance_improvement_percent={{ ((180 - deployment_duration | int) / 180 * 100) | round(1) if deployment_duration | int < 180 else 0 }}
           
           # Deployment timestamp
           deployment_start={{ hostvars['localhost']['deployment_start_time'] }}
@@ -201,6 +211,7 @@
           - "  2. Deploy applications: kubectl apply -f your-app.yaml"  
           - "  3. Monitor cluster: kubectl get pods --all-namespaces"
           - "  4. Check metrics: cat /tmp/k8s-deployment-metrics.txt"
+          - "  5. Verify enhancements: kubectl get svc -A | grep -E '(metallb|metrics)'"
           - ""
-          - "🚀 Template-optimized deployment pipeline completed successfully!"
-          - "   Total time: {{ deployment_duration }}s | Expected savings: up to 3.5x faster!"
+          - "🚀 Template-optimized deployment with enhancements completed successfully!"
+          - "   Total time: {{ deployment_duration }}s | Expected savings: up to 3x faster!"
