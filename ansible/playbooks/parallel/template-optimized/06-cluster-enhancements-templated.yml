@@ -973,8 +973,8 @@
       retries: 5
       delay: 10
 
-    - name: Wait until MetalLB webhook is ready
-      shell: kubectl rollout status deploy/webhook -n metallb-system --timeout=120s
+    - name: Wait until MetalLB speaker is ready
+      shell: kubectl rollout status daemonset/speaker -n metallb-system --timeout=120s
       register: metallb_webhook_status
       until: metallb_webhook_status.rc == 0
       retries: 5
