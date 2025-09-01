@@ -961,7 +961,7 @@
     # METALLB CONFIGURATION (after installation completes)
     - name: Create MetalLB IPAddressPool configuration
       template:
-        src: metallb-config.yaml.j2
+        src: ../../templates/metallb-config.yaml.j2
         dest: /tmp/metallb-config.yaml
         mode: '0644'
       when: not metallb_installed
