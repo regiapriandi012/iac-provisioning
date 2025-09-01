@@ -1,7 +1,7 @@
 apiVersion: metallb.io/v1beta1
 kind: IPAddressPool
 metadata:
-  name: first-pool
+  name: labngoprek-pool
   namespace: {{ metallb_namespace }}
 spec:
   addresses:
@@ -12,8 +12,8 @@ spec:
 apiVersion: metallb.io/v1beta1
 kind: L2Advertisement
 metadata:
-  name: example
+  name: labngoprek-advertisement
   namespace: {{ metallb_namespace }}
 spec:
   ipAddressPools:
-  - first-pool
+  - labngoprek-pool
