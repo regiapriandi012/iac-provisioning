@@ -137,74 +137,47 @@
         - (node_count.stdout | int) > 0
       ignore_errors: yes
 
-    # TEMPLATE-OPTIMIZED CILIUM INSTALLATION (no image pre-pull needed)
-    - name: Install Cilium CNI - ULTRA-FAST WITH TEMPLATE
+    # SIMPLIFIED CILIUM INSTALLATION (with template optimization when available)
+    - name: Install Cilium CNI with template optimization
       shell: |
-        # Template optimization: Skip image pre-pull, images already available
-        echo "🚀 Installing Cilium v{{ cni_version }} using pre-pulled template images..."
-        
-        # Install Cilium with optimized settings for template deployment
-        curl -L --fail https://github.com/cilium/cilium-cli/releases/download/v0.16.20/cilium-linux-amd64.tar.gz | tar xz
-        sudo mv cilium /usr/local/bin
-        
-        # Deploy Cilium using local images (no pull required)
-        cilium install \
-          --version v{{ cni_version }} \
-          --set image.pullPolicy=Never \
-          --set operator.image.pullPolicy=Never \
-          --set hubble.relay.image.pullPolicy=Never \
-          --wait-duration=180s
-        
-        echo "✅ Cilium installed successfully using template optimization"
-      when: 
-        - not skip_cni_installation
-        - is_k8s_ready_template
-        - cni_images_pre_pulled
-        - template_cilium_version == cni_version
-      async: 200  # Reduced timeout thanks to pre-pulled images
-      poll: 5
-      register: cilium_template_install
-
-    # REGULAR CNI INSTALLATION (with image pulling)
-    - name: Install Cilium CNI - REGULAR VM WITH IMAGE PULL
-      shell: |
-        echo "🚀 Installing Cilium v{{ cni_version }} with image pulling..."
+        echo "🚀 Installing Cilium v{{ cni_version }}..."
         
         # Download and install Cilium CLI
         curl -L --fail https://github.com/cilium/cilium-cli/releases/download/v0.16.20/cilium-linux-amd64.tar.gz | tar xz
         sudo mv cilium /usr/local/bin
         
-        # Deploy Cilium with image pulling
-        cilium install \
-          --version v{{ cni_version }} \
-          --wait-duration=300s
+        # Use template optimization if images are available
+        {% raw %}
+        if [ "{{ is_k8s_ready_template }}" = "True" ] && [ "{{ cni_images_pre_pulled }}" = "True" ]; then
+          echo "⚡ Template optimization: Using pre-pulled images"
+          cilium install \
+            --version v{{ cni_version }} \
+            --set image.pullPolicy=Never \
+            --set operator.image.pullPolicy=Never \
+            --wait-duration=180s
+        else
+          echo "🔧 Regular installation: Downloading images"
+          cilium install \
+            --version v{{ cni_version }} \
+            --wait-duration=300s
+        fi
+        {% endraw %}
         
-        echo "✅ Cilium installed successfully with image pull"
-      when: 
-        - not skip_cni_installation
-        - not (is_k8s_ready_template and cni_images_pre_pulled and template_cilium_version == cni_version)
-      async: 360  # Longer timeout for image pulling
+        echo "✅ Cilium installed successfully"
+      when: not skip_cni_installation
+      async: 300
       poll: 5
-      register: cilium_regular_install
+      register: cilium_install
 
     # WAIT FOR CNI INSTALLATION COMPLETION
-    - name: Wait for template-optimized Cilium installation
+    - name: Wait for Cilium installation
       async_status:
-        jid: "{{ cilium_template_install.ansible_job_id }}"
-      register: cilium_template_result
-      until: cilium_template_result.finished
-      retries: 40
+        jid: "{{ cilium_install.ansible_job_id }}"
+      register: cilium_result
+      until: cilium_result.finished
+      retries: 60
       delay: 5
-      when: cilium_template_install is defined and cilium_template_install.ansible_job_id is defined
-
-    - name: Wait for regular Cilium installation
-      async_status:
-        jid: "{{ cilium_regular_install.ansible_job_id }}"
-      register: cilium_regular_result
-      until: cilium_regular_result.finished
-      retries: 72
-      delay: 5
-      when: cilium_regular_install is defined and cilium_regular_install.ansible_job_id is defined
+      when: cilium_install is defined and cilium_install.ansible_job_id is defined
       ignore_errors: yes
 
     # VERIFICATION AND STATUS
