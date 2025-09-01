@@ -168,39 +168,8 @@
         echo "🚀 Installing Cilium v{{ cni_version }}..."
         echo "Template variables: is_k8s_ready={{ is_k8s_ready_template }}, images_pre_pulled={{ cni_images_pre_pulled }}"
         
-        # METHOD 1: Try YAML manifests first (most reliable)
-        echo "📄 Attempting Cilium installation via YAML manifests..."
-        
-        # Generate Cilium configuration optimized for template
-        cat > /tmp/cilium-values.yaml << EOF
-apiVersion: v1
-kind: ConfigMap
-metadata:
-  name: cilium-config
-  namespace: kube-system
-data:
-  # Core CNI config
-  cni-exclusive: "true"
-  enable-ipv4: "true"
-  enable-ipv6: "false"
-  
-  # Performance optimizations for template
-  enable-endpoint-health-checking: "true"
-  enable-health-check-nodeport: "false"
-  
-  # Image settings based on template optimization
-  image-pull-policy: "{{ 'IfNotPresent' if (is_k8s_ready_template and cni_images_pre_pulled) else 'Always' }}"
-  operator-image-pull-policy: "{{ 'IfNotPresent' if (is_k8s_ready_template and cni_images_pre_pulled) else 'Always' }}"
-EOF
-        
-        # Apply Cilium with Helm-like approach using kubectl
-        echo "🔧 Installing Cilium with optimized configuration..."
-        
-        # First create the namespace
-        kubectl create namespace cilium-system --dry-run=client -o yaml | kubectl apply -f -
-        
-        # Apply the configuration
-        kubectl apply -f /tmp/cilium-values.yaml
+        # METHOD 1: Direct YAML manifests (most reliable)
+        echo "📄 Installing Cilium via direct YAML manifests..."
         
         # Install Cilium using the correct URL for v1.16.0
         if [ "{{ is_k8s_ready_template }}" = "True" ] && [ "{{ cni_images_pre_pulled }}" = "True" ]; then
