@@ -132,23 +132,6 @@
       when: skip_cni_installation
 
     # CONDITIONAL CNI INSTALLATION (skip if already installed)
-    - name: Wait for all nodes to be Ready (with timeout)
-      shell: |
-        timeout 120 bash -c '
-        while true; do
-          not_ready=$(kubectl get nodes --no-headers 2>/dev/null | grep -v " Ready " | wc -l)
-          if [ "$not_ready" -eq 0 ]; then
-            echo "All nodes are Ready"
-            break
-          fi
-          echo "Waiting for $not_ready nodes to become Ready..."
-          sleep 3
-        done
-        '
-      when: 
-        - not skip_cni_installation
-        - (node_count.stdout | int) > 0
-      ignore_errors: yes
 
     # DEBUGGING: Show template variables before installation
     - name: Debug template variables for Cilium installation
@@ -175,13 +158,40 @@
         if [ "{{ is_k8s_ready_template }}" = "True" ] && [ "{{ cni_images_pre_pulled }}" = "True" ]; then
           echo "⚡ Template optimization: Using pre-pulled images"
           
-          # Custom YAML with IfNotPresent policy
-          curl -s https://raw.githubusercontent.com/cilium/cilium/1.16.0/install/kubernetes/quick-install.yaml | \
-          sed 's/imagePullPolicy: Always/imagePullPolicy: IfNotPresent/g' | \
-          kubectl apply -f -
+          # Custom YAML with IfNotPresent policy - with error checking
+          echo "📥 Downloading Cilium YAML from GitHub..."
+          curl -s https://raw.githubusercontent.com/cilium/cilium/1.16.0/install/kubernetes/quick-install.yaml > /tmp/cilium-raw.yaml
+          if [ $? -ne 0 ] || [ ! -s /tmp/cilium-raw.yaml ]; then
+            echo "❌ Failed to download Cilium YAML - falling back to v1.15.6"
+            curl -s https://raw.githubusercontent.com/cilium/cilium/v1.15.6/install/kubernetes/quick-install.yaml > /tmp/cilium-raw.yaml
+          fi
+          
+          echo "🔧 Modifying image pull policy to IfNotPresent..."
+          sed 's/imagePullPolicy: Always/imagePullPolicy: IfNotPresent/g' /tmp/cilium-raw.yaml > /tmp/cilium-optimized.yaml
+          
+          echo "🚀 Applying optimized Cilium YAML..."
+          kubectl apply -f /tmp/cilium-optimized.yaml
+          apply_result=$?
         else
           echo "🔧 Regular installation: Will pull images as needed"
+          echo "📥 Downloading and applying Cilium YAML..."
           kubectl apply -f https://raw.githubusercontent.com/cilium/cilium/1.16.0/install/kubernetes/quick-install.yaml
+          apply_result=$?
+          
+          # Fallback to v1.15.6 if v1.16.0 fails
+          if [ $apply_result -ne 0 ]; then
+            echo "⚠️ v1.16.0 failed, trying v1.15.6..."
+            kubectl apply -f https://raw.githubusercontent.com/cilium/cilium/v1.15.6/install/kubernetes/quick-install.yaml
+            apply_result=$?
+          fi
+        fi
+        
+        # Check if kubectl apply succeeded
+        if [ $apply_result -eq 0 ]; then
+          echo "✅ Cilium YAML applied successfully"
+        else
+          echo "❌ Cilium YAML apply failed with exit code $apply_result"
+          kubectl get events --sort-by=.metadata.creationTimestamp | tail -10
         fi
         
         echo "✅ Cilium YAML manifests applied"
@@ -277,6 +287,30 @@
         echo "Node ready check complete"
       register: cni_verification
       when: not skip_cni_installation
+      ignore_errors: yes
+
+    - name: Wait for all nodes to be Ready after CNI installation
+      shell: |
+        echo "⏳ Waiting for all nodes to become Ready after CNI installation..."
+        timeout 180 bash -c '
+        while true; do
+          not_ready=$(kubectl get nodes --no-headers 2>/dev/null | grep -v " Ready " | wc -l)
+          total_nodes=$(kubectl get nodes --no-headers 2>/dev/null | wc -l)
+          
+          if [ "$not_ready" -eq 0 ] && [ "$total_nodes" -gt 0 ]; then
+            echo "✅ All $total_nodes nodes are Ready!"
+            break
+          fi
+          
+          echo "Waiting for $not_ready/$total_nodes nodes to become Ready..."
+          kubectl get nodes --no-headers | grep -v " Ready " || echo "All nodes appear Ready now"
+          sleep 5
+        done
+        '
+      when: 
+        - not skip_cni_installation
+        - (node_count.stdout | int) > 0
+      register: nodes_ready_wait
       ignore_errors: yes
 
     - name: CNI installation results
