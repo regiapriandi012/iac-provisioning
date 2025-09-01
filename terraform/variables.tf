@@ -49,7 +49,7 @@ variable "cni_type" {
 variable "cni_version" {
   description = "CNI version to install"
   type        = string
-  default     = "1.14.5"
+  default     = "1.16.0"
 }
 
 variable "kubernetes_version" {

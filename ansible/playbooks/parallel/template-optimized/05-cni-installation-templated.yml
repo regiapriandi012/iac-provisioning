@@ -205,6 +205,7 @@
       retries: 72
       delay: 5
       when: cilium_regular_install is defined and cilium_regular_install.ansible_job_id is defined
+      ignore_errors: yes
 
     # VERIFICATION AND STATUS
     - name: Wait for Cilium to be ready

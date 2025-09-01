@@ -176,7 +176,7 @@ ansible-playbook \
     --timeout=600 \
     --ssh-extra-args='-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=10' \
     -e "cni_type=${DEFAULT_CNI_TYPE:-cilium}" \
-    -e "cni_version=${DEFAULT_CNI_VERSION:-1.14.5}" \
+    -e "cni_version=${DEFAULT_CNI_VERSION:-1.16.0}" \
     -v
 
 PHASE5_END=$(date +%s)
