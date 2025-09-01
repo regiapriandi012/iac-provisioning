@@ -187,18 +187,18 @@
       poll: 0
       register: rhel_update_job
 
-    # Install specific version of Kubernetes packages
+    # Install specific version of Kubernetes packages with held packages support
     - name: Install Kubernetes packages with specific version (Debian-based)
-      apt:
-        name:
-          - "kubelet={{ kubernetes_version }}-*"
-          - "kubeadm={{ kubernetes_version }}-*"
-          - "kubectl={{ kubernetes_version }}-*"
-        state: present
-        force_apt_get: yes
-        dpkg_options: 'force-confold,force-confdef'
-        install_recommends: no
-        allow_downgrade: yes
+      shell: |
+        DEBIAN_FRONTEND=noninteractive apt-get install -y \
+          --allow-downgrades \
+          --allow-change-held-packages \
+          -o Dpkg::Options::="--force-confold" \
+          -o Dpkg::Options::="--force-confdef" \
+          -o APT::Install-Recommends=no \
+          kubelet={{ kubernetes_version }}-* \
+          kubeadm={{ kubernetes_version }}-* \
+          kubectl={{ kubernetes_version }}-*
       when: 
         - detected_os_family == "Debian"
         - not skip_k8s_installation
