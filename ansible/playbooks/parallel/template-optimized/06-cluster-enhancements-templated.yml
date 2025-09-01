@@ -966,6 +966,20 @@
         mode: '0644'
       when: not metallb_installed
 
+    - name: Wait until MetalLB controller is ready
+      shell: kubectl rollout status deploy/controller -n metallb-system --timeout=120s
+      register: metallb_controller_status
+      until: metallb_controller_status.rc == 0
+      retries: 5
+      delay: 10
+
+    - name: Wait until MetalLB webhook is ready
+      shell: kubectl rollout status deploy/webhook -n metallb-system --timeout=120s
+      register: metallb_webhook_status
+      until: metallb_webhook_status.rc == 0
+      retries: 5
+      delay: 10
+
     - name: Apply MetalLB configuration
       shell: kubectl apply -f /tmp/metallb-config.yaml
       when: not metallb_installed
