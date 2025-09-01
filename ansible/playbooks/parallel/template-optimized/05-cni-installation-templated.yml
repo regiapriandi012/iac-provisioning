@@ -145,56 +145,52 @@
           - "  Template decision: {{ 'OPTIMIZED (pre-pulled images)' if (is_k8s_ready_template and cni_images_pre_pulled) else 'REGULAR (download images)' }}"
       when: not skip_cni_installation
 
-    # ROBUST CILIUM INSTALLATION WITH TEMPLATE OPTIMIZATION
+    # RELIABLE CILIUM INSTALLATION VIA CLI (modern approach)
+    - name: Install Cilium CLI
+      shell: |
+        echo "📦 Installing Cilium CLI..."
+        CILIUM_CLI_VERSION="v0.16.20"
+        CLI_ARCH=amd64
+        if [ "$(uname -m)" = "aarch64" ]; then CLI_ARCH=arm64; fi
+        
+        curl -L --fail --connect-timeout 10 --max-time 60 \
+          https://github.com/cilium/cilium-cli/releases/download/${CILIUM_CLI_VERSION}/cilium-linux-${CLI_ARCH}.tar.gz \
+          -o cilium.tar.gz
+        tar xzf cilium.tar.gz -C /usr/local/bin
+        chmod +x /usr/local/bin/cilium
+        rm -f cilium.tar.gz
+        
+        echo "✅ Cilium CLI installed successfully"
+      register: cilium_cli_install
+
     - name: Install Cilium CNI with template optimization
       shell: |
         echo "🚀 Installing Cilium v{{ cni_version }}..."
         echo "Template variables: is_k8s_ready={{ is_k8s_ready_template }}, images_pre_pulled={{ cni_images_pre_pulled }}"
         
-        # METHOD 1: Direct YAML manifests (most reliable)
-        echo "📄 Installing Cilium via direct YAML manifests..."
-        
-        # Install Cilium using the correct URL for v1.16.0
+        # Template optimization: use pre-pulled images if available
         if [ "{{ is_k8s_ready_template }}" = "True" ] && [ "{{ cni_images_pre_pulled }}" = "True" ]; then
           echo "⚡ Template optimization: Using pre-pulled images"
-          
-          # Custom YAML with IfNotPresent policy - with error checking
-          echo "📥 Downloading Cilium YAML from GitHub..."
-          curl -s https://raw.githubusercontent.com/cilium/cilium/1.16.0/install/kubernetes/quick-install.yaml > /tmp/cilium-raw.yaml
-          if [ $? -ne 0 ] || [ ! -s /tmp/cilium-raw.yaml ]; then
-            echo "❌ Failed to download Cilium YAML - falling back to v1.15.6"
-            curl -s https://raw.githubusercontent.com/cilium/cilium/v1.15.6/install/kubernetes/quick-install.yaml > /tmp/cilium-raw.yaml
-          fi
-          
-          echo "🔧 Modifying image pull policy to IfNotPresent..."
-          sed 's/imagePullPolicy: Always/imagePullPolicy: IfNotPresent/g' /tmp/cilium-raw.yaml > /tmp/cilium-optimized.yaml
-          
-          echo "🚀 Applying optimized Cilium YAML..."
-          kubectl apply -f /tmp/cilium-optimized.yaml
-          apply_result=$?
+          cilium install \
+            --version v{{ cni_version }} \
+            --set image.pullPolicy=IfNotPresent \
+            --set operator.image.pullPolicy=IfNotPresent \
+            --wait
         else
-          echo "🔧 Regular installation: Will pull images as needed"
-          echo "📥 Downloading and applying Cilium YAML..."
-          kubectl apply -f https://raw.githubusercontent.com/cilium/cilium/1.16.0/install/kubernetes/quick-install.yaml
-          apply_result=$?
-          
-          # Fallback to v1.15.6 if v1.16.0 fails
-          if [ $apply_result -ne 0 ]; then
-            echo "⚠️ v1.16.0 failed, trying v1.15.6..."
-            kubectl apply -f https://raw.githubusercontent.com/cilium/cilium/v1.15.6/install/kubernetes/quick-install.yaml
-            apply_result=$?
-          fi
+          echo "🔧 Regular installation: Will pull images as needed"  
+          cilium install \
+            --version v{{ cni_version }} \
+            --wait
         fi
         
-        # Check if kubectl apply succeeded
+        apply_result=$?
+        
         if [ $apply_result -eq 0 ]; then
-          echo "✅ Cilium YAML applied successfully"
+          echo "✅ Cilium installed successfully"
         else
-          echo "❌ Cilium YAML apply failed with exit code $apply_result"
+          echo "❌ Cilium installation failed with exit code $apply_result"
           kubectl get events --sort-by=.metadata.creationTimestamp | tail -10
         fi
-        
-        echo "✅ Cilium YAML manifests applied"
         
         # Wait a moment for pods to be created
         sleep 10
@@ -207,11 +203,8 @@
           echo "✅ Found $cilium_pod_count Cilium pods"
           kubectl get pods -n kube-system -l k8s-app=cilium --no-headers
         else
-          echo "⚠️ No Cilium pods found, trying alternative approach..."
-          
-          # Fallback: try with different label
-          kubectl get pods -n kube-system -l k8s-app=cilium* --no-headers || true
-          kubectl get pods -n kube-system | grep cilium || echo "Still no Cilium pods visible"
+          echo "⚠️ No Cilium pods found, checking all kube-system pods..."
+          kubectl get pods -n kube-system --no-headers | grep cilium || echo "Still no Cilium pods visible"
         fi
         
         echo "✅ Cilium installation command completed"
