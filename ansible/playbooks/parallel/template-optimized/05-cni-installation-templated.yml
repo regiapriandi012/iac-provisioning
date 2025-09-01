@@ -137,17 +137,29 @@
         - (node_count.stdout | int) > 0
       ignore_errors: yes
 
+    # DEBUGGING: Show template variables before installation
+    - name: Debug template variables for Cilium installation
+      debug:
+        msg:
+          - "🔍 CILIUM INSTALLATION DEBUG:"
+          - "  is_k8s_ready_template: {{ is_k8s_ready_template }}"
+          - "  cni_images_pre_pulled: {{ cni_images_pre_pulled }}"
+          - "  cni_version: {{ cni_version }}"
+          - "  skip_cni_installation: {{ skip_cni_installation }}"
+          - "  Template decision: {{ 'OPTIMIZED (pre-pulled images)' if (is_k8s_ready_template and cni_images_pre_pulled) else 'REGULAR (download images)' }}"
+      when: not skip_cni_installation
+
     # SIMPLIFIED CILIUM INSTALLATION (with template optimization when available)
     - name: Install Cilium CNI with template optimization
       shell: |
         echo "🚀 Installing Cilium v{{ cni_version }}..."
+        echo "Template variables: is_k8s_ready={{ is_k8s_ready_template }}, images_pre_pulled={{ cni_images_pre_pulled }}"
         
         # Download and install Cilium CLI
         curl -L --fail https://github.com/cilium/cilium-cli/releases/download/v0.16.20/cilium-linux-amd64.tar.gz | tar xz
         sudo mv cilium /usr/local/bin
         
         # Use template optimization if images are available
-        {% raw %}
         if [ "{{ is_k8s_ready_template }}" = "True" ] && [ "{{ cni_images_pre_pulled }}" = "True" ]; then
           echo "⚡ Template optimization: Using pre-pulled images"
           cilium install \
@@ -161,9 +173,12 @@
             --version v{{ cni_version }} \
             --wait-duration=300s
         fi
-        {% endraw %}
         
-        echo "✅ Cilium installed successfully"
+        # Verify installation immediately after
+        echo "🔍 Checking Cilium installation status..."
+        kubectl get pods -n kube-system -l k8s-app=cilium || echo "No Cilium pods found yet"
+        
+        echo "✅ Cilium installation command completed"
       when: not skip_cni_installation
       async: 300
       poll: 5
@@ -181,17 +196,34 @@
       ignore_errors: yes
 
     # VERIFICATION AND STATUS
-    - name: Wait for Cilium to be ready
+    - name: Wait for Cilium pods to be created
       shell: |
-        timeout 180 bash -c '
-        while ! cilium status --wait --wait-duration=5s >/dev/null 2>&1; do
-          echo "Waiting for Cilium to become ready..."
+        echo "⏳ Waiting for Cilium pods to be created..."
+        timeout 120 bash -c '
+        while [ $(kubectl get pods -n kube-system -l k8s-app=cilium --no-headers 2>/dev/null | wc -l) -eq 0 ]; do
+          echo "Waiting for Cilium pods to be created..."
           sleep 5
         done
-        echo "Cilium is ready!"
+        echo "✅ Cilium pods have been created!"
         '
       when: not skip_cni_installation
-      ignore_errors: yes
+      register: cilium_pods_wait
+      failed_when: cilium_pods_wait.rc != 0
+
+    - name: Wait for Cilium to be ready
+      shell: |
+        echo "⏳ Waiting for Cilium to become ready..."
+        timeout 300 bash -c '
+        while ! cilium status --wait --wait-duration=10s >/dev/null 2>&1; do
+          echo "Waiting for Cilium to become ready..."
+          kubectl get pods -n kube-system -l k8s-app=cilium --no-headers
+          sleep 10
+        done
+        echo "✅ Cilium is ready!"
+        '
+      when: not skip_cni_installation and cilium_pods_wait is succeeded
+      register: cilium_ready_wait
+      failed_when: cilium_ready_wait.rc != 0
 
     - name: Verify all nodes are Ready after CNI installation
       shell: |
@@ -199,11 +231,15 @@
         kubectl get nodes -o wide
         echo ""
         echo "=== CNI POD STATUS ==="
-        kubectl get pods -n kube-system -l k8s-app=cilium
+        kubectl get pods -n kube-system -l k8s-app=cilium -o wide
         echo ""
         echo "=== CILIUM STATUS ==="
-        cilium status || echo "Cilium CLI status check failed"
+        cilium status --verbose
+        echo ""
+        echo "=== CILIUM CONNECTIVITY TEST ==="
+        cilium connectivity test --test ping --test network-policy --test connectivity --test node-to-node-encryption || echo "⚠️ Connectivity test failed but CNI is installed"
       register: cni_verification
+      when: not skip_cni_installation
       ignore_errors: yes
 
     - name: CNI installation results
