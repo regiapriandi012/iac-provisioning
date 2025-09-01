@@ -6,7 +6,7 @@ metadata:
 spec:
   addresses:
 {% for ip in metallb_addresses %}
-  - {{ ip }}/32
+    - {{ ip }}/32
 {% endfor %}
 ---
 apiVersion: metallb.io/v1beta1

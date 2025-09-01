@@ -728,7 +728,16 @@
     - name: Process master IPs for MetalLB pool
       set_fact:
         master_ip_list: "{{ master_ips.stdout.split(' ') | select('match', '^\\d+\\.\\d+\\.\\d+\\.\\d+$') | list }}"
-        metallb_addresses: "{{ master_ips.stdout.split(' ') | select('match', '^\\d+\\.\\d+\\.\\d+$') | list }}"
+        metallb_addresses: "{{ master_ips.stdout.split(' ') | select('match', '^\\d+\\.\\d+\\.\\d+\\.\\d+$') | list }}"
+      when: not metallb_installed
+      
+    - name: Validate MetalLB addresses 
+      assert:
+        that:
+          - metallb_addresses | length > 0
+          - metallb_addresses is defined
+        fail_msg: "No valid master IPs found for MetalLB: {{ master_ips.stdout }}"
+        success_msg: "MetalLB will use {{ metallb_addresses | length }} IP(s): {{ metallb_addresses | join(', ') }}"
       when: not metallb_installed
 
     # METRICBEAT CONFIGURATION CREATION (async)
@@ -961,7 +970,7 @@
           spec:
             addresses:
             {% for ip in metallb_addresses %}
-            - {{ ip }}/32
+              - {{ ip }}/32
             {% endfor %}
           ---
           apiVersion: metallb.io/v1beta1
@@ -971,7 +980,7 @@
             namespace: {{ metallb_namespace }}
           spec:
             ipAddressPools:
-            - first-pool
+              - first-pool
         dest: /tmp/metallb-config.yaml
         mode: '0644'
       when: not metallb_installed
