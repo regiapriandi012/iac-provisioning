@@ -1,19 +1,19 @@
 apiVersion: metallb.io/v1beta1
 kind: IPAddressPool
 metadata:
-  name: labngoprek-pool
+  name: first-pool
   namespace: {{ metallb_namespace }}
 spec:
   addresses:
 {% for ip in metallb_addresses %}
-    - {{ ip }}/32
+  - {{ ip }}/32
 {% endfor %}
 ---
 apiVersion: metallb.io/v1beta1
 kind: L2Advertisement
 metadata:
-  name: labngoprek-advertisement
+  name: example
   namespace: {{ metallb_namespace }}
 spec:
   ipAddressPools:
-  - labngoprek-pool
+  - first-pool
