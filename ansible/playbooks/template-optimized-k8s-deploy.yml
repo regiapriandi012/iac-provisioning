@@ -172,32 +172,32 @@
           - "  Cluster enhancements: INCLUDED"
           - ""
           - "✅ CLUSTER STATUS: READY FOR USE"
-
-    - name: Save deployment metrics
-      copy:
-        content: |
-          # Template-Optimized Kubernetes Deployment Metrics
-          # Generated: {{ ansible_date_time.iso8601 }}
+    
+    #- name: Save deployment metrics
+    #  copy:
+    #    content: |
+    #      # Template-Optimized Kubernetes Deployment Metrics
+    #      # Generated: {{ ansible_date_time.iso8601 }}
+    #      
+    #      deployment_duration_seconds={{ deployment_duration }}
+    #      deployment_duration_minutes={{ (deployment_duration | int / 60) | round(2) }}
+    #      kubernetes_version={{ kubernetes_version }}
+    #      cni_type={{ cni_type }}
+    #      cni_version={{ cni_version }}
+    #      master_nodes={{ groups['k8s_masters'] | length }}
+    #      worker_nodes={{ groups['k8s_workers'] | length }}
+    #      total_nodes={{ groups['k8s_cluster'] | length }}
           
-          deployment_duration_seconds={{ deployment_duration }}
-          deployment_duration_minutes={{ (deployment_duration | int / 60) | round(2) }}
-          kubernetes_version={{ kubernetes_version }}
-          cni_type={{ cni_type }}
-          cni_version={{ cni_version }}
-          master_nodes={{ groups['k8s_masters'] | length }}
-          worker_nodes={{ groups['k8s_workers'] | length }}
-          total_nodes={{ groups['k8s_cluster'] | length }}
+    #      # Template optimization metrics
+    #      expected_template_time=60
+    #      expected_regular_time=180
+    #      performance_improvement_percent={{ ((180 - deployment_duration | int) / 180 * 100) | round(1) if deployment_duration | int < 180 else 0 }}
           
-          # Template optimization metrics
-          expected_template_time=60
-          expected_regular_time=180
-          performance_improvement_percent={{ ((180 - deployment_duration | int) / 180 * 100) | round(1) if deployment_duration | int < 180 else 0 }}
-          
-          # Deployment timestamp
-          deployment_start={{ hostvars['localhost']['deployment_start_time'] }}
-          deployment_end={{ deployment_end_time }}
-        dest: /tmp/k8s-deployment-metrics.txt
-      delegate_to: localhost
+    #      # Deployment timestamp
+    #      deployment_start={{ hostvars['localhost']['deployment_start_time'] }}
+    #      deployment_end={{ deployment_end_time }}
+    #    dest: /tmp/k8s-deployment-metrics.txt
+    #  delegate_to: localhost
 
   post_tasks:
     - name: Template deployment completion notice
