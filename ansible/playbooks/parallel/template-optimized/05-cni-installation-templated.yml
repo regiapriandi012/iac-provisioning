@@ -206,20 +206,7 @@
         
         echo "✅ Cilium installation command completed"
       when: not skip_cni_installation
-      async: 300
-      poll: 5
       register: cilium_install
-
-    # WAIT FOR CNI INSTALLATION COMPLETION
-    - name: Wait for Cilium installation
-      async_status:
-        jid: "{{ cilium_install.ansible_job_id }}"
-      register: cilium_result
-      until: cilium_result.finished
-      retries: 60
-      delay: 5
-      when: cilium_install is defined and cilium_install.ansible_job_id is defined
-      ignore_errors: yes
 
     # VERIFICATION AND STATUS (YAML-based approach)
     - name: Wait for Cilium pods to be created (multiple attempts)
