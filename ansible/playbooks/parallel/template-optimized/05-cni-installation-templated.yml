@@ -153,7 +153,7 @@
         CLI_ARCH=amd64
         if [ "$(uname -m)" = "aarch64" ]; then CLI_ARCH=arm64; fi
         
-        curl -L --fail --connect-timeout 10 --max-time 60 \
+        curl -L --fail --connect-timeout 5 --max-time 30 \
           https://github.com/cilium/cilium-cli/releases/download/${CILIUM_CLI_VERSION}/cilium-linux-${CLI_ARCH}.tar.gz \
           -o cilium.tar.gz
         tar xzf cilium.tar.gz -C /usr/local/bin
@@ -175,13 +175,13 @@
             --version v{{ cni_version }} \
             --set image.pullPolicy=IfNotPresent \
             --set operator.image.pullPolicy=IfNotPresent \
-            --wait-duration=60s \
+            --wait-duration=30s \
             --wait
         else
           echo "🔧 Regular installation: Will pull images as needed"  
           cilium install \
             --version v{{ cni_version }} \
-            --wait-duration=60s \
+            --wait-duration=30s \
             --wait
         fi
         
@@ -217,7 +217,7 @@
     - name: Wait for Cilium pods to be created (multiple attempts)
       shell: |
         echo "⏳ Waiting for Cilium pods to be created..."
-        timeout 180 bash -c '
+        timeout 90 bash -c '
         attempt=0
         while [ $(kubectl get pods -n kube-system -l k8s-app=cilium --no-headers 2>/dev/null | wc -l) -eq 0 ]; do
           attempt=$((attempt + 1))
@@ -229,7 +229,7 @@
             kubectl get pods -n kube-system --no-headers | head -5 || true
           fi
           
-          sleep 5
+          sleep 2
         done
         echo "✅ Cilium pods have been created!"
         '
@@ -240,7 +240,7 @@
     - name: Wait for Cilium pods to be ready (without CLI dependency)
       shell: |
         echo "⏳ Waiting for Cilium pods to become ready..."
-        timeout 180 bash -c '
+        timeout 90 bash -c '
         while true; do
           # Check if all cilium pods are running
           running_pods=$(kubectl get pods -n kube-system -l k8s-app=cilium --no-headers 2>/dev/null | grep " Running " | wc -l)
@@ -253,7 +253,7 @@
           
           echo "Waiting for Cilium pods to become ready... ($running_pods/$total_pods running)"
           kubectl get pods -n kube-system -l k8s-app=cilium --no-headers || true
-          sleep 5
+          sleep 2
         done
         '
       when: not skip_cni_installation
@@ -287,7 +287,7 @@
     - name: Wait for all nodes to be Ready after CNI installation
       shell: |
         echo "⏳ Waiting for all nodes to become Ready after CNI installation..."
-        timeout 180 bash -c '
+        timeout 90 bash -c '
         while true; do
           not_ready=$(kubectl get nodes --no-headers 2>/dev/null | grep -v " Ready " | wc -l)
           total_nodes=$(kubectl get nodes --no-headers 2>/dev/null | wc -l)
@@ -299,7 +299,7 @@
           
           echo "Waiting for $not_ready/$total_nodes nodes to become Ready..."
           kubectl get nodes --no-headers | grep -v " Ready " || echo "All nodes appear Ready now"
-          sleep 5
+          sleep 2
         done
         '
       when: 

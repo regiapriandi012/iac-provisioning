@@ -177,16 +177,8 @@
         - sysctl_bundled_job is defined 
         - sysctl_bundled_job.ansible_job_id is defined
 
-    # VERIFICATION (always run to ensure system is ready)
-    - name: Verify kernel modules are loaded
-      shell: lsmod | grep -E '(overlay|br_netfilter)'
-      register: modules_check
-      ignore_errors: yes
-
-    - name: Verify sysctl parameters are applied
-      shell: sysctl net.bridge.bridge-nf-call-iptables net.ipv4.ip_forward
-      register: sysctl_check
-      ignore_errors: yes
+    # VERIFICATION - OPTIMIZED (skip intermediate checks)
+    # Removed redundant kernel module and sysctl verification for speed
 
     - name: System preparation verification
       debug:

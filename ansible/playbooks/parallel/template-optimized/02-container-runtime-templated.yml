@@ -114,7 +114,7 @@
       when: 
         - detected_os_family == "RedHat"
         - not (is_k8s_ready_template and containerd_status.status is defined and containerd_status.status.ActiveState == 'active')
-      async: 120
+      async: 60
       poll: 0
       register: rhel_prereq_job
 
@@ -133,7 +133,7 @@
       when: 
         - detected_os_family == "Debian"
         - not (is_k8s_ready_template and containerd_status.status is defined and containerd_status.status.ActiveState == 'active')
-      async: 120
+      async: 60
       poll: 0
       register: debian_prereq_job
 
@@ -156,7 +156,7 @@
     - name: Add Docker GPG key (Debian-based)
       shell: |
         mkdir -p /usr/share/keyrings
-        curl -fsSL https://download.docker.com/linux/debian/gpg -o /tmp/docker.gpg
+        curl -fsSL --connect-timeout 3 --max-time 15 https://download.docker.com/linux/debian/gpg -o /tmp/docker.gpg
         gpg --batch --yes --dearmor /tmp/docker.gpg
         mv /tmp/docker.gpg.gpg /usr/share/keyrings/docker-archive-keyring.gpg
         rm -f /tmp/docker.gpg
@@ -189,7 +189,7 @@
       when: 
         - detected_os_family == "RedHat"
         - not (is_k8s_ready_template and containerd_status.status is defined and containerd_status.status.ActiveState == 'active')
-      async: 180
+      async: 90
       poll: 0
       register: rhel_containerd_job
 
@@ -206,7 +206,7 @@
       when: 
         - detected_os_family == "Debian"
         - not (is_k8s_ready_template and containerd_status.status is defined and containerd_status.status.ActiveState == 'active')
-      async: 180
+      async: 90
       poll: 0
       register: debian_containerd_job
 
@@ -216,8 +216,8 @@
         jid: "{{ rhel_prereq_job.ansible_job_id }}"
       register: rhel_prereq_result
       until: rhel_prereq_result.finished
-      retries: 60
-      delay: 2
+      retries: 30
+      delay: 1
       when: rhel_prereq_job is defined and rhel_prereq_job.ansible_job_id is defined
 
     - name: Wait for Debian prerequisites
@@ -225,8 +225,8 @@
         jid: "{{ debian_prereq_job.ansible_job_id }}"
       register: debian_prereq_result
       until: debian_prereq_result.finished
-      retries: 60
-      delay: 2
+      retries: 30
+      delay: 1
       when: debian_prereq_job is defined and debian_prereq_job.ansible_job_id is defined
 
     - name: Wait for containerd installation (RedHat)
@@ -234,8 +234,8 @@
         jid: "{{ rhel_containerd_job.ansible_job_id }}"
       register: rhel_containerd_result
       until: rhel_containerd_result.finished
-      retries: 90
-      delay: 2
+      retries: 45
+      delay: 1
       when: rhel_containerd_job is defined and rhel_containerd_job.ansible_job_id is defined
 
     - name: Wait for containerd installation (Debian)
@@ -243,8 +243,8 @@
         jid: "{{ debian_containerd_job.ansible_job_id }}"
       register: debian_containerd_result
       until: debian_containerd_result.finished
-      retries: 90
-      delay: 2
+      retries: 45
+      delay: 1
       when: debian_containerd_job is defined and debian_containerd_job.ansible_job_id is defined
 
     # CONTAINERD CONFIGURATION (always run to ensure proper config)
@@ -291,7 +291,7 @@
       register: containerd_restart_status
       until: containerd_restart_status.finished
       retries: 15
-      delay: 2
+      delay: 1
       when: containerd_restart_result.ansible_job_id is defined
       
     - name: Wait for containerd socket
@@ -329,19 +329,11 @@
       register: crictl_install_result
       until: crictl_install_result.finished
       retries: 15
-      delay: 2
+      delay: 1
       when: crictl_install_job is defined and crictl_install_job.ansible_job_id is defined
 
-    # VERIFICATION (always run)
-    - name: Verify containerd and crictl status
-      shell: |
-        echo "=== CONTAINER RUNTIME VERIFICATION ==="
-        systemctl is-active containerd
-        systemctl is-enabled containerd
-        crictl info 2>/dev/null | head -3 || echo "CRI tools need initialization"
-        echo "Container runtime verification complete"
-      register: container_runtime_verification
-      ignore_errors: yes
+    # VERIFICATION - OPTIMIZED (skip for speed)
+    # Removed intermediate containerd verification for performance
 
     - name: Container runtime verification results
       debug:

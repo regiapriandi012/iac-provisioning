@@ -221,7 +221,7 @@
       when: 
         - detected_os_family == "Debian"
         - not skip_k8s_installation
-      async: 180
+      async: 120
       poll: 0
       register: debian_k8s_install_job
 
@@ -237,7 +237,7 @@
       when: 
         - detected_os_family == "RedHat"
         - not skip_k8s_installation
-      async: 180
+      async: 120
       poll: 0
       register: rhel_k8s_install_job
 
@@ -247,8 +247,8 @@
         jid: "{{ debian_k8s_repo_job.ansible_job_id }}"
       register: debian_k8s_repo_result
       until: debian_k8s_repo_result.finished
-      retries: 30
-      delay: 2
+      retries: 20
+      delay: 1
       when: debian_k8s_repo_job is defined and debian_k8s_repo_job.ansible_job_id is defined
 
     - name: Wait for RedHat K8s repository setup
@@ -256,8 +256,8 @@
         jid: "{{ rhel_k8s_repo_job.ansible_job_id }}"
       register: rhel_k8s_repo_result
       until: rhel_k8s_repo_result.finished
-      retries: 30
-      delay: 2
+      retries: 20
+      delay: 1
       when: rhel_k8s_repo_job is defined and rhel_k8s_repo_job.ansible_job_id is defined
 
     - name: Wait for Debian cache update
@@ -265,8 +265,8 @@
         jid: "{{ debian_update_job.ansible_job_id }}"
       register: debian_update_result
       until: debian_update_result.finished
-      retries: 30
-      delay: 2
+      retries: 20
+      delay: 1
       when: debian_update_job is defined and debian_update_job.ansible_job_id is defined
 
     - name: Wait for RedHat cache update
@@ -274,8 +274,8 @@
         jid: "{{ rhel_update_job.ansible_job_id }}"
       register: rhel_update_result
       until: rhel_update_result.finished
-      retries: 30
-      delay: 2
+      retries: 20
+      delay: 1
       when: rhel_update_job is defined and rhel_update_job.ansible_job_id is defined
 
     - name: Wait for Kubernetes packages installation (Debian)
@@ -283,8 +283,8 @@
         jid: "{{ debian_k8s_install_job.ansible_job_id }}"
       register: debian_k8s_install_result
       until: debian_k8s_install_result.finished
-      retries: 90
-      delay: 2
+      retries: 60
+      delay: 1
       when: debian_k8s_install_job is defined and debian_k8s_install_job.ansible_job_id is defined
 
     - name: Wait for Kubernetes packages installation (RedHat)
@@ -292,8 +292,8 @@
         jid: "{{ rhel_k8s_install_job.ansible_job_id }}"
       register: rhel_k8s_install_result
       until: rhel_k8s_install_result.finished
-      retries: 90
-      delay: 2
+      retries: 60
+      delay: 1
       when: rhel_k8s_install_job is defined and rhel_k8s_install_job.ansible_job_id is defined
 
     # PACKAGE LOCKING (always run to ensure packages are held)

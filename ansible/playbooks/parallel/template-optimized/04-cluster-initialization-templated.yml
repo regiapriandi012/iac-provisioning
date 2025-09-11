@@ -154,8 +154,9 @@
         --pod-network-cidr={{ pod_network_cidr }}
         --service-cidr={{ service_cidr }}
         --kubernetes-version=v{{ kubernetes_version }}
-        --skip-phases=preflight
-        --ignore-preflight-errors=all
+        --cri-socket=unix:///var/run/containerd/containerd.sock
+        {{ '--skip-phases=preflight' if is_k8s_ready_template else '' }}
+        --v=1
       when: 
         - not k8s_initialized.stat.exists 
         - not is_ha_cluster 
@@ -172,8 +173,9 @@
         --pod-network-cidr={{ pod_network_cidr }}
         --service-cidr={{ service_cidr }}
         --kubernetes-version=v{{ kubernetes_version }}
-        --skip-phases=preflight
-        --ignore-preflight-errors=all
+        --cri-socket=unix:///var/run/containerd/containerd.sock
+        {{ '--skip-phases=preflight' if is_k8s_ready_template else '' }}
+        --v=1
       when: 
         - not k8s_initialized.stat.exists 
         - is_ha_cluster 
@@ -259,8 +261,8 @@
         - not node_joined.stat.exists
         - is_ha_cluster
         - hostvars[groups['k8s_masters'][0]]['join_command'] is defined
-      async: 180  # Faster join thanks to template optimization
-      poll: 10
+      async: 120  # ULTRA-FAST join with optimizations
+      poll: 5
 
     - name: Create .kube directory
       file:
@@ -302,13 +304,13 @@
         path: /etc/kubernetes/kubelet.conf
       register: worker_joined
 
-    - name: Join worker nodes to cluster - TEMPLATE OPTIMIZED
-      command: "{{ hostvars[groups['k8s_masters'][0]]['join_command'] }}"
+    - name: Join worker nodes to cluster - ULTRA-OPTIMIZED
+      command: "{{ hostvars[groups['k8s_masters'][0]]['join_command'] }} --cri-socket=unix:///var/run/containerd/containerd.sock --v=1"
       when: 
         - not worker_joined.stat.exists
         - hostvars[groups['k8s_masters'][0]]['join_command'] is defined
-      async: 120  # Faster join thanks to template optimization
-      poll: 5
+      async: 90  # ULTRA-FAST join with optimizations
+      poll: 3
 
     - name: Calculate phase duration
       set_fact:
