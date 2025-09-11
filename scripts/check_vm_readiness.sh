@@ -44,13 +44,13 @@ fi
 # Use smart VM checker (which now supports both async and sync)
 echo "Using smart VM readiness checker..."
 
-# Quick initial delay
-echo "Waiting 20s for VMs to initialize..."
-sleep 20
+# ULTRA-OPTIMIZED initial delay
+echo "Waiting 10s for VMs to initialize..."
+sleep 10
 
-# Run VM readiness check with retry mechanism
-MAX_RETRIES=10
-RETRY_DELAY=30
+# ULTRA-FAST retry mechanism with exponential backoff
+MAX_RETRIES=15
+INITIAL_DELAY=5
 
 for i in $(seq 1 $MAX_RETRIES); do
     echo "VM readiness check attempt $i/$MAX_RETRIES..."
@@ -60,7 +60,14 @@ for i in $(seq 1 $MAX_RETRIES); do
         break
     else
         if [ $i -lt $MAX_RETRIES ]; then
-            echo "Some VMs not ready yet. Waiting ${RETRY_DELAY}s before retry..."
+            if [ $i -le 5 ]; then
+                RETRY_DELAY=$INITIAL_DELAY
+                echo "Quick retry in ${RETRY_DELAY}s..."
+            else
+                # Exponential backoff after 5 attempts
+                RETRY_DELAY=$((INITIAL_DELAY * (i - 3)))
+                echo "Exponential backoff: waiting ${RETRY_DELAY}s..."
+            fi
             sleep $RETRY_DELAY
         else
             echo "ERROR: VMs still not ready after $MAX_RETRIES attempts"

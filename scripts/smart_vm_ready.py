@@ -29,7 +29,7 @@ class UltraFastVMChecker:
         with open(self.inventory_file, 'r') as f:
             return json.load(f)
     
-    def quick_port_check(self, host, port=22, timeout=2):
+    def quick_port_check(self, host, port=22, timeout=1):
         """Ultra-fast TCP port check"""
         sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         sock.settimeout(timeout)
@@ -40,7 +40,7 @@ class UltraFastVMChecker:
         except:
             return False
     
-    def sync_ssh_check(self, host, user="root", password="Passw0rd!", timeout=5):
+    def sync_ssh_check(self, host, user="root", password="Passw0rd!", timeout=2):
         """Synchronous SSH connectivity check using sshpass"""
         try:
             # Use sshpass with ssh to check connectivity
@@ -65,7 +65,7 @@ class UltraFastVMChecker:
         except:
             return False
     
-    async def async_ssh_check(self, host, user="root", password="Passw0rd!", timeout=5):
+    async def async_ssh_check(self, host, user="root", password="Passw0rd!", timeout=2):
         """Async SSH connectivity check"""
         try:
             async with asyncssh.connect(
@@ -92,7 +92,7 @@ class UltraFastVMChecker:
                 for vm_name, vm_info in vm_batch.items()
             }
             
-            for future in as_completed(port_futures, timeout=3):
+            for future in as_completed(port_futures, timeout=2):
                 vm_name = port_futures[future]
                 try:
                     is_open = future.result()
@@ -140,7 +140,7 @@ class UltraFastVMChecker:
                         for vm_name, info in vms_to_ssh_check.items()
                     }
                     
-                    for future in as_completed(ssh_futures, timeout=10):
+                    for future in as_completed(ssh_futures, timeout=5):
                         vm_name = ssh_futures[future]
                         try:
                             ssh_ok = future.result()
@@ -197,7 +197,7 @@ class UltraFastVMChecker:
                 for idx, batch in enumerate(batches)
             }
             
-            for future in as_completed(batch_futures, timeout=30):
+            for future in as_completed(batch_futures, timeout=15):
                 batch_idx = batch_futures[future]
                 try:
                     batch_results = future.result()

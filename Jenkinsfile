@@ -184,8 +184,7 @@ pipeline {
                             try {
                                 timeout(time: 2, unit: 'MINUTES') {
                                     dir("${ANSIBLE_DIR}") {
-                                        // OPTIMIZED: Wait for deployment, then verify with aggressive timeouts
-                                        sleep(time: 30, unit: 'SECONDS')
+                                        // ULTRA-OPTIMIZED: No fixed delays, dynamic readiness check
                                         
                                         sh '''
                                             FIRST_MASTER=$(python3 ${WORKSPACE}/scripts/get_first_master.py ${INVENTORY_FILE})

@@ -21,8 +21,8 @@ provider "proxmox" {
     pm_api_token_secret = var.pm_api_token_secret
     
     # ULTRA-OPTIMIZED parallel API requests
-    pm_parallel = 20      # Doubled for faster concurrent ops
-    pm_timeout = 300      # Reduced timeout for faster failure detection
+    pm_parallel = 50      # Max parallel for fastest deployment
+    pm_timeout = 180      # Aggressive timeout for faster failure detection
 }
 
 # Generate random suffix yang sama untuk semua VM dalam satu provision
@@ -107,10 +107,10 @@ resource "proxmox_vm_qemu" "vms" {
     scsihw = "virtio-scsi-pci"
     
     # ULTRA-OPTIMIZED VM startup options
-    additional_wait = 5   # ULTRA-REDUCED for speed
+    additional_wait = 0   # ELIMINATED wait for max speed
     agent = 1
     automatic_reboot = false  # Skip unnecessary reboot
-    clone_wait = 5        # ULTRA-REDUCED for speed
+    clone_wait = 0        # ELIMINATED clone wait for max speed
     
     # Parallel creation optimization
     lifecycle {
