@@ -41,37 +41,39 @@ else
     ls -la inventory/
 fi
 
-# Use smart VM checker (which now supports both async and sync)
-echo "Using smart VM readiness checker..."
+# Use HYPER-PARALLEL VM readiness checker for maximum speed
+echo "Using HYPER-PARALLEL VM readiness checker..."
 
 # OPTIMAL initial delay (like fast build 363)
 echo "Waiting 20s for VMs to initialize..."
 sleep 20
 
-# ULTRA-FAST retry mechanism with exponential backoff
-MAX_RETRIES=15
-INITIAL_DELAY=5
-
-for i in $(seq 1 $MAX_RETRIES); do
-    echo "VM readiness check attempt $i/$MAX_RETRIES..."
+# HYPER-PARALLEL readiness check (multiple strategies)
+echo "🚀 Launching HYPER-PARALLEL VM readiness check..."
+if ${WORKSPACE}/scripts/hyper_parallel_vm_ready.sh ${INVENTORY_FILE} 30; then
+    echo "✅ HYPER-PARALLEL VM readiness check SUCCEEDED!"
+else
+    echo "⚠️  HYPER-PARALLEL check failed, falling back to standard retry mechanism..."
     
-    if ${WORKSPACE}/venv/bin/python ${WORKSPACE}/scripts/smart_vm_ready.py ${INVENTORY_FILE} 20; then
-        echo "All VMs are ready!"
-        break
-    else
-        if [ $i -lt $MAX_RETRIES ]; then
-            if [ $i -le 5 ]; then
-                RETRY_DELAY=$INITIAL_DELAY
-                echo "Quick retry in ${RETRY_DELAY}s..."
-            else
-                # Exponential backoff after 5 attempts
-                RETRY_DELAY=$((INITIAL_DELAY * (i - 3)))
-                echo "Exponential backoff: waiting ${RETRY_DELAY}s..."
-            fi
-            sleep $RETRY_DELAY
+    # Fallback to original retry mechanism
+    MAX_RETRIES=10
+    INITIAL_DELAY=5
+    
+    for i in $(seq 1 $MAX_RETRIES); do
+        echo "Fallback VM readiness check attempt $i/$MAX_RETRIES..."
+        
+        if ${WORKSPACE}/venv/bin/python ${WORKSPACE}/scripts/smart_vm_ready.py ${INVENTORY_FILE} 20; then
+            echo "All VMs are ready!"
+            break
         else
-            echo "ERROR: VMs still not ready after $MAX_RETRIES attempts"
-            exit 1
+            if [ $i -lt $MAX_RETRIES ]; then
+                RETRY_DELAY=$INITIAL_DELAY
+                echo "Retry in ${RETRY_DELAY}s..."
+                sleep $RETRY_DELAY
+            else
+                echo "ERROR: VMs still not ready after $MAX_RETRIES attempts"
+                exit 1
+            fi
         fi
-    fi
-done
+    done
+fi

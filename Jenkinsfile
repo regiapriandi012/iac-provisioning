@@ -157,7 +157,8 @@ pipeline {
                             script {
                                 def startTime = System.currentTimeMillis()
                                 
-                                // OPTIMIZED: Combined readiness + deployment
+                                // ULTRA-OPTIMIZED: SSH Pool + Combined readiness + deployment
+                                sh '../scripts/ssh_pool_manager.sh'
                                 sh '../scripts/check_vm_readiness.sh'
                                 
                                 if (env.TEMPLATE_DEPLOYMENT && env.TEMPLATE_DEPLOYMENT.toBoolean()) {

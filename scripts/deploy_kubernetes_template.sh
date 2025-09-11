@@ -20,11 +20,11 @@ echo "============================================"
 TEMPLATE_PLAYBOOK="../ansible/playbooks/template-optimized-k8s-deploy.yml"
 INVENTORY_FILE="inventory/k8s-inventory.json"
 INVENTORY_SCRIPT="../scripts/inventory.py"
-TEMPLATE_CONFIG="../ansible/ansible.cfg"
+TEMPLATE_CONFIG="../ansible/ansible-hyper.cfg"
 
-# Performance settings optimized for template deployment
+# HYPER-PERFORMANCE settings optimized for template deployment
 export ANSIBLE_CONFIG="$TEMPLATE_CONFIG"
-export ANSIBLE_FORKS=50
+export ANSIBLE_FORKS=200
 export ANSIBLE_HOST_KEY_CHECKING=False
 export ANSIBLE_SSH_PIPELINING=True
 export ANSIBLE_STRATEGY=free
