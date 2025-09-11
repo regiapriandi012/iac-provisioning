@@ -75,12 +75,7 @@ pipeline {
                                 }
                             }
                             
-                            // Store config in environment for sharing between stages
-                            env.GIT_REPOSITORY_URL = globalConfig.GIT_REPOSITORY_URL ?: 'https://gitlab.labngoprek.my.id/root/iac-provision'
-                            env.GIT_BRANCH = globalConfig.GIT_BRANCH ?: 'main'
-                            env.GIT_CREDENTIALS_ID = globalConfig.GIT_CREDENTIALS_ID ?: 'gitlab-credential'
-                            
-                            // Store all config values in environment
+                            // Store all config values in environment (git checkout already done by SCM)
                             env.USE_CACHE = globalConfig.OVERRIDE_USE_CACHE ?: (globalConfig.USE_CACHE ?: 'true')
                             env.RUN_ANSIBLE = globalConfig.OVERRIDE_RUN_ANSIBLE ?: (globalConfig.RUN_ANSIBLE ?: 'true')
                             env.CNI_TYPE = globalConfig.OVERRIDE_CNI_TYPE ?: (globalConfig.DEFAULT_CNI_TYPE ?: 'cilium')
@@ -90,10 +85,6 @@ pipeline {
                             env.PARALLEL_DEPLOYMENT = globalConfig.PARALLEL_DEPLOYMENT ?: 'false'
                             env.PROXMOX_CREDENTIALS_PREFIX = globalConfig.PROXMOX_CREDENTIALS_PREFIX ?: 'proxmox'
                             env.SLACK_WEBHOOK_CREDENTIAL_ID = globalConfig.SLACK_WEBHOOK_CREDENTIAL_ID ?: 'slack-webhook-url'
-                            
-                            git branch: env.GIT_BRANCH,
-                                credentialsId: env.GIT_CREDENTIALS_ID,
-                                url: env.GIT_REPOSITORY_URL
                         }
                     }
                 }
