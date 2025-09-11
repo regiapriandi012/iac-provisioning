@@ -332,16 +332,25 @@ Proceeding with automatic destruction...
                         // Summary
                         echo """
 === DIRECT VM DESTRUCTION SUMMARY ===
-Total VMs: ${vmIds.size()}
-Successfully destroyed: ${destroyedVMs.size()} (${destroyedVMs.join(', ')})
+Total VMs requested: ${vmIds.size()}
+Successfully destroyed/verified: ${destroyedVMs.size()} (${destroyedVMs.join(', ')})
 Failed to destroy: ${failedVMs.size()} ${failedVMs.size() > 0 ? '(' + failedVMs.join(', ') + ')' : ''}
+
+ℹ️  Note: VMs marked as 'successfully destroyed' include:
+   - VMs that were actually destroyed (HTTP 200)
+   - VMs that didn't exist (HTTP 404/500) - already destroyed
+   - VMs that disappeared during destruction process
 ======================================
 """
                         
                         if (failedVMs.size() > 0) {
-                            echo "WARNING: Some VMs failed to destroy directly. Terraform destroy will attempt to clean up remaining resources."
+                            echo "⚠️ WARNING: ${failedVMs.size()} VMs failed to destroy directly."
+                            echo "   Terraform destroy will attempt to clean up remaining resources."
+                            echo "   Failed VMs: ${failedVMs.join(', ')}"
                         } else {
-                            echo "All VMs destroyed successfully! Skipping terraform destroy."
+                            echo "✅ SUCCESS: All ${vmIds.size()} VMs destroyed/verified successfully!"
+                            echo "   ${destroyedVMs.size()} VMs processed without errors"
+                            echo "   Skipping terraform destroy stage as direct VM destruction completed"
                             // Set flag to skip terraform stage
                             env.SKIP_TERRAFORM_DESTROY = 'true'
                         }
