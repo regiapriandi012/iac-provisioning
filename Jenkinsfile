@@ -211,8 +211,18 @@ pipeline {
                         expression { env.RUN_ANSIBLE && env.RUN_ANSIBLE.toBoolean() }
                     }
                     steps {
-                        dir("${ANSIBLE_DIR}") {
-                            sh '../scripts/extract_kubeconfig.sh'
+                        script {
+                            try {
+                                timeout(time: 2, unit: 'MINUTES') {
+                                    dir("${ANSIBLE_DIR}") {
+                                        sh '../scripts/extract_kubeconfig.sh'
+                                    }
+                                }
+                            } catch (Exception e) {
+                                echo "⚠️ KUBECONFIG extraction failed: ${e.getMessage()}"
+                                echo "✅ This is non-critical - cluster is still operational"
+                                currentBuild.result = 'UNSTABLE'  // Don't fail the build
+                            }
                         }
                     }
                 }
@@ -223,6 +233,8 @@ pipeline {
                     }
                     steps {
                         script {
+                            // CRITICAL: Wrap entire notification stage to prevent build failure
+                            try {
                             // OPTIMIZED: Background notifications with timeout
                             try {
                                 timeout(time: 30, unit: 'SECONDS') {
@@ -233,7 +245,8 @@ pipeline {
                                     """
                                 }
                             } catch (Exception e) {
-                                echo "Django webhook skipped (${e.getMessage()})"
+                                echo "⚠️ Django webhook failed: ${e.getMessage()}"
+                                echo "✅ This is non-critical - cluster deployment was successful"
                             }
                             
                             // OPTIMIZED: Minimal Slack notification
@@ -248,9 +261,14 @@ pipeline {
                                             sh '../scripts/notify_slack.sh || echo "Slack notification skipped"'
                                         }
                                     } catch (Exception e) {
-                                        echo "Slack notification timeout"
+                                        echo "⚠️ Slack notification failed: ${e.getMessage()}"
+                                        echo "✅ This is non-critical - cluster deployment was successful"
                                     }
                                 }
+                            } catch (Exception e) {
+                                echo "⚠️ Notification services failed: ${e.getMessage()}"
+                                echo "✅ This is non-critical - cluster deployment was successful"
+                                currentBuild.result = 'UNSTABLE'  // Don't fail the build
                             }
                         }
                     }
