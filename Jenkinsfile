@@ -281,7 +281,11 @@ pipeline {
                                 echo "✅ This is non-critical - cluster deployment was successful"
                                 currentBuild.result = 'UNSTABLE'  // Don't fail the build
                             }
-                            } // Close the outer try block from line 246
+                            } catch (Exception e) {
+                                echo "⚠️ Critical error in notification stage: ${e.getMessage()}"
+                                echo "✅ Build successful despite notification failures"
+                                currentBuild.result = 'UNSTABLE'
+                            }
                         }
                     }
                 }
