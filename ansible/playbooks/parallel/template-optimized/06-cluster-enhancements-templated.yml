@@ -225,7 +225,9 @@
       loop:
         - "{{ debian_figlet_job if debian_figlet_job is defined and debian_figlet_job.ansible_job_id is defined else {} }}"
         - "{{ rhel_figlet_job if rhel_figlet_job is defined and rhel_figlet_job.ansible_job_id is defined else {} }}"
-      when: item and item.ansible_job_id is defined
+      when: 
+        - not (skip_enhancements | default(false))
+        - item and item.ansible_job_id is defined
 
     # SHELL CONFIGURATION (always run to ensure proper setup)
     - name: Change default shell to Zsh for root (Debian)
@@ -345,6 +347,36 @@
         owner: root
         group: root
         mode: '0644'
+      when: 
+        - not (skip_enhancements | default(false))
+        - figlet_banner is defined
+        - figlet_banner.stdout is defined
+
+    - name: Deploy simple MOTD banner (without figlet)
+      copy:
+        content: |
+          
+          Welcome to LABNGOPREK Kubernetes Cluster!
+          Node: {{ inventory_hostname }}
+          OS: {{ ansible_distribution }} {{ ansible_distribution_version }}
+          Kernel: {{ ansible_kernel }}
+          
+          Kubernetes Commands:
+          • k get nodes        (alias for kubectl get nodes)
+          • k get pods -A      (get all pods)
+          • k top nodes        (node resource usage)
+          • k top pods -A      (pod resource usage)
+          
+          Cluster Information:
+          • Master Nodes: {{ groups['k8s_masters'] | length }}
+          • Worker Nodes: {{ groups['k8s_workers'] | length if 'k8s_workers' in groups else 0 }}
+          • CNI Plugin: {{ cni_type | default('Unknown') }}
+          
+        dest: "{{ motd_path }}"
+        owner: root
+        group: root
+        mode: '0644'
+      when: (skip_enhancements | default(false))
 
   post_tasks:
     - name: Calculate phase duration
