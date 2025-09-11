@@ -106,11 +106,11 @@ resource "proxmox_vm_qemu" "vms" {
     cpu = "host"
     scsihw = "virtio-scsi-pci"
     
-    # ULTRA-OPTIMIZED VM startup options
-    additional_wait = 0   # ELIMINATED wait for max speed
+    # OPTIMAL VM startup options (like fast build 363)
+    additional_wait = 5   # Essential wait for VM stability
     agent = 1
     automatic_reboot = false  # Skip unnecessary reboot
-    clone_wait = 0        # ELIMINATED clone wait for max speed
+    clone_wait = 5        # Essential wait for clone stability
     
     # Parallel creation optimization
     lifecycle {

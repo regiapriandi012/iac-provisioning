@@ -44,9 +44,9 @@ fi
 # Use smart VM checker (which now supports both async and sync)
 echo "Using smart VM readiness checker..."
 
-# ULTRA-OPTIMIZED initial delay
-echo "Waiting 10s for VMs to initialize..."
-sleep 10
+# OPTIMAL initial delay (like fast build 363)
+echo "Waiting 20s for VMs to initialize..."
+sleep 20
 
 # ULTRA-FAST retry mechanism with exponential backoff
 MAX_RETRIES=15
