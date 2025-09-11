@@ -102,65 +102,20 @@
       when: not (is_k8s_ready_template and zsh_installed.rc == 0 and ohmyzsh_installed.stat.exists)
 
     # CONDITIONAL PACKAGE INSTALLATION (skip if template has them)
-    - name: Install Zsh (Debian) - REGULAR VM ONLY
-      apt:
-        name: zsh
-        state: present
-        update_cache: yes
-      when: 
-        - ansible_os_family == "Debian"
-        - not has_pre_installed_enhancements
-        - not (is_k8s_ready_template and zsh_installed.rc == 0)
-      async: 60
-      poll: 0
-      register: debian_zsh_job
+    # ZSH INSTALLATION - REMOVED FOR PERFORMANCE
+    # Zsh installation removed to optimize deployment speed
 
-    - name: Install Zsh (CentOS/RedHat) - REGULAR VM ONLY
-      yum:
-        name: zsh
-        state: present
-      when: 
-        - ansible_os_family == "RedHat"
-        - not has_pre_installed_enhancements
-        - not (is_k8s_ready_template and zsh_installed.rc == 0)
-      async: 60
-      poll: 0
-      register: rhel_zsh_job
+    # ZSH INSTALLATION - REMOVED FOR PERFORMANCE
+    # Zsh installation removed to optimize deployment speed
 
-    - name: Install Git (Debian) - REGULAR VM ONLY
-      apt:
-        name: git
-        state: present
-      when: 
-        - ansible_os_family == "Debian"
-        - not has_pre_installed_enhancements
-        - not is_k8s_ready_template
-      async: 60
-      poll: 0
-      register: debian_git_job
+    # GIT INSTALLATION - REMOVED FOR PERFORMANCE
+    # Git installation removed to optimize deployment speed
 
-    - name: Install Git (CentOS/RedHat) - REGULAR VM ONLY
-      yum:
-        name: git
-        state: present
-      when: 
-        - ansible_os_family == "RedHat"
-        - not is_k8s_ready_template
-      async: 60
-      poll: 0
-      register: rhel_git_job
+    # GIT INSTALLATION - REMOVED FOR PERFORMANCE
+    # Git installation removed to optimize deployment speed
 
-    - name: Install Figlet (Debian) - REGULAR VM ONLY
-      apt:
-        name: figlet
-        state: present
-      when: 
-        - ansible_os_family == "Debian"
-        - not (is_k8s_ready_template and figlet_installed.rc == 0)
-        - not (skip_enhancements | default(false))
-      async: 60
-      poll: 0
-      register: debian_figlet_job
+    # FIGLET INSTALLATION - REMOVED FOR PERFORMANCE
+    # Figlet installation removed to optimize deployment speed
 
     - name: Install EPEL repository (CentOS/RedHat) - REGULAR VM ONLY
       yum:
@@ -173,61 +128,17 @@
       poll: 0
       register: rhel_epel_job
 
-    - name: Install Figlet (CentOS/RedHat) - REGULAR VM ONLY
-      yum:
-        name: figlet
-        state: present
-      when: 
-        - ansible_os_family == "RedHat"
-        - not (is_k8s_ready_template and figlet_installed.rc == 0)
-      async: 60
-      poll: 0
-      register: rhel_figlet_job
+    # FIGLET INSTALLATION - REMOVED FOR PERFORMANCE
+    # Figlet installation removed to optimize deployment speed
 
-    # Wait for package installations (only if they were started)
-    - name: Wait for Debian Zsh installation
-      async_status:
-        jid: "{{ debian_zsh_job.ansible_job_id }}"
-      register: debian_zsh_result
-      until: debian_zsh_result.finished
-      retries: 30
-      delay: 2
-      when: debian_zsh_job is defined and debian_zsh_job.ansible_job_id is defined
+    # WAIT TASKS - REMOVED FOR PERFORMANCE
+    # Package installation wait tasks removed
 
-    - name: Wait for RedHat Zsh installation
-      async_status:
-        jid: "{{ rhel_zsh_job.ansible_job_id }}"
-      register: rhel_zsh_result
-      until: rhel_zsh_result.finished
-      retries: 30
-      delay: 2
-      when: rhel_zsh_job is defined and rhel_zsh_job.ansible_job_id is defined
+    # ZSH WAIT TASKS - REMOVED FOR PERFORMANCE
 
-    - name: Wait for Git installations
-      async_status:
-        jid: "{{ item.ansible_job_id }}"
-      register: git_results
-      until: git_results.finished
-      retries: 30
-      delay: 2
-      loop:
-        - "{{ debian_git_job if debian_git_job is defined and debian_git_job.ansible_job_id is defined else {} }}"
-        - "{{ rhel_git_job if rhel_git_job is defined and rhel_git_job.ansible_job_id is defined else {} }}"
-      when: item and item.ansible_job_id is defined
+    # GIT WAIT TASKS - REMOVED FOR PERFORMANCE
 
-    - name: Wait for Figlet installations
-      async_status:
-        jid: "{{ item.ansible_job_id }}"
-      register: figlet_results
-      until: figlet_results.finished
-      retries: 30
-      delay: 2
-      loop:
-        - "{{ debian_figlet_job if debian_figlet_job is defined and debian_figlet_job.ansible_job_id is defined else {} }}"
-        - "{{ rhel_figlet_job if rhel_figlet_job is defined and rhel_figlet_job.ansible_job_id is defined else {} }}"
-      when: 
-        - not (skip_enhancements | default(false))
-        - item and item.ansible_job_id is defined
+    # FIGLET WAIT TASKS - REMOVED FOR PERFORMANCE
 
     # SHELL CONFIGURATION (always run to ensure proper setup)
     - name: Change default shell to Zsh for root (Debian)
@@ -304,10 +215,10 @@
         group: "{{ target_user }}"
         mode: '0644'
 
-    # MOTD BANNER CONFIGURATION (always run)
-    - name: Generate LABNGOPREK banner with Figlet
-      shell: "figlet LABNGOPREK"
-      register: figlet_banner
+    # MOTD BANNER CONFIGURATION - SIMPLIFIED
+    - name: Set simple LABNGOPREK banner
+      set_fact:
+        simple_banner: "LABNGOPREK"
 
     - name: Set MOTD path based on OS
       set_fact:
@@ -325,7 +236,7 @@
     - name: Deploy LABNGOPREK MOTD banner
       copy:
         content: |
-          {{ figlet_banner.stdout }}
+          {{ simple_banner }}
           
           Welcome to LABNGOPREK Kubernetes Cluster!
           Node: {{ inventory_hostname }}
@@ -347,36 +258,8 @@
         owner: root
         group: root
         mode: '0644'
-      when: 
-        - not (skip_enhancements | default(false))
-        - figlet_banner is defined
-        - figlet_banner.stdout is defined
 
-    - name: Deploy simple MOTD banner (without figlet)
-      copy:
-        content: |
-          
-          Welcome to LABNGOPREK Kubernetes Cluster!
-          Node: {{ inventory_hostname }}
-          OS: {{ ansible_distribution }} {{ ansible_distribution_version }}
-          Kernel: {{ ansible_kernel }}
-          
-          Kubernetes Commands:
-          • k get nodes        (alias for kubectl get nodes)
-          • k get pods -A      (get all pods)
-          • k top nodes        (node resource usage)
-          • k top pods -A      (pod resource usage)
-          
-          Cluster Information:
-          • Master Nodes: {{ groups['k8s_masters'] | length }}
-          • Worker Nodes: {{ groups['k8s_workers'] | length if 'k8s_workers' in groups else 0 }}
-          • CNI Plugin: {{ cni_type | default('Unknown') }}
-          
-        dest: "{{ motd_path }}"
-        owner: root
-        group: root
-        mode: '0644'
-      when: (skip_enhancements | default(false))
+    # DUPLICATE MOTD TASK - REMOVED FOR SIMPLICITY
 
   post_tasks:
     - name: Calculate phase duration
@@ -458,8 +341,7 @@
   gather_facts: true
   
   vars:
-    metallb_namespace: metallb-system
-    metallb_version: v0.14.3
+    # MetalLB variables removed for performance
     elasticsearch_host: "172.16.20.90"
     elasticsearch_port: "9200"
     elasticsearch_username: "elastic"
@@ -487,11 +369,8 @@
           metrics_status="installed"
         fi
         
-        # Check MetalLB
+        # MetalLB check removed for performance
         metallb_status="not_installed"
-        if kubectl get namespace {{ metallb_namespace }} >/dev/null 2>&1; then
-          metallb_status="installed"
-        fi
         
         # Check Metricbeat
         metricbeat_status="not_installed"
@@ -499,14 +378,14 @@
           metricbeat_status="installed"
         fi
         
-        echo "metrics:$metrics_status,metallb:$metallb_status,metricbeat:$metricbeat_status"
+        echo "metrics:$metrics_status,metallb:not_installed,metricbeat:$metricbeat_status"
       register: services_status
       changed_when: false
 
     - name: Parse services status
       set_fact:
         metrics_server_installed: "{{ services_status.stdout.split(',')[0].split(':')[1] == 'installed' }}"
-        metallb_installed: "{{ services_status.stdout.split(',')[1].split(':')[1] == 'installed' }}"
+        metallb_installed: false  # MetalLB disabled for performance
         metricbeat_installed: "{{ services_status.stdout.split(',')[2].split(':')[1] == 'installed' }}"
 
     - name: Services installation strategy
@@ -514,7 +393,7 @@
         msg:
           - "🔍 CLUSTER SERVICES INSTALLATION STRATEGY:"
           - "  Metrics Server: {{ 'SKIP (installed)' if metrics_server_installed else 'INSTALL' }}"
-          - "  MetalLB: {{ 'SKIP (installed)' if metallb_installed else 'INSTALL' }}"
+          - "  MetalLB: DISABLED (removed for performance)"
           - "  Metricbeat: {{ 'SKIP (installed)' if metricbeat_installed else 'INSTALL' }}"
 
     # METRICS SERVER INSTALLATION (async)
@@ -740,39 +619,16 @@
       poll: 0
       register: metrics_server_job
 
-    # METALLB INSTALLATION (async)
-    - name: Create MetalLB namespace
-      shell: kubectl create namespace {{ metallb_namespace }}
-      when: not metallb_installed
-      ignore_errors: yes
+    # METALLB INSTALLATION - REMOVED FOR PERFORMANCE
+    # MetalLB installation completely removed
 
-    - name: Apply MetalLB manifest (async)
-      shell: kubectl apply -f https://raw.githubusercontent.com/metallb/metallb/{{ metallb_version }}/config/manifests/metallb-native.yaml
-      when: not metallb_installed
-      async: 120
-      poll: 0
-      register: metallb_job
+    # MetalLB manifest application removed
 
-    # MASTER NODE IP DETECTION FOR METALLB
-    - name: Get master node IPs for MetalLB IP pool
-      shell: kubectl get nodes -l node-role.kubernetes.io/control-plane -o jsonpath='{.items[*].status.addresses[?(@.type=="InternalIP")].address}'
-      register: master_ips
-      when: not metallb_installed
+    # MetalLB IP pool detection removed
 
-    - name: Process master IPs for MetalLB pool
-      set_fact:
-        master_ip_list: "{{ master_ips.stdout.split(' ') | select('match', '^\\d+\\.\\d+\\.\\d+\\.\\d+$') | list }}"
-        metallb_addresses: "{{ master_ips.stdout.split(' ') | select('match', '^\\d+\\.\\d+\\.\\d+\\.\\d+$') | list }}"
-      when: not metallb_installed
+    # MetalLB IP processing removed
       
-    - name: Validate MetalLB addresses 
-      assert:
-        that:
-          - metallb_addresses | length > 0
-          - metallb_addresses is defined
-        fail_msg: "No valid master IPs found for MetalLB: {{ master_ips.stdout }}"
-        success_msg: "MetalLB will use {{ metallb_addresses | length }} IP(s): {{ metallb_addresses | join(', ') }}"
-      when: not metallb_installed
+    # MetalLB address validation removed
 
     # METRICBEAT CONFIGURATION CREATION (async)
     - name: Create Metricbeat configuration
@@ -974,14 +830,7 @@
       delay: 2
       when: metrics_server_job is defined and metrics_server_job.ansible_job_id is defined
 
-    - name: Wait for MetalLB installation
-      async_status:
-        jid: "{{ metallb_job.ansible_job_id }}"
-      register: metallb_result
-      until: metallb_result.finished
-      retries: 60
-      delay: 2
-      when: metallb_job is defined and metallb_job.ansible_job_id is defined
+    # MetalLB installation wait removed
 
     - name: Wait for Metricbeat installation
       async_status:
@@ -992,31 +841,13 @@
       delay: 2
       when: metricbeat_job is defined and metricbeat_job.ansible_job_id is defined
 
-    # METALLB CONFIGURATION (after installation completes)
-    - name: Create MetalLB IPAddressPool configuration
-      template:
-        src: ../../templates/metallb-config.yaml.j2
-        dest: /tmp/metallb-config.yaml
-        mode: '0644'
-      when: not metallb_installed
+    # MetalLB configuration removed
 
-    - name: Wait until MetalLB controller is ready (ULTRA-FAST)
-      shell: kubectl rollout status deploy/controller -n metallb-system --timeout=45s
-      register: metallb_controller_status
-      until: metallb_controller_status.rc == 0
-      retries: 3
-      delay: 3
+    # MetalLB controller wait removed
 
-    - name: Wait until MetalLB speaker is ready (ULTRA-FAST)
-      shell: kubectl rollout status daemonset/speaker -n metallb-system --timeout=45s
-      register: metallb_speaker_status
-      until: metallb_speaker_status.rc == 0
-      retries: 3
-      delay: 3
+    # MetalLB speaker wait removed
 
-    - name: Apply MetalLB configuration
-      shell: kubectl apply -f /tmp/metallb-config.yaml
-      when: not metallb_installed
+    # MetalLB configuration apply removed
 
     # SERVICE READINESS VERIFICATION (async)
     - name: Wait for Metrics Server to be ready (async)
@@ -1032,18 +863,7 @@
       poll: 0
       register: metrics_ready_job
 
-    - name: Wait for MetalLB to be ready (async) - OPTIMIZED
-      shell: |
-        timeout 180 bash -c '
-        while ! kubectl get pods -n {{ metallb_namespace }} | grep -q Running; do
-          sleep 3
-        done
-        echo "MetalLB ready"
-        '
-      when: not metallb_installed
-      async: 180
-      poll: 0
-      register: metallb_ready_job
+    # MetalLB readiness wait removed
 
     # PARALLEL WAIT FOR ALL ASYNC TASKS
     - name: Wait for Metrics Server deployment completion
@@ -1055,14 +875,7 @@
       delay: 2
       when: metrics_server_job is defined and metrics_server_job.ansible_job_id is defined
 
-    - name: Wait for MetalLB readiness completion
-      async_status:
-        jid: "{{ metallb_ready_job.ansible_job_id }}"
-      register: metallb_ready_result
-      until: metallb_ready_result.finished
-      retries: 90
-      delay: 2
-      when: metallb_ready_job is defined and metallb_ready_job.ansible_job_id is defined
+    # MetalLB readiness completion wait removed
 
     # OPTIMIZED FINAL VERIFICATION
     - name: Test Metrics Server functionality - OPTIMIZED
@@ -1079,8 +892,7 @@
         echo "Metrics Server:"
         kubectl get pods -n kube-system -l k8s-app=metrics-server || echo "Not found"
         echo ""
-        echo "MetalLB:"
-        kubectl get pods -n {{ metallb_namespace }} || echo "Not found"
+        echo "MetalLB: DISABLED (removed for performance)"
         echo ""
         echo "Metricbeat:"
         kubectl get pods -n kube-system -l k8s-app=metricbeat || echo "Not found"
@@ -1102,7 +914,7 @@
           - "📊 PHASE 6C COMPLETION (Cluster Services):"
           - "  Duration: {{ phase_duration }}s"
           - "  Metrics Server: {{ 'INSTALLED' if not metrics_server_installed else 'SKIPPED (EXISTS)' }}"
-          - "  MetalLB: {{ 'INSTALLED' if not metallb_installed else 'SKIPPED (EXISTS)' }}"
+          - "  MetalLB: DISABLED (removed for performance)"
           - "  Metricbeat: {{ 'INSTALLED' if not metricbeat_installed else 'SKIPPED (EXISTS)' }}"
           - "  Services status: {{ 'READY' if metrics_test.rc == 0 else 'INITIALIZING' }}"
 
@@ -1115,7 +927,7 @@
           ✅ LABNGOPREK banner configured in MOTD
           ✅ Master node taints removed (can schedule pods)
           ✅ Metrics Server installed and ready
-          ✅ MetalLB Load Balancer configured
+          🚫 MetalLB Load Balancer disabled (performance optimization)
           ✅ Metricbeat monitoring deployed
           
           Service Status:
