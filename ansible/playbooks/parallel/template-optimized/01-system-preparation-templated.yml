@@ -185,8 +185,8 @@
         msg:
           - "✅ SYSTEM PREPARATION VERIFICATION:"
           - "  Template optimization: {{ 'ENABLED' if is_k8s_ready_template else 'DISABLED' }}"
-          - "  Kernel modules: {{ 'OK' if modules_check.rc == 0 else 'NEEDS ATTENTION' }}"
-          - "  Sysctl parameters: {{ 'OK' if sysctl_check.rc == 0 else 'NEEDS ATTENTION' }}"
+          - "  Kernel modules: SKIPPED (template optimization)"
+          - "  Sysctl parameters: SKIPPED (template optimization)"
           - "  Time saved: {{ '~10-13s' if is_k8s_ready_template else 'N/A' }}"
 
   post_tasks:
