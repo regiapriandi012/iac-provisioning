@@ -259,19 +259,21 @@ pipeline {
                             }
                             
                             // OPTIMIZED: Minimal Slack notification
-                            withCredentials([string(credentialsId: env.SLACK_WEBHOOK_CREDENTIAL_ID, variable: 'SLACK_WEBHOOK_URL')]) {
-                                script {
-                                    try {
-                                        timeout(time: 15, unit: 'SECONDS') {
-                                            def duration = currentBuild.durationString.replace(' and counting', '')
-                                            env.BUILD_DURATION = duration
-                                            env.MASTER_COUNT = params.MASTER_COUNT
-                                            env.WORKER_COUNT = params.WORKER_COUNT
-                                            sh '../scripts/notify_slack.sh || echo "Slack notification skipped"'
+                            try {
+                                withCredentials([string(credentialsId: env.SLACK_WEBHOOK_CREDENTIAL_ID, variable: 'SLACK_WEBHOOK_URL')]) {
+                                    script {
+                                        try {
+                                            timeout(time: 15, unit: 'SECONDS') {
+                                                def duration = currentBuild.durationString.replace(' and counting', '')
+                                                env.BUILD_DURATION = duration
+                                                env.MASTER_COUNT = params.MASTER_COUNT
+                                                env.WORKER_COUNT = params.WORKER_COUNT
+                                                sh '../scripts/notify_slack.sh || echo "Slack notification skipped"'
+                                            }
+                                        } catch (Exception e) {
+                                            echo "⚠️ Slack notification failed: ${e.getMessage()}"
+                                            echo "✅ This is non-critical - cluster deployment was successful"
                                         }
-                                    } catch (Exception e) {
-                                        echo "⚠️ Slack notification failed: ${e.getMessage()}"
-                                        echo "✅ This is non-critical - cluster deployment was successful"
                                     }
                                 }
                             } catch (Exception e) {
