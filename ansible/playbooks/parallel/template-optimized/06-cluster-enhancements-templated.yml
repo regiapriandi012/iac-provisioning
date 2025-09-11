@@ -66,6 +66,7 @@
       register: figlet_installed
       changed_when: false
       ignore_errors: yes
+      when: not (skip_enhancements | default(false))
 
     - name: Enhancement optimization status
       debug:
@@ -156,6 +157,7 @@
       when: 
         - ansible_os_family == "Debian"
         - not (is_k8s_ready_template and figlet_installed.rc == 0)
+        - not (skip_enhancements | default(false))
       async: 60
       poll: 0
       register: debian_figlet_job
@@ -966,19 +968,19 @@
         mode: '0644'
       when: not metallb_installed
 
-    - name: Wait until MetalLB controller is ready
-      shell: kubectl rollout status deploy/controller -n metallb-system --timeout=120s
+    - name: Wait until MetalLB controller is ready (ULTRA-FAST)
+      shell: kubectl rollout status deploy/controller -n metallb-system --timeout=45s
       register: metallb_controller_status
       until: metallb_controller_status.rc == 0
-      retries: 5
-      delay: 10
+      retries: 3
+      delay: 3
 
-    - name: Wait until MetalLB speaker is ready
-      shell: kubectl rollout status daemonset/speaker -n metallb-system --timeout=120s
-      register: metallb_webhook_status
-      until: metallb_webhook_status.rc == 0
-      retries: 5
-      delay: 10
+    - name: Wait until MetalLB speaker is ready (ULTRA-FAST)
+      shell: kubectl rollout status daemonset/speaker -n metallb-system --timeout=45s
+      register: metallb_speaker_status
+      until: metallb_speaker_status.rc == 0
+      retries: 3
+      delay: 3
 
     - name: Apply MetalLB configuration
       shell: kubectl apply -f /tmp/metallb-config.yaml
@@ -998,26 +1000,45 @@
       poll: 0
       register: metrics_ready_job
 
-    - name: Wait for MetalLB to be ready (async)
+    - name: Wait for MetalLB to be ready (async) - OPTIMIZED
       shell: |
-        timeout 300 bash -c '
+        timeout 180 bash -c '
         while ! kubectl get pods -n {{ metallb_namespace }} | grep -q Running; do
-          sleep 5
+          sleep 3
         done
         echo "MetalLB ready"
         '
       when: not metallb_installed
-      async: 300
+      async: 180
       poll: 0
       register: metallb_ready_job
 
-    # FINAL VERIFICATION
-    - name: Test Metrics Server functionality
+    # PARALLEL WAIT FOR ALL ASYNC TASKS
+    - name: Wait for Metrics Server deployment completion
+      async_status:
+        jid: "{{ metrics_server_job.ansible_job_id }}"
+      register: metrics_server_result
+      until: metrics_server_result.finished
+      retries: 60
+      delay: 2
+      when: metrics_server_job is defined and metrics_server_job.ansible_job_id is defined
+
+    - name: Wait for MetalLB readiness completion
+      async_status:
+        jid: "{{ metallb_ready_job.ansible_job_id }}"
+      register: metallb_ready_result
+      until: metallb_ready_result.finished
+      retries: 90
+      delay: 2
+      when: metallb_ready_job is defined and metallb_ready_job.ansible_job_id is defined
+
+    # OPTIMIZED FINAL VERIFICATION
+    - name: Test Metrics Server functionality - OPTIMIZED
       shell: kubectl top nodes
       register: metrics_test
       ignore_errors: true
-      retries: 3
-      delay: 10
+      retries: 2
+      delay: 5
       until: metrics_test.rc == 0
 
     - name: Get cluster services status

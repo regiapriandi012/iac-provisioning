@@ -165,25 +165,44 @@
       poll: 0
       register: rhel_k8s_repo_job
 
-    # Update package cache
-    - name: Update package cache (Debian-based)
-      apt:
-        update_cache: yes
-        force_apt_get: yes
+    # OPTIMIZED APT CACHE STRATEGY (skip if recent update)
+    - name: Check APT cache freshness (optimization)
+      stat:
+        path: /var/lib/apt/periodic/update-success-stamp
+      register: apt_cache_stamp
       when: 
         - detected_os_family == "Debian"
         - not skip_k8s_installation
-      async: 60
+
+    - name: Set APT cache skip decision
+      set_fact:
+        skip_apt_update: >
+          {{ apt_cache_stamp.stat.exists and 
+             (ansible_date_time.epoch | int - apt_cache_stamp.stat.mtime) < 3600 }}
+      when: 
+        - detected_os_family == "Debian"
+        - not skip_k8s_installation
+
+    - name: Update package cache (Debian-based) - OPTIMIZED
+      apt:
+        update_cache: yes
+        force_apt_get: yes
+        cache_valid_time: 3600
+      when: 
+        - detected_os_family == "Debian"
+        - not skip_k8s_installation
+        - not (skip_apt_update | default(false))
+      async: 45
       poll: 0
       register: debian_update_job
 
-    - name: Update package cache (RedHat-based)
+    - name: Update package cache (RedHat-based) - OPTIMIZED
       yum:
         update_cache: yes
       when: 
         - detected_os_family == "RedHat"
         - not skip_k8s_installation
-      async: 60
+      async: 45
       poll: 0
       register: rhel_update_job
 

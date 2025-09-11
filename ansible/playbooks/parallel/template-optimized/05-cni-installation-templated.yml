@@ -175,11 +175,13 @@
             --version v{{ cni_version }} \
             --set image.pullPolicy=IfNotPresent \
             --set operator.image.pullPolicy=IfNotPresent \
+            --wait-duration=60s \
             --wait
         else
           echo "🔧 Regular installation: Will pull images as needed"  
           cilium install \
             --version v{{ cni_version }} \
+            --wait-duration=60s \
             --wait
         fi
         
@@ -238,7 +240,7 @@
     - name: Wait for Cilium pods to be ready (without CLI dependency)
       shell: |
         echo "⏳ Waiting for Cilium pods to become ready..."
-        timeout 300 bash -c '
+        timeout 180 bash -c '
         while true; do
           # Check if all cilium pods are running
           running_pods=$(kubectl get pods -n kube-system -l k8s-app=cilium --no-headers 2>/dev/null | grep " Running " | wc -l)
@@ -251,7 +253,7 @@
           
           echo "Waiting for Cilium pods to become ready... ($running_pods/$total_pods running)"
           kubectl get pods -n kube-system -l k8s-app=cilium --no-headers || true
-          sleep 10
+          sleep 5
         done
         '
       when: not skip_cni_installation

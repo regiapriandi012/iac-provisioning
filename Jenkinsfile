@@ -19,6 +19,8 @@ pipeline {
         string(name: 'SERVICE_CIDR', defaultValue: '10.96.0.0/12', description: 'Service CIDR')
         string(name: 'CONTAINER_RUNTIME', defaultValue: 'containerd', description: 'Container runtime')
         string(name: 'IP_RANGE_START', defaultValue: '10.200.0.0/24', description: 'IP range for VMs')
+        booleanParam(name: 'SKIP_ENHANCEMENTS', defaultValue: false, description: '⚡ Skip cosmetic enhancements (zsh, banner, etc) for ULTRA-FAST deployment')
+        booleanParam(name: 'ULTRA_FAST_MODE', defaultValue: false, description: '🚀 Enable all speed optimizations (reduced timeouts, parallel execution)')
     }
 
     environment {
