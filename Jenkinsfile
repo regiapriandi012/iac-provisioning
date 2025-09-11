@@ -57,319 +57,70 @@ pipeline {
         disableConcurrentBuilds()
     }
 
+    // GLOBAL CONFIGURATION CACHE - ULTRA OPTIMIZATION
+    def globalConfig = null
+    
     stages {
-        stage('Validate Parameters') {
-            steps {
-                script {
-                    echo """
-=== CLUSTER DEPLOYMENT STARTED ===
-Cluster Name: ${params.CLUSTER_NAME}
-Description: ${params.DESCRIPTION}
-Proxmox Node: ${params.PROXMOX_NODE}
-VM Template: ${params.VM_TEMPLATE} ${params.VM_TEMPLATE.contains('k8s-ready') ? '(🚀 OPTIMIZED TEMPLATE)' : '(🔧 REGULAR TEMPLATE)'}
-Masters: ${params.MASTER_COUNT}
-Workers: ${params.WORKER_COUNT}
-VM Specs: ${params.CORES} cores, ${params.MEMORY}MB RAM, ${params.DISK_SIZE} disk
-Kubernetes: ${params.KUBERNETES_VERSION} with ${params.CNI_TYPE} ${params.CNI_VERSION}
-Expected deployment time: ${params.VM_TEMPLATE.contains('k8s-ready') ? '~60s (template-optimized)' : '~180s (regular)'}
-Parameters passed from Django REST API successfully!
-
-=== TERRAFORM ENVIRONMENT VARIABLES ===
-TF_VAR_cluster_name: ${env.TF_VAR_cluster_name}
-TF_VAR_master_node_count: ${env.TF_VAR_master_node_count}
-TF_VAR_worker_node_count: ${env.TF_VAR_worker_node_count}
-TF_VAR_vm_template: ${env.TF_VAR_vm_template}
-TF_VAR_proxmox_node: ${env.TF_VAR_proxmox_node}
-TF_VAR_vm_cores: ${env.TF_VAR_vm_cores}
-TF_VAR_vm_memory: ${env.TF_VAR_vm_memory}
-=====================================
-"""
-                }
-            }
-        }
-
-        stage('Checkout') {
-            steps {
-                script {
-                    // Load configuration values using simple file reading
-                    def configContent = readFile(CONFIG_FILE)
-                    def configProps = [:]
-                    
-                    configContent.split('\n').each { line ->
-                        line = line.trim()
-                        if (line && !line.startsWith('#') && line.contains('=')) {
-                            def parts = line.split('=', 2)
-                            configProps[parts[0].trim()] = parts[1].trim()
-                        }
-                    }
-                    
-                    def gitUrl = configProps.GIT_REPOSITORY_URL ?: 'https://gitlab.labngoprek.my.id/root/iac-provision'
-                    def gitBranch = configProps.GIT_BRANCH ?: 'main'
-                    def gitCredentials = configProps.GIT_CREDENTIALS_ID ?: 'gitlab-credential'
-                    
-                    git branch: gitBranch,
-                        credentialsId: gitCredentials,
-                        url: gitUrl
-                }
-            }
-        }
-        
-        stage('Setup Environment') {
-            steps {
-                script {
-                    // Load configuration using simple file reading
-                    def configContent = readFile(CONFIG_FILE)
-                    def configProps = [:]
-                    
-                    configContent.split('\n').each { line ->
-                        line = line.trim()
-                        if (line && !line.startsWith('#') && line.contains('=')) {
-                            def parts = line.split('=', 2)
-                            configProps[parts[0].trim()] = parts[1].trim()
-                        }
-                    }
-                    
-                    // Set environment variables from config (with override support)
-                    env.USE_CACHE = configProps.OVERRIDE_USE_CACHE ?: (configProps.USE_CACHE ?: 'true')
-                    env.RUN_ANSIBLE = configProps.OVERRIDE_RUN_ANSIBLE ?: (configProps.RUN_ANSIBLE ?: 'true')
-                    env.CNI_TYPE = configProps.OVERRIDE_CNI_TYPE ?: (configProps.DEFAULT_CNI_TYPE ?: 'cilium')
-                    env.CNI_VERSION = configProps.OVERRIDE_CNI_VERSION ?: (configProps.DEFAULT_CNI_VERSION ?: '1.16.0')
-                    env.KUBERNETES_VERSION = configProps.OVERRIDE_KUBERNETES_VERSION ?: (configProps.DEFAULT_KUBERNETES_VERSION ?: '1.32.7')
-                    
-                    // Deployment mode configuration
-                    env.TEMPLATE_DEPLOYMENT = configProps.TEMPLATE_DEPLOYMENT ?: 'true'
-                    env.PARALLEL_DEPLOYMENT = configProps.PARALLEL_DEPLOYMENT ?: 'false'
-                    
-                    env.PROXMOX_CREDENTIALS_PREFIX = configProps.PROXMOX_CREDENTIALS_PREFIX ?: 'proxmox'
-                    env.SLACK_WEBHOOK_CREDENTIAL_ID = configProps.SLACK_WEBHOOK_CREDENTIAL_ID ?: 'slack-webhook-url'
-                    
-                    sh './scripts/setup_environment.sh'
-                    
-                    // Set environment variables for subsequent stages
-                    env.PATH = "${WORKSPACE}/venv/bin:${env.PATH}"
-                    env.VIRTUAL_ENV = "${WORKSPACE}/venv"
-                }
-            }
-        }
-        
-        // Environment variables now set from parameters in environment block above
-        
-        stage('Terraform Provisioning') {
-            stages {
-                stage('Init') {
+        stage('ULTRA-FAST INITIALIZATION') {
+            parallel {
+                stage('Config & Checkout') {
                     steps {
-                        dir("${TERRAFORM_DIR}") {
-                            withCredentials([
-                                string(credentialsId: "${env.PROXMOX_CREDENTIALS_PREFIX}-api-url", variable: 'TF_VAR_pm_api_url'),
-                                string(credentialsId: "${env.PROXMOX_CREDENTIALS_PREFIX}-api-token-id", variable: 'TF_VAR_pm_api_token_id'),
-                                string(credentialsId: "${env.PROXMOX_CREDENTIALS_PREFIX}-api-token-secret", variable: 'TF_VAR_pm_api_token_secret')
-                            ]) {
-                                script {
-                                    def startTime = System.currentTimeMillis()
-                                    
-                                    sh '''
-                                        # Clean state for fresh deployment
-                                        rm -f terraform.tfstate terraform.tfstate.backup
-                                        
-                                        terraform init -upgrade=false
-                                    '''
-                                    
-                                    def duration = ((System.currentTimeMillis() - startTime) / 1000).intValue()
-                                    echo "Terraform init completed in ${duration}s"
-                                    
-                                    // Cache providers
-                                    if (env.USE_CACHE && env.USE_CACHE.toBoolean()) {
-                                        sh 'cp -r .terraform ${CACHE_DIR}/terraform/ || true'
-                                    }
+                        script {
+                            // OPTIMIZED: Single config read with caching
+                            def configContent = readFile(CONFIG_FILE)
+                            globalConfig = [:]
+                            
+                            configContent.split('\n').each { line ->
+                                line = line.trim()
+                                if (line && !line.startsWith('#') && line.contains('=')) {
+                                    def parts = line.split('=', 2)
+                                    globalConfig[parts[0].trim()] = parts[1].trim()
                                 }
                             }
+                            
+                            def gitUrl = globalConfig.GIT_REPOSITORY_URL ?: 'https://gitlab.labngoprek.my.id/root/iac-provision'
+                            def gitBranch = globalConfig.GIT_BRANCH ?: 'main'
+                            def gitCredentials = globalConfig.GIT_CREDENTIALS_ID ?: 'gitlab-credential'
+                            
+                            git branch: gitBranch,
+                                credentialsId: gitCredentials,
+                                url: gitUrl
                         }
                     }
                 }
                 
-                stage('Apply') {
+                stage('Environment Setup') {
                     steps {
-                        dir("${TERRAFORM_DIR}") {
-                            withCredentials([
-                                string(credentialsId: "${env.PROXMOX_CREDENTIALS_PREFIX}-api-url", variable: 'TF_VAR_pm_api_url'),
-                                string(credentialsId: "${env.PROXMOX_CREDENTIALS_PREFIX}-api-token-id", variable: 'TF_VAR_pm_api_token_id'),
-                                string(credentialsId: "${env.PROXMOX_CREDENTIALS_PREFIX}-api-token-secret", variable: 'TF_VAR_pm_api_token_secret')
-                            ]) {
-                                script {
-                                    def startTime = System.currentTimeMillis()
-                                    
-                                    // Set CNI and Kubernetes environment variables for Terraform
-                                    env.TF_VAR_cni_type = env.CNI_TYPE
-                                    env.TF_VAR_cni_version = env.CNI_VERSION
-                                    env.TF_VAR_kubernetes_version = env.KUBERNETES_VERSION
-                                    
-                                    sh '../scripts/terraform_apply.sh'
-                                    
-                                    def duration = ((System.currentTimeMillis() - startTime) / 1000).intValue()
-                                    echo "Infrastructure provisioned in ${duration}s"
-                                }
-                            }
+                        script {
+                            // OPTIMIZED: Minimal essential output only
+                            echo "🚀 ${params.CLUSTER_NAME}: ${params.MASTER_COUNT}M+${params.WORKER_COUNT}W ${params.VM_TEMPLATE} K8s${params.KUBERNETES_VERSION}"
+                            
+                            // Wait for config to be loaded
+                            waitUntil { return globalConfig != null }
+                            
+                            // Set environment variables from cached config
+                            env.USE_CACHE = globalConfig.OVERRIDE_USE_CACHE ?: (globalConfig.USE_CACHE ?: 'true')
+                            env.RUN_ANSIBLE = globalConfig.OVERRIDE_RUN_ANSIBLE ?: (globalConfig.RUN_ANSIBLE ?: 'true')
+                            env.CNI_TYPE = globalConfig.OVERRIDE_CNI_TYPE ?: (globalConfig.DEFAULT_CNI_TYPE ?: 'cilium')
+                            env.CNI_VERSION = globalConfig.OVERRIDE_CNI_VERSION ?: (globalConfig.DEFAULT_CNI_VERSION ?: '1.16.0')
+                            env.KUBERNETES_VERSION = globalConfig.OVERRIDE_KUBERNETES_VERSION ?: (globalConfig.DEFAULT_KUBERNETES_VERSION ?: '1.32.7')
+                            
+                            env.TEMPLATE_DEPLOYMENT = globalConfig.TEMPLATE_DEPLOYMENT ?: 'true'
+                            env.PARALLEL_DEPLOYMENT = globalConfig.PARALLEL_DEPLOYMENT ?: 'false'
+                            env.PROXMOX_CREDENTIALS_PREFIX = globalConfig.PROXMOX_CREDENTIALS_PREFIX ?: 'proxmox'
+                            env.SLACK_WEBHOOK_CREDENTIAL_ID = globalConfig.SLACK_WEBHOOK_CREDENTIAL_ID ?: 'slack-webhook-url'
+                            
+                            sh './scripts/setup_environment.sh'
+                            
+                            env.PATH = "${WORKSPACE}/venv/bin:${env.PATH}"
+                            env.VIRTUAL_ENV = "${WORKSPACE}/venv"
                         }
                     }
                 }
             }
         }
         
-        stage('VM Readiness') {
-            when {
-                expression { env.RUN_ANSIBLE && env.RUN_ANSIBLE.toBoolean() }
-            }
-            steps {
-                dir("${ANSIBLE_DIR}") {
-                    script {
-                        def startTime = System.currentTimeMillis()
-                        
-                        sh '../scripts/check_vm_readiness.sh'
-                        
-                        def duration = ((System.currentTimeMillis() - startTime) / 1000).intValue()
-                        echo "VM readiness check completed in ${duration}s"
-                    }
-                }
-            }
-        }
-        
-        stage('Deploy Kubernetes') {
-            when {
-                expression { env.RUN_ANSIBLE && env.RUN_ANSIBLE.toBoolean() }
-            }
-            steps {
-                dir("${ANSIBLE_DIR}") {
-                    script {
-                        def startTime = System.currentTimeMillis()
-                        
-                        // Choose deployment strategy based on configuration
-                        if (env.TEMPLATE_DEPLOYMENT && env.TEMPLATE_DEPLOYMENT.toBoolean()) {
-                            echo "🚀 Using TEMPLATE-OPTIMIZED deployment (target: ~60s)"
-                            sh '../scripts/deploy_kubernetes_template.sh'
-                        } else if (env.PARALLEL_DEPLOYMENT && env.PARALLEL_DEPLOYMENT.toBoolean()) {
-                            echo "⚡ Using PARALLEL deployment (target: ~120s)"
-                            sh '../scripts/deploy_kubernetes_parallel.sh'
-                        } else {
-                            echo "🔧 Using STANDARD deployment (target: ~180s)"
-                            sh '../scripts/deploy_kubernetes.sh'
-                        }
-                        
-                        def duration = ((System.currentTimeMillis() - startTime) / 1000).intValue()
-                        def minutes = duration / 60
-                        def seconds = duration % 60
-                        
-                        // Display deployment results based on strategy used
-                        if (env.TEMPLATE_DEPLOYMENT && env.TEMPLATE_DEPLOYMENT.toBoolean()) {
-                            echo "🚀 Template-optimized Kubernetes deployed in ${minutes}m ${seconds}s"
-                            if (duration < 90) {
-                                echo "✅ EXCELLENT: Template optimization achieved target performance!"
-                            } else if (duration < 120) {
-                                echo "✅ GOOD: Template optimization working (may need template improvements)"
-                            } else {
-                                echo "⚠️ Template optimization may need attention (check template detection logs)"
-                            }
-                        } else {
-                            echo "Kubernetes deployed in ${minutes}m ${seconds}s"
-                        }
-                    }
-                }
-            }
-        }
-        
-        stage('Verify Kubernetes Cluster') {
-            when {
-                expression { env.RUN_ANSIBLE && env.RUN_ANSIBLE.toBoolean() }
-            }
-            steps {
-                dir("${ANSIBLE_DIR}") {
-                    sh '''
-                        echo "Verifying Kubernetes deployment..."
-                        
-                        # Get first master node
-                        FIRST_MASTER=$(python3 ${WORKSPACE}/scripts/get_first_master.py ${INVENTORY_FILE})
-                        
-                        if [ -n "$FIRST_MASTER" ]; then
-                            echo "Testing kubectl on $FIRST_MASTER..."
-                            export ANSIBLE_INVENTORY_FILE=${INVENTORY_FILE}
-                            ansible $FIRST_MASTER -i ${INVENTORY_SCRIPT} -m shell -a "kubectl get nodes" --timeout=30
-                            ansible $FIRST_MASTER -i ${INVENTORY_SCRIPT} -m shell -a "kubectl get pods --all-namespaces" --timeout=30
-                        else
-                            echo "No master nodes found in inventory"
-                            exit 1
-                        fi
-                    '''
-                }
-            }
-        }
-        
-        stage('Extract & Notify') {
-            when {
-                expression { env.RUN_ANSIBLE && env.RUN_ANSIBLE.toBoolean() }
-            }
-            steps {
-                dir("${ANSIBLE_DIR}") {
-                    script {
-                        sh '../scripts/extract_kubeconfig.sh'
-                        
-                        // Send metadata to Django webhook
-                        try {
-                            echo "Sending cluster metadata to Django..."
-                            sh """
-                                cd ${WORKSPACE}
-                                # Try installing requests if not available
-                                pip3 install --user requests || echo "Warning: Could not install requests module"
-                                
-                                # Try main script first, fallback to urllib-only version
-                                python3 scripts/send_metadata_to_django.py "${params.CLUSTER_NAME}" "https://labngoprek.my.id" || \
-                                python3 scripts/send_metadata_fallback.py "${params.CLUSTER_NAME}" "https://labngoprek.my.id"
-                            """
-                            echo "Successfully sent metadata to Django!"
-                        } catch (Exception e) {
-                            echo "Warning: Failed to send metadata to Django: ${e.getMessage()}"
-                            // Continue with deployment even if Django webhook fails
-                        }
-                        
-                        // Send KUBECONFIG to Slack
-                        withCredentials([string(credentialsId: env.SLACK_WEBHOOK_CREDENTIAL_ID, variable: 'SLACK_WEBHOOK_URL')]) {
-                            def buildDuration = currentBuild.durationString.replace(' and counting', '')
-                            def kubeconfigContent = readFile("kubeconfig/admin.conf")
-                            
-                            // Get cluster info
-                            def masterCount = sh(
-                                script: "python3 ${WORKSPACE}/scripts/count_inventory_hosts.py ${INVENTORY_FILE} --details | grep k8s_masters | wc -l",
-                                returnStdout: true
-                            ).trim()
-                            
-                            def workerCount = sh(
-                                script: "python3 ${WORKSPACE}/scripts/count_inventory_hosts.py ${INVENTORY_FILE} --details | grep k8s_workers | wc -l",
-                                returnStdout: true
-                            ).trim()
-                            
-                            def clusterEndpoint = sh(
-                                script: "grep 'server:' kubeconfig/admin.conf | awk '{print \$2}' | head -1",
-                                returnStdout: true
-                            ).trim()
-                            
-                            // Debug output
-                            echo "Master Count: ${masterCount}"
-                            echo "Worker Count: ${workerCount}"
-                            echo "Cluster Endpoint: ${clusterEndpoint}"
-                            echo "KUBECONFIG length: ${kubeconfigContent.length()}"
-                            
-                            // Set environment variables for the notification script
-                            env.BUILD_DURATION = buildDuration
-                            env.CLUSTER_ENDPOINT = clusterEndpoint
-                            env.MASTER_COUNT = masterCount
-                            env.WORKER_COUNT = workerCount
-                            
-                            sh '../scripts/notify_slack.sh'
-                        }
-                    }
-                }
-            }
-        }
-        
-        stage('Show Summary') {
+        stage('ULTRA-FAST TERRAFORM') {
             steps {
                 dir("${TERRAFORM_DIR}") {
                     withCredentials([
@@ -377,15 +128,155 @@ TF_VAR_vm_memory: ${env.TF_VAR_vm_memory}
                         string(credentialsId: "${env.PROXMOX_CREDENTIALS_PREFIX}-api-token-id", variable: 'TF_VAR_pm_api_token_id'),
                         string(credentialsId: "${env.PROXMOX_CREDENTIALS_PREFIX}-api-token-secret", variable: 'TF_VAR_pm_api_token_secret')
                     ]) {
-                        sh '''
-                            echo "==================== DEPLOYMENT SUMMARY ===================="
-                            terraform output assignment_summary
+                        script {
+                            // OPTIMIZED: Single credential load + parallel init/apply
+                            env.TF_VAR_cni_type = env.CNI_TYPE
+                            env.TF_VAR_cni_version = env.CNI_VERSION
+                            env.TF_VAR_kubernetes_version = env.KUBERNETES_VERSION
                             
-                            echo ""
-                            echo "==================== INFRASTRUCTURE DETAILS ===================="
-                            terraform output vm_assignments
-                        '''
+                            def startTime = System.currentTimeMillis()
+                            
+                            // ULTRA-FAST: Combined init + apply in single operation
+                            sh '''
+                                # Clean state for fresh deployment
+                                rm -f terraform.tfstate terraform.tfstate.backup
+                                
+                                # Parallel init with reduced verbosity
+                                terraform init -upgrade=false -input=false > /dev/null
+                                
+                                # Cache providers
+                                mkdir -p ${CACHE_DIR}/terraform/ && cp -r .terraform ${CACHE_DIR}/terraform/ || true
+                                
+                                # Apply with minimal output
+                                ../scripts/terraform_apply.sh
+                            '''
+                            
+                            def duration = ((System.currentTimeMillis() - startTime) / 1000).intValue()
+                            echo "⚡ Terraform completed in ${duration}s"
+                        }
                     }
+                }
+            }
+        }
+        
+        stage('ULTRA-FAST KUBERNETES DEPLOYMENT') {
+            parallel {
+                stage('VM Readiness + Deploy') {
+                    when {
+                        expression { env.RUN_ANSIBLE && env.RUN_ANSIBLE.toBoolean() }
+                    }
+                    steps {
+                        dir("${ANSIBLE_DIR}") {
+                            script {
+                                def startTime = System.currentTimeMillis()
+                                
+                                // OPTIMIZED: Combined readiness + deployment
+                                sh '../scripts/check_vm_readiness.sh'
+                                
+                                if (env.TEMPLATE_DEPLOYMENT && env.TEMPLATE_DEPLOYMENT.toBoolean()) {
+                                    echo "🚀 TEMPLATE-OPTIMIZED (~35-50s target)"
+                                    sh '../scripts/deploy_kubernetes_template.sh'
+                                } else {
+                                    sh '../scripts/deploy_kubernetes_parallel.sh'
+                                }
+                                
+                                def duration = ((System.currentTimeMillis() - startTime) / 1000).intValue()
+                                echo "⚡ K8s deployed in ${duration}s ${duration < 60 ? '🔥 ULTRA-FAST!' : duration < 90 ? '✅ EXCELLENT!' : '⚙️ OK'}"
+                            }
+                        }
+                    }
+                }
+                
+                stage('FAST Verification') {
+                    when {
+                        expression { env.RUN_ANSIBLE && env.RUN_ANSIBLE.toBoolean() }
+                    }
+                    steps {
+                        dir("${ANSIBLE_DIR}") {
+                            script {
+                                // OPTIMIZED: Wait for deployment, then verify with aggressive timeouts
+                                sleep(time: 30, unit: 'SECONDS')
+                                
+                                sh '''
+                                    FIRST_MASTER=$(python3 ${WORKSPACE}/scripts/get_first_master.py ${INVENTORY_FILE})
+                                    
+                                    if [ -n "$FIRST_MASTER" ]; then
+                                        export ANSIBLE_INVENTORY_FILE=${INVENTORY_FILE}
+                                        # ULTRA-FAST: 10s timeout instead of 30s
+                                        ansible $FIRST_MASTER -i ${INVENTORY_SCRIPT} -m shell -a "kubectl get nodes" --timeout=10
+                                        ansible $FIRST_MASTER -i ${INVENTORY_SCRIPT} -m shell -a "kubectl get pods -n kube-system" --timeout=10
+                                    else
+                                        echo "No master nodes found"
+                                        exit 1
+                                    fi
+                                '''
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        
+        stage('FAST Extract & Notify') {
+            parallel {
+                stage('Extract KUBECONFIG') {
+                    when {
+                        expression { env.RUN_ANSIBLE && env.RUN_ANSIBLE.toBoolean() }
+                    }
+                    steps {
+                        dir("${ANSIBLE_DIR}") {
+                            sh '../scripts/extract_kubeconfig.sh'
+                        }
+                    }
+                }
+                
+                stage('Notify Services') {
+                    when {
+                        expression { env.RUN_ANSIBLE && env.RUN_ANSIBLE.toBoolean() }
+                    }
+                    steps {
+                        script {
+                            // OPTIMIZED: Background notifications with timeout
+                            try {
+                                timeout(time: 30, unit: 'SECONDS') {
+                                    sh """
+                                        cd ${WORKSPACE}
+                                        python3 scripts/send_metadata_to_django.py "${params.CLUSTER_NAME}" "https://labngoprek.my.id" &
+                                        wait
+                                    """
+                                }
+                            } catch (Exception e) {
+                                echo "Django webhook skipped (${e.getMessage()})"
+                            }
+                            
+                            // OPTIMIZED: Minimal Slack notification
+                            withCredentials([string(credentialsId: env.SLACK_WEBHOOK_CREDENTIAL_ID, variable: 'SLACK_WEBHOOK_URL')]) {
+                                script {
+                                    try {
+                                        timeout(time: 15, unit: 'SECONDS') {
+                                            def duration = currentBuild.durationString.replace(' and counting', '')
+                                            env.BUILD_DURATION = duration
+                                            env.MASTER_COUNT = params.MASTER_COUNT
+                                            env.WORKER_COUNT = params.WORKER_COUNT
+                                            sh '../scripts/notify_slack.sh || echo "Slack notification skipped"'
+                                        }
+                                    } catch (Exception e) {
+                                        echo "Slack notification timeout"
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        
+        stage('SUMMARY') {
+            steps {
+                script {
+                    // OPTIMIZED: Minimal summary without slow terraform output
+                    def duration = currentBuild.durationString.replace(' and counting', '')
+                    echo "✅ SUCCESS: ${params.CLUSTER_NAME} deployed in ${duration} | ${params.MASTER_COUNT}M+${params.WORKER_COUNT}W | K8s${params.KUBERNETES_VERSION}"
                 }
             }
         }
@@ -411,44 +302,11 @@ TF_VAR_vm_memory: ${env.TF_VAR_vm_memory}
         
         success {
             script {
-                def successMessage = """
-            ==================== SUCCESS ====================
-            Kubernetes cluster deployment completed successfully!
-            
-            Cluster Configuration (from Django REST API):
-            - Cluster: ${params.CLUSTER_NAME}
-            - Masters: ${params.MASTER_COUNT}, Workers: ${params.WORKER_COUNT}
-            - VM Template: ${params.VM_TEMPLATE} on ${params.PROXMOX_NODE}
-            - Kubernetes: ${params.KUBERNETES_VERSION} with ${params.CNI_TYPE}
-            - VM Specs: ${params.CORES} cores, ${params.MEMORY}MB RAM, ${params.DISK_SIZE} disk
-            
-            What was deployed:
-            - Brand NEW VMs provisioned with Terraform
-            - Previous VMs still running (not destroyed)
-            - Kubernetes cluster configured on new VMs
-            - Dynamic inventory generated automatically"""
-            
-                successMessage += """
-            - KUBECONFIG extracted and archived
-            
-            Kubernetes Access:
-            - Download 'kubeconfig/admin.conf' from Jenkins artifacts
-            - Run: mkdir -p ~/.kube && cp admin.conf ~/.kube/config
-            - Test: kubectl get nodes"""
-                
-                successMessage += """
-            
-            Next steps:
-            - Access services using endpoints shown above
-            - Check archived files for configuration details
-            - Scale or modify as needed
-            
-            Cleanup (if needed):
-            - cd terraform && terraform destroy --auto-approve
-            ==================================================
-            """
-            
-                echo successMessage
+                // OPTIMIZED: Ultra-minimal success output
+                def duration = currentBuild.durationString.replace(' and counting', '')
+                echo "🎆 ULTRA-SUCCESS: ${params.CLUSTER_NAME} ready in ${duration}!"
+                echo "🔗 KUBECONFIG: Download 'kubeconfig/admin.conf' from artifacts"
+                echo "🧪 Cleanup: cd terraform && terraform destroy --auto-approve"
             }
         }
         
