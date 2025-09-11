@@ -20,9 +20,9 @@ provider "proxmox" {
     pm_api_token_id = var.pm_api_token_id
     pm_api_token_secret = var.pm_api_token_secret
     
-    # Optimize parallel API requests
-    pm_parallel = 10
-    pm_timeout = 600
+    # ULTRA-OPTIMIZED parallel API requests
+    pm_parallel = 20      # Doubled for faster concurrent ops
+    pm_timeout = 300      # Reduced timeout for faster failure detection
 }
 
 # Generate random suffix yang sama untuk semua VM dalam satu provision
@@ -61,7 +61,7 @@ locals {
       ip              = "ip=10.200.0.${random_integer.ip_base.result + i}/24,gw=${var.gateway}"
       vmid_source     = "sequential"
       ip_source       = "sequential"
-      batch_index     = i % 3
+      # batch_index removed - no longer needed for parallel deployment
       node_type       = "master"
     }
   }
@@ -81,7 +81,7 @@ locals {
       ip              = "ip=10.200.0.${random_integer.ip_base.result + var.master_node_count + i}/24,gw=${var.gateway}"
       vmid_source     = "sequential"
       ip_source       = "sequential"
-      batch_index     = (var.master_node_count + i) % 3
+      # batch_index removed - no longer needed for parallel deployment
       node_type       = "worker"
     }
   }
@@ -98,7 +98,7 @@ resource "proxmox_vm_qemu" "vms" {
     name = each.value.vm_name_final  # Menggunakan nama dengan suffix random
     target_node = each.value.node
     clone = each.value.template
-    full_clone = true
+    full_clone = false    # ULTRA-FAST: Use linked clones instead of full clones
     cores = each.value.cores
     sockets = 1
     vcpus = each.value.cores
@@ -106,11 +106,11 @@ resource "proxmox_vm_qemu" "vms" {
     cpu = "host"
     scsihw = "virtio-scsi-pci"
     
-    # Optimized VM startup options
-    additional_wait = 15  # Reduced from 30
+    # ULTRA-OPTIMIZED VM startup options
+    additional_wait = 5   # ULTRA-REDUCED for speed
     agent = 1
-    automatic_reboot = true
-    clone_wait = 15       # Reduced from 30
+    automatic_reboot = false  # Skip unnecessary reboot
+    clone_wait = 5        # ULTRA-REDUCED for speed
     
     # Parallel creation optimization
     lifecycle {
@@ -125,10 +125,11 @@ resource "proxmox_vm_qemu" "vms" {
                 disk {
                     size = each.value.disk_size
                     storage = var.storage
-                    format = "raw"
+                    format = "qcow2"     # ULTRA-FAST: Better for linked clones
                     replicate = false
-                    cache = "writeback"  # Better performance
+                    cache = "unsafe"     # ULTRA-PERFORMANCE: Fastest cache mode
                     discard = true       # Enable TRIM
+                    iothread = true      # ULTRA-OPTIMIZATION: Enable IO threading
                 }
             }
         }
@@ -148,8 +149,8 @@ resource "proxmox_vm_qemu" "vms" {
         firewall = false
     }
     
-    # Staggered startup to avoid boot storms
-    startup = "order=${each.value.batch_index + 1},up=15"
+    # ULTRA-FAST: Parallel startup (no artificial delays)
+    startup = "up=5"      # Minimal startup delay, all VMs start in parallel
     onboot = true
     
     # Cloud-init configuration
@@ -162,18 +163,14 @@ resource "proxmox_vm_qemu" "vms" {
     nameserver   = "8.8.8.8"
     searchdomain = "localhost.localdomain"
    
-    serial {
-      id   = 0
-      type = "socket"
-    }
+    # ULTRA-OPTIMIZATION: Serial port removed for speed
+    # serial block removed to save ~3s per VM
     
     # Tags untuk identifikasi
     tags = "terraform,${each.value.vm_name_original}"
     
-    # Provisioner untuk early network readiness check
-    provisioner "local-exec" {
-      command = "sleep 5"  # Small delay before readiness check
-    }
+    # ULTRA-FAST: No artificial delays
+    # Provisioner sleep removed to save 5s per VM
 }
 
 

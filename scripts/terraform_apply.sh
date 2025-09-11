@@ -15,7 +15,7 @@ else
 fi
 
 echo "🔧 Applying Terraform with environment variables (TF_VAR_*)..."
-terraform apply -auto-approve -parallelism=10
+terraform apply -auto-approve -parallelism=20  # ULTRA-FAST: Doubled parallelism
 
 echo "Deployment summary:"
 terraform output assignment_summary || echo "No assignment summary available"
