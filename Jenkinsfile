@@ -57,9 +57,6 @@ pipeline {
         disableConcurrentBuilds()
     }
 
-    // GLOBAL CONFIGURATION CACHE - ULTRA OPTIMIZATION
-    def globalConfig = null
-    
     stages {
         stage('ULTRA-FAST INITIALIZATION') {
             parallel {
@@ -68,7 +65,7 @@ pipeline {
                         script {
                             // OPTIMIZED: Single config read with caching
                             def configContent = readFile(CONFIG_FILE)
-                            globalConfig = [:]
+                            def globalConfig = [:]
                             
                             configContent.split('\n').each { line ->
                                 line = line.trim()
@@ -78,13 +75,25 @@ pipeline {
                                 }
                             }
                             
-                            def gitUrl = globalConfig.GIT_REPOSITORY_URL ?: 'https://gitlab.labngoprek.my.id/root/iac-provision'
-                            def gitBranch = globalConfig.GIT_BRANCH ?: 'main'
-                            def gitCredentials = globalConfig.GIT_CREDENTIALS_ID ?: 'gitlab-credential'
+                            // Store config in environment for sharing between stages
+                            env.GIT_REPOSITORY_URL = globalConfig.GIT_REPOSITORY_URL ?: 'https://gitlab.labngoprek.my.id/root/iac-provision'
+                            env.GIT_BRANCH = globalConfig.GIT_BRANCH ?: 'main'
+                            env.GIT_CREDENTIALS_ID = globalConfig.GIT_CREDENTIALS_ID ?: 'gitlab-credential'
                             
-                            git branch: gitBranch,
-                                credentialsId: gitCredentials,
-                                url: gitUrl
+                            // Store all config values in environment
+                            env.USE_CACHE = globalConfig.OVERRIDE_USE_CACHE ?: (globalConfig.USE_CACHE ?: 'true')
+                            env.RUN_ANSIBLE = globalConfig.OVERRIDE_RUN_ANSIBLE ?: (globalConfig.RUN_ANSIBLE ?: 'true')
+                            env.CNI_TYPE = globalConfig.OVERRIDE_CNI_TYPE ?: (globalConfig.DEFAULT_CNI_TYPE ?: 'cilium')
+                            env.CNI_VERSION = globalConfig.OVERRIDE_CNI_VERSION ?: (globalConfig.DEFAULT_CNI_VERSION ?: '1.16.0')
+                            env.KUBERNETES_VERSION = globalConfig.OVERRIDE_KUBERNETES_VERSION ?: (globalConfig.DEFAULT_KUBERNETES_VERSION ?: '1.32.7')
+                            env.TEMPLATE_DEPLOYMENT = globalConfig.TEMPLATE_DEPLOYMENT ?: 'true'
+                            env.PARALLEL_DEPLOYMENT = globalConfig.PARALLEL_DEPLOYMENT ?: 'false'
+                            env.PROXMOX_CREDENTIALS_PREFIX = globalConfig.PROXMOX_CREDENTIALS_PREFIX ?: 'proxmox'
+                            env.SLACK_WEBHOOK_CREDENTIAL_ID = globalConfig.SLACK_WEBHOOK_CREDENTIAL_ID ?: 'slack-webhook-url'
+                            
+                            git branch: env.GIT_BRANCH,
+                                credentialsId: env.GIT_CREDENTIALS_ID,
+                                url: env.GIT_REPOSITORY_URL
                         }
                     }
                 }
@@ -95,20 +104,7 @@ pipeline {
                             // OPTIMIZED: Minimal essential output only
                             echo "🚀 ${params.CLUSTER_NAME}: ${params.MASTER_COUNT}M+${params.WORKER_COUNT}W ${params.VM_TEMPLATE} K8s${params.KUBERNETES_VERSION}"
                             
-                            // Wait for config to be loaded
-                            waitUntil { return globalConfig != null }
-                            
-                            // Set environment variables from cached config
-                            env.USE_CACHE = globalConfig.OVERRIDE_USE_CACHE ?: (globalConfig.USE_CACHE ?: 'true')
-                            env.RUN_ANSIBLE = globalConfig.OVERRIDE_RUN_ANSIBLE ?: (globalConfig.RUN_ANSIBLE ?: 'true')
-                            env.CNI_TYPE = globalConfig.OVERRIDE_CNI_TYPE ?: (globalConfig.DEFAULT_CNI_TYPE ?: 'cilium')
-                            env.CNI_VERSION = globalConfig.OVERRIDE_CNI_VERSION ?: (globalConfig.DEFAULT_CNI_VERSION ?: '1.16.0')
-                            env.KUBERNETES_VERSION = globalConfig.OVERRIDE_KUBERNETES_VERSION ?: (globalConfig.DEFAULT_KUBERNETES_VERSION ?: '1.32.7')
-                            
-                            env.TEMPLATE_DEPLOYMENT = globalConfig.TEMPLATE_DEPLOYMENT ?: 'true'
-                            env.PARALLEL_DEPLOYMENT = globalConfig.PARALLEL_DEPLOYMENT ?: 'false'
-                            env.PROXMOX_CREDENTIALS_PREFIX = globalConfig.PROXMOX_CREDENTIALS_PREFIX ?: 'proxmox'
-                            env.SLACK_WEBHOOK_CREDENTIAL_ID = globalConfig.SLACK_WEBHOOK_CREDENTIAL_ID ?: 'slack-webhook-url'
+                            // Config already loaded in parallel stage - use environment variables
                             
                             sh './scripts/setup_environment.sh'
                             
