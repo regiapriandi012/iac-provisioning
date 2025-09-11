@@ -375,21 +375,32 @@ Failed to destroy: ${failedVMs.size()} ${failedVMs.size() > 0 ? '(' + failedVMs.
                             
                             echo "Starting infrastructure destruction for cluster: ${params.CLUSTER_NAME}"
                             
-                            // Execute terraform destroy without cluster_name variable (not defined in variables.tf)
+                            // Execute terraform destroy and handle exit codes properly
                             def destroyResult = sh(
-                                script: '''
+                                script: '''#!/bin/bash
+                                    set -o pipefail
                                     terraform destroy \
                                         -auto-approve \
                                         2>&1 | tee destroy.log
-                                    echo "DESTROY_EXIT_CODE=${PIPESTATUS[0]}" >> destroy.log
                                 ''',
                                 returnStatus: true
                             )
                             
                             def duration = ((System.currentTimeMillis() - startTime) / 1000).intValue()
                             
+                            // Check destroy log content to understand what happened
+                            def destroyLog = sh(
+                                script: 'cat destroy.log 2>/dev/null || echo "No destroy log"',
+                                returnStdout: true
+                            ).trim()
+                            
+                            // Terraform exit codes:
+                            // 0 = Success with changes
+                            // 1 = Error occurred  
+                            // 2 = Success but with warnings OR no changes needed
+                            
                             if (destroyResult == 0) {
-                                echo "Infrastructure destroyed successfully in ${duration}s"
+                                echo "✅ Infrastructure destroyed successfully in ${duration}s"
                                 
                                 // Clean up terraform files
                                 sh '''
@@ -397,11 +408,40 @@ Failed to destroy: ${failedVMs.size()} ${failedVMs.size() > 0 ? '(' + failedVMs.
                                     rm -f tfplan destroy.log
                                 '''
                                 
+                            } else if (destroyResult == 2) {
+                                // Check if it's "no changes" (resources already destroyed)
+                                if (destroyLog.contains("No changes") || 
+                                    destroyLog.contains("No objects need to be destroyed") ||
+                                    destroyLog.contains("Resources: 0 destroyed")) {
+                                    
+                                    echo "✅ No infrastructure to destroy - resources already cleaned up in ${duration}s"
+                                    echo "   This is normal when VMs were destroyed outside of Terraform"
+                                    
+                                    // Clean up terraform files
+                                    sh '''
+                                        rm -f terraform.tfstate terraform.tfstate.backup
+                                        rm -f tfplan destroy.log
+                                    '''
+                                    
+                                } else {
+                                    echo "⚠️ Terraform destroy completed with warnings (exit code: ${destroyResult})"
+                                    echo "   Duration: ${duration}s"
+                                    sh 'cat destroy.log'
+                                    
+                                    // Still treat as success if no actual errors
+                                    if (!destroyLog.contains("Error:") && !destroyLog.contains("error:")) {
+                                        echo "✅ Treating as successful since no errors found in output"
+                                    } else {
+                                        error("Terraform destroy failed with errors")
+                                    }
+                                }
+                                
                             } else {
-                                echo "Terraform destroy failed with exit code: ${destroyResult}"
+                                echo "❌ Terraform destroy failed with exit code: ${destroyResult}"
+                                echo "   Duration: ${duration}s"
                                 
                                 // Show destroy log for debugging
-                                sh 'cat destroy.log || echo "No destroy log available"'
+                                sh 'cat destroy.log'
                                 
                                 error("Failed to destroy infrastructure")
                             }
