@@ -219,44 +219,107 @@ Proceeding with automatic destruction...
                                     // Wait a moment for VM to stop
                                     sleep(3)
                                     
-                                    // Delete VM - try multiple methods for compatibility
-                                    def deleteResult = sh(
+                                    // Check if VM exists first, then delete if it exists
+                                    def checkResult = sh(
                                         script: """
-                                            # Method 1: Try using pvesh via SSH (most reliable)
-                                            # Use direct IP address instead of extracting from URL
+                                            # Check if VM exists before attempting deletion
                                             PROXMOX_HOST="172.16.20.115"
                                             
-                                            # Try SSH with pvesh delete (if SSH is available)
-                                            if ssh -o StrictHostKeyChecking=no -o ConnectTimeout=3 root@\${PROXMOX_HOST} "pvesh delete /nodes/${params.PROXMOX_NODE}/qemu/${vmId} --purge 1" 2>/dev/null; then
-                                                echo "200"
+                                            # Method 1: Check via SSH if available
+                                            if ssh -o StrictHostKeyChecking=no -o ConnectTimeout=3 root@\${PROXMOX_HOST} "pvesh get /nodes/${params.PROXMOX_NODE}/qemu/${vmId}/status/current" 2>/dev/null; then
+                                                echo "EXISTS_SSH"
                                             else
-                                                # Method 2: Use correct Proxmox API DELETE endpoint
-                                                TASK_RESULT=\$(curl -k -X DELETE \\
+                                                # Method 2: Check via API
+                                                CHECK_RESULT=\$(curl -k -X GET \\
                                                     -H "Authorization: PVEAPIToken=${PROXMOX_TOKEN_ID}=${PROXMOX_TOKEN_SECRET}" \\
-                                                    "https://172.16.20.115:8006/api2/json/nodes/${params.PROXMOX_NODE}/qemu/${vmId}?purge=1" \\
-                                                    -w "%{http_code}" -o /tmp/vm_delete_${vmId}.json -s)
+                                                    "https://172.16.20.115:8006/api2/json/nodes/${params.PROXMOX_NODE}/qemu/${vmId}/status/current" \\
+                                                    -w "%{http_code}" -o /tmp/vm_check_${vmId}.json -s)
                                                 
-                                                if [ "\$TASK_RESULT" = "200" ]; then
-                                                    echo "200"
+                                                if [ "\$CHECK_RESULT" = "200" ]; then
+                                                    echo "EXISTS_API"
+                                                elif [ "\$CHECK_RESULT" = "404" ] || [ "\$CHECK_RESULT" = "500" ]; then
+                                                    echo "NOT_EXISTS"
                                                 else
-                                                    # Method 3: Last resort - try standard DELETE (might not work on all versions)
-                                                    curl -k -X DELETE \\
-                                                        -H "Authorization: PVEAPIToken=${PROXMOX_TOKEN_ID}=${PROXMOX_TOKEN_SECRET}" \\
-                                                        "https://172.16.20.115:8006/api2/json/nodes/${params.PROXMOX_NODE}/qemu/${vmId}" \\
-                                                        -w "%{http_code}" -o /tmp/vm_delete_${vmId}.json -s
+                                                    echo "CHECK_FAILED_\$CHECK_RESULT"
                                                 fi
                                             fi
                                         """,
                                         returnStdout: true
                                     ).trim()
                                     
-                                    if (deleteResult == "200") {
-                                        echo "Successfully destroyed VM ${vmId}"
+                                    if (checkResult == "NOT_EXISTS") {
+                                        echo "✅ VM ${vmId} doesn't exist - already destroyed or never created"
                                         destroyedVMs.add(vmId)
+                                    } else if (checkResult.startsWith("EXISTS_")) {
+                                        echo "🔥 VM ${vmId} exists, proceeding with destruction..."
+                                        
+                                        // Delete VM - try multiple methods for compatibility
+                                        def deleteResult = sh(
+                                            script: """
+                                                # Method 1: Try using pvesh via SSH (most reliable)
+                                                PROXMOX_HOST="172.16.20.115"
+                                                
+                                                # Try SSH with pvesh delete (if SSH is available)
+                                                if ssh -o StrictHostKeyChecking=no -o ConnectTimeout=3 root@\${PROXMOX_HOST} "pvesh delete /nodes/${params.PROXMOX_NODE}/qemu/${vmId} --purge 1" 2>/dev/null; then
+                                                    echo "200"
+                                                else
+                                                    # Method 2: Use correct Proxmox API DELETE endpoint
+                                                    TASK_RESULT=\$(curl -k -X DELETE \\
+                                                        -H "Authorization: PVEAPIToken=${PROXMOX_TOKEN_ID}=${PROXMOX_TOKEN_SECRET}" \\
+                                                        "https://172.16.20.115:8006/api2/json/nodes/${params.PROXMOX_NODE}/qemu/${vmId}?purge=1" \\
+                                                        -w "%{http_code}" -o /tmp/vm_delete_${vmId}.json -s)
+                                                    
+                                                    if [ "\$TASK_RESULT" = "200" ]; then
+                                                        echo "200"
+                                                    elif [ "\$TASK_RESULT" = "404" ] || [ "\$TASK_RESULT" = "500" ]; then
+                                                        # VM disappeared between check and delete - consider success
+                                                        echo "404_ALREADY_GONE"
+                                                    else
+                                                        # Method 3: Last resort - try standard DELETE
+                                                        FINAL_RESULT=\$(curl -k -X DELETE \\
+                                                            -H "Authorization: PVEAPIToken=${PROXMOX_TOKEN_ID}=${PROXMOX_TOKEN_SECRET}" \\
+                                                            "https://172.16.20.115:8006/api2/json/nodes/${params.PROXMOX_NODE}/qemu/${vmId}" \\
+                                                            -w "%{http_code}" -o /tmp/vm_delete_final_${vmId}.json -s)
+                                                        echo "\$FINAL_RESULT"
+                                                    fi
+                                                fi
+                                            """,
+                                            returnStdout: true
+                                        ).trim()
+                                        
+                                        if (deleteResult == "200" || deleteResult == "404_ALREADY_GONE") {
+                                            echo "✅ Successfully destroyed VM ${vmId}"
+                                            destroyedVMs.add(vmId)
+                                        } else {
+                                            echo "❌ Failed to destroy VM ${vmId} (HTTP ${deleteResult})"
+                                            sh "cat /tmp/vm_delete_${vmId}.json 2>/dev/null || cat /tmp/vm_delete_final_${vmId}.json 2>/dev/null || echo 'No response file available'"
+                                            failedVMs.add(vmId)
+                                        }
                                     } else {
-                                        echo "Failed to destroy VM ${vmId} (HTTP ${deleteResult})"
-                                        sh "cat /tmp/vm_delete_${vmId}.json || echo 'No response file'"
-                                        failedVMs.add(vmId)
+                                        echo "⚠️ Unable to verify VM ${vmId} status (${checkResult}) - attempting destruction anyway..."
+                                        
+                                        // Attempt deletion despite check failure
+                                        def deleteResult = sh(
+                                            script: """
+                                                curl -k -X DELETE \\
+                                                    -H "Authorization: PVEAPIToken=${PROXMOX_TOKEN_ID}=${PROXMOX_TOKEN_SECRET}" \\
+                                                    "https://172.16.20.115:8006/api2/json/nodes/${params.PROXMOX_NODE}/qemu/${vmId}?purge=1" \\
+                                                    -w "%{http_code}" -o /tmp/vm_delete_fallback_${vmId}.json -s
+                                            """,
+                                            returnStdout: true
+                                        ).trim()
+                                        
+                                        if (deleteResult == "200") {
+                                            echo "✅ Successfully destroyed VM ${vmId}"
+                                            destroyedVMs.add(vmId)
+                                        } else if (deleteResult == "404" || deleteResult == "500") {
+                                            echo "✅ VM ${vmId} not found - considering as already destroyed"
+                                            destroyedVMs.add(vmId)
+                                        } else {
+                                            echo "❌ Failed to destroy VM ${vmId} (HTTP ${deleteResult})"
+                                            sh "cat /tmp/vm_delete_fallback_${vmId}.json 2>/dev/null || echo 'No response file available'"
+                                            failedVMs.add(vmId)
+                                        }
                                     }
                                     
                                 } catch (Exception e) {
