@@ -20,7 +20,7 @@ pipeline {
         string(name: 'CONTAINER_RUNTIME', defaultValue: 'containerd', description: 'Container runtime')
         string(name: 'IP_RANGE_START', defaultValue: '10.200.0.0/24', description: 'IP range for VMs')
         booleanParam(name: 'SKIP_ENHANCEMENTS', defaultValue: false, description: '⚡ Skip cosmetic enhancements (zsh, banner, etc) for ULTRA-FAST deployment')
-        booleanParam(name: 'ULTRA_FAST_MODE', defaultValue: false, description: '🚀 Enable all speed optimizations (reduced timeouts, parallel execution)')
+        booleanParam(name: 'ULTRA_FAST_MODE', defaultValue: true, description: '🚀 Enable all speed optimizations (reduced timeouts, parallel execution)')
     }
 
     environment {
@@ -281,6 +281,7 @@ pipeline {
                                 echo "✅ This is non-critical - cluster deployment was successful"
                                 currentBuild.result = 'UNSTABLE'  // Don't fail the build
                             }
+                            } // Close the outer try block from line 246
                         }
                     }
                 }
