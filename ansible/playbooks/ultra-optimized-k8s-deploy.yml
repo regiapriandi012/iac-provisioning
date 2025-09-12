@@ -264,16 +264,6 @@
       register: hubble_setup
       ignore_errors: true
 
-    - name: "✅ Verify CoreDNS deployment (auto-deployed by kubeadm)"
-      shell: |
-        # CoreDNS is automatically deployed by kubeadm init (no longer skipped)
-        # Just verify it's running properly
-        echo "Checking CoreDNS status..."
-        kubectl get pods -n kube-system -l k8s-app=kube-dns || echo "CoreDNS pods not found yet"
-        kubectl get svc -n kube-system kube-dns || echo "CoreDNS service not found yet"
-        echo "CoreDNS will be available shortly after kubeadm init completes"
-      register: coredns_status
-      ignore_errors: true
 
 # ======================================================================
 # ULTRA-FAST ADDON DEPLOYMENT (Pre-staged Manifests)  
