@@ -217,6 +217,22 @@
   
   tasks:
     # Metrics Server SKIPPED for ULTRA-FAST deployment (saves 15-20s)
+    
+    - name: "📊 Deploy kube-state-metrics for pod monitoring"
+      shell: |
+        # Deploy kube-state-metrics for Kubernetes object state metrics
+        kubectl apply -f https://raw.githubusercontent.com/kubernetes/kube-state-metrics/main/examples/standard/cluster-role-binding.yaml
+        kubectl apply -f https://raw.githubusercontent.com/kubernetes/kube-state-metrics/main/examples/standard/cluster-role.yaml
+        kubectl apply -f https://raw.githubusercontent.com/kubernetes/kube-state-metrics/main/examples/standard/deployment.yaml
+        kubectl apply -f https://raw.githubusercontent.com/kubernetes/kube-state-metrics/main/examples/standard/service-account.yaml
+        kubectl apply -f https://raw.githubusercontent.com/kubernetes/kube-state-metrics/main/examples/standard/service.yaml
+        
+        # Wait for kube-state-metrics to be ready
+        kubectl wait --for=condition=available --timeout=60s deployment/kube-state-metrics -n kube-system
+        
+        echo "kube-state-metrics deployed for pod monitoring"
+      register: kube_state_metrics_deploy
+      ignore_errors: true
 
     - name: "📈 Deploy Metricbeat for Monitoring"
       shell: |
