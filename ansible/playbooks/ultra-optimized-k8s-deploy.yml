@@ -199,7 +199,7 @@
 
     - name: "📈 Deploy Metricbeat for Monitoring"
       shell: |
-        # Deploy Metricbeat DaemonSet for monitoring
+        # Deploy Metricbeat DaemonSet for monitoring with Elasticsearch
         cat <<EOF | kubectl apply -f -
         apiVersion: v1
         kind: ConfigMap
@@ -210,8 +210,12 @@
           metricbeat.yml: |
             metricbeat.config.modules:
               path: /usr/share/metricbeat/modules.d/*.yml
-            output.console:
-              pretty: true
+            output.elasticsearch:
+              hosts: ['172.16.20.90:9200']
+              username: elastic
+              password: xrUW620aXmqkw*ErAWGC
+            setup.kibana:
+              host: "172.16.20.90:5601"
             processors:
             - add_kubernetes_metadata: ~
         ---
