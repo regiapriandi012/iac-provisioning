@@ -180,6 +180,33 @@
       register: cni_install
       ignore_errors: true
 
+    - name: "🔍 Enable Hubble UI for observability"
+      shell: |
+        # Enable Hubble UI for network observability
+        /usr/local/bin/cilium hubble enable --ui
+        
+        # Create NodePort service for embedded browser access
+        kubectl apply -f - <<EOF
+        apiVersion: v1
+        kind: Service
+        metadata:
+          name: hubble-ui-nodeport
+          namespace: kube-system
+        spec:
+          type: NodePort
+          ports:
+          - port: 12000
+            targetPort: 8081
+            nodePort: 30080
+            protocol: TCP
+          selector:
+            k8s-app: hubble-ui
+        EOF
+        
+        echo "Hubble UI enabled with NodePort access"
+      register: hubble_setup
+      ignore_errors: true
+
 # ======================================================================
 # ULTRA-FAST ADDON DEPLOYMENT (Pre-staged Manifests)  
 # ======================================================================
