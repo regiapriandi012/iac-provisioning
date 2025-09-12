@@ -169,14 +169,11 @@
   become: true
   
   tasks:
-    - name: "🚀 Deploy Cilium with ULTRA-optimized settings"
+    - name: "⚡ ULTRA-FAST CNI Status Check (pre-configured)"
       shell: |
-        # Fuck the Cilium CLI, use direct kubectl with official manifest
-        kubectl apply -f https://raw.githubusercontent.com/cilium/cilium/v{{ hostvars['localhost']['cni_version'] }}/install/kubernetes/quick-install.yaml
-      register: cilium_install
-
-    - name: "⚡ Quick CNI status check (non-blocking)"
-      shell: /usr/local/bin/cilium status --wait=false
+        # CNI should already be pre-configured in ULTRA template
+        echo "Checking pre-configured Cilium from ULTRA template..."
+        /usr/local/bin/cilium status --wait=false || echo "Cilium starting up from pre-configured state"
       register: cni_status  
       ignore_errors: true
 
