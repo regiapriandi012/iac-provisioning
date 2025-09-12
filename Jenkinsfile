@@ -90,7 +90,7 @@ pipeline {
                     }
                 }
                 
-                stage('Environment Setup') {
+                /*stage('Environment Setup') {
                     steps {
                         script {
                             // OPTIMIZED: Minimal essential output only
@@ -104,7 +104,7 @@ pipeline {
                             env.VIRTUAL_ENV = "${WORKSPACE}/venv"
                         }
                     }
-                }
+                }*/
             }
         }
         
