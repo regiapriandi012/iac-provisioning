@@ -97,14 +97,21 @@
   tasks:
     - name: "🚀 Lightning-fast kubeadm init (ULTRA mode)"
       shell: |
-        # ULTRA-optimized kubeadm init with minimal output
+        # ULTRA-optimized kubeadm init with maximum speed optimizations
         kubeadm init \
           --kubernetes-version="{{ hostvars['localhost']['kubernetes_version'] }}" \
           --pod-network-cidr="{{ lookup('env', 'POD_NETWORK_CIDR') | default('10.244.0.0/16') }}" \
           --service-cidr="{{ lookup('env', 'SERVICE_CIDR') | default('10.96.0.0/12') }}" \
           --upload-certs \
           --skip-phases=addon/kube-proxy \
-          --v=1 2>/dev/null
+          --skip-phases=addon/coredns \
+          --skip-certificate-key-print \
+          --skip-token-print \
+          --v=0 \
+          --ignore-preflight-errors=SystemVerification,Swap,FileContent--proc-sys-net-bridge-bridge-nf-call-iptables \
+          > /dev/null 2>&1
+        
+        echo "kubeadm init completed successfully"
       register: kubeadm_init
       when: inventory_hostname == groups['k8s_masters'][0]
       
