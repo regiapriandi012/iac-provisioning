@@ -29,6 +29,33 @@ fi
 TEMP_DIR="/tmp/hyper_vm_check_$$"
 mkdir -p "$TEMP_DIR"
 
+# Define cleanup function first (before any calls to it)
+cleanup_and_exit() {
+    local exit_code=$1
+    
+    echo "🧹 Cleaning up parallel processes..."
+    
+    # Kill all running processes (variables might not be set yet, so ignore errors)
+    kill $PID1 $PID2 $PID3 $MONITOR_PID $TIMEOUT_PID 2>/dev/null || true
+    
+    # Wait a moment for processes to die
+    sleep 1
+    
+    # Force kill if necessary
+    kill -9 $PID1 $PID2 $PID3 $MONITOR_PID $TIMEOUT_PID 2>/dev/null || true
+    
+    # Cleanup temp directory
+    rm -rf "$TEMP_DIR" 2>/dev/null || true
+    
+    if [ $exit_code -eq 0 ]; then
+        echo "🎉 HYPER-PARALLEL VM readiness check SUCCEEDED!"
+    else
+        echo "❌ HYPER-PARALLEL VM readiness check FAILED!"
+    fi
+    
+    exit $exit_code
+}
+
 echo "⚡ Launching multiple parallel readiness strategies..."
 
 # Strategy 1: Primary smart checker (most comprehensive)
@@ -201,32 +228,6 @@ MONITOR_PID=$!
     cleanup_and_exit 1
 } &
 TIMEOUT_PID=$!
-
-cleanup_and_exit() {
-    local exit_code=$1
-    
-    echo "🧹 Cleaning up parallel processes..."
-    
-    # Kill all running processes
-    kill $PID1 $PID2 $PID3 $MONITOR_PID $TIMEOUT_PID 2>/dev/null || true
-    
-    # Wait a moment for processes to die
-    sleep 1
-    
-    # Force kill if necessary
-    kill -9 $PID1 $PID2 $PID3 $MONITOR_PID $TIMEOUT_PID 2>/dev/null || true
-    
-    # Cleanup temp directory
-    rm -rf "$TEMP_DIR" 2>/dev/null || true
-    
-    if [ $exit_code -eq 0 ]; then
-        echo "🎉 HYPER-PARALLEL VM readiness check SUCCEEDED!"
-    else
-        echo "❌ HYPER-PARALLEL VM readiness check FAILED!"
-    fi
-    
-    exit $exit_code
-}
 
 # Wait for monitor process
 wait $MONITOR_PID

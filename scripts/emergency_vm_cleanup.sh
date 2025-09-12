@@ -49,7 +49,16 @@ terraform state list 2>/dev/null | sed 's/^/  - /' || true
 echo ""
 echo "🗑️  Starting VM destruction process..."
 
-# Method 1: Standard terraform destroy
+# Method 1: Direct Proxmox API destroy (fastest and most reliable)
+echo "🚀 Attempting direct Proxmox API VM destruction..."
+if ${WORKSPACE}/scripts/proxmox_vm_destroyer.sh ${TERRAFORM_DIR}; then
+    echo "✅ Direct Proxmox API destroy completed successfully!"
+    exit 0
+fi
+
+echo "⚠️  Direct API destroy failed, trying standard terraform destroy..."
+
+# Method 2: Standard terraform destroy
 echo "🔄 Attempting standard terraform destroy..."
 if timeout 300 terraform destroy -auto-approve -no-color 2>&1; then
     echo "✅ Standard terraform destroy completed successfully!"

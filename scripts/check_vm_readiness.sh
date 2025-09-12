@@ -44,9 +44,9 @@ fi
 # Use HYPER-PARALLEL VM readiness checker for maximum speed
 echo "Using HYPER-PARALLEL VM readiness checker..."
 
-# OPTIMAL initial delay (like fast build 363)
-echo "Waiting 20s for VMs to initialize..."
-sleep 20
+# EXTENDED initial delay for better SSH service startup
+echo "Waiting 30s for VMs to fully initialize (including SSH service)..."
+sleep 30
 
 # HYPER-PARALLEL readiness check (multiple strategies)
 echo "🚀 Launching HYPER-PARALLEL VM readiness check..."
