@@ -171,12 +171,12 @@
   tasks:
     - name: "🚀 Deploy Cilium CNI (ULTRA-FAST mode)"
       shell: |
-        # Deploy Cilium with basic configuration for speed
-        kubectl apply -f https://raw.githubusercontent.com/cilium/cilium/v{{ hostvars['localhost']['cni_version'] }}/install/kubernetes/quick-install.yaml
+        # Use pre-installed Cilium CLI for ULTRA-FAST deployment
+        /usr/local/bin/cilium install --version={{ hostvars['localhost']['cni_version'] }}
         
-        # Wait briefly for CNI to be ready
-        sleep 10
-        echo "Cilium deployed in ULTRA-FAST mode"
+        # Wait for CNI to be ready
+        sleep 15
+        echo "Cilium deployed using pre-installed CLI"
       register: cni_install
       ignore_errors: true
 
