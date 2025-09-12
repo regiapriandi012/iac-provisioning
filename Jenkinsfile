@@ -356,26 +356,37 @@ pipeline {
                             dir("${TERRAFORM_DIR}") {
                             echo "🗑️  AUTO-DESTROYING VMs to prevent resource accumulation..."
                             
-                            // Use emergency cleanup script for robust VM destruction
+                            // PRIORITY 1: Try triggering Jenkins destroy job
                             sh '''
-                                # Set terraform variables for cleanup
-                                export TF_VAR_master_node_count=${MASTER_COUNT}
-                                export TF_VAR_worker_node_count=${WORKER_COUNT}
-                                export TF_VAR_proxmox_node=${PROXMOX_NODE}
-                                export TF_VAR_vm_template=${VM_TEMPLATE}
-                                export TF_VAR_ip_range_start=${IP_RANGE_START}
-                                export TF_VAR_pm_api_url=${PROXMOX_URL}
-                                export TF_VAR_pm_api_token_id=${PROXMOX_TOKEN_ID}
-                                export TF_VAR_pm_api_token_secret=${PROXMOX_TOKEN_SECRET}
+                                export CLUSTER_NAME=${CLUSTER_NAME}
+                                export PROXMOX_NODE=${PROXMOX_NODE}
+                                export JENKINS_URL=${JENKINS_URL:-"http://localhost:8080"}
+                                export DESTROY_JOB_NAME="iac-provision-destroy"
                                 
-                                # Run emergency cleanup script
+                                echo "🚨 Attempting to trigger Jenkins destroy job..."
                                 cd ${WORKSPACE}
-                                chmod +x scripts/emergency_vm_cleanup.sh
-                                ./scripts/emergency_vm_cleanup.sh ${TERRAFORM_DIR} || {
-                                    echo "⚠️  Emergency cleanup script failed, trying basic cleanup..."
-                                    cd ${TERRAFORM_DIR}
-                                    terraform destroy -auto-approve -no-color || true
-                                }
+                                chmod +x scripts/trigger_jenkins_destroy.sh
+                                if ./scripts/trigger_jenkins_destroy.sh; then
+                                    echo "✅ Jenkins destroy job triggered successfully!"
+                                else
+                                    echo "⚠️  Jenkins destroy job trigger failed, using emergency cleanup..."
+                                    
+                                    # Fallback to emergency cleanup
+                                    export TF_VAR_master_node_count=${MASTER_COUNT}
+                                    export TF_VAR_worker_node_count=${WORKER_COUNT}
+                                    export TF_VAR_proxmox_node=${PROXMOX_NODE}
+                                    export TF_VAR_vm_template=${VM_TEMPLATE}
+                                    export TF_VAR_ip_range_start=${IP_RANGE_START}
+                                    export TF_VAR_pm_api_url=${PROXMOX_URL}
+                                    export TF_VAR_pm_api_token_id=${PROXMOX_TOKEN_ID}
+                                    export TF_VAR_pm_api_token_secret=${PROXMOX_TOKEN_SECRET}
+                                    
+                                    chmod +x scripts/emergency_vm_cleanup.sh
+                                    ./scripts/emergency_vm_cleanup.sh ${TERRAFORM_DIR} || {
+                                        echo "⚠️  All cleanup methods failed!"
+                                        echo "💡 Manual cleanup required - check Proxmox console"
+                                    }
+                                fi
                             '''
                             
                             echo "✅ VM cleanup completed successfully!"
@@ -403,7 +414,9 @@ pipeline {
                 📋 VMs have been automatically cleaned up to prevent resource waste
                 
                 Manual cleanup commands (if needed):
-                🧹 Emergency: ./scripts/emergency_vm_cleanup.sh terraform
+                🚨 Jenkins Job: Trigger iac-provision-destroy job manually
+                🧹 Emergency: ./scripts/emergency_vm_cleanup.sh terraform  
+                🚨 Jenkins Trigger: ./scripts/trigger_jenkins_destroy.sh
                 🗑️  Standard: cd terraform && terraform destroy --auto-approve
                 🔍 Check VMs: Check Proxmox console for any remaining VMs
                 ==================================================
