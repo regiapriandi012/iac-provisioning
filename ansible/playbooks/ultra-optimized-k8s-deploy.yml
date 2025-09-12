@@ -172,7 +172,7 @@
     - name: "🚀 Deploy Cilium CNI (ULTRA-FAST mode)"
       shell: |
         # Use pre-installed Cilium CLI for ULTRA-FAST deployment
-        /usr/local/bin/cilium install --version={{ hostvars['localhost']['cni_version'] }}
+        /usr/local/bin/cilium install --version=1.15.6
         
         # Wait for CNI to be ready
         sleep 15
