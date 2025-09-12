@@ -169,12 +169,15 @@
   become: true
   
   tasks:
-    - name: "⚡ ULTRA-FAST CNI Status Check (pre-configured)"
+    - name: "🚀 Deploy Cilium CNI (ULTRA-FAST mode)"
       shell: |
-        # CNI should already be pre-configured in ULTRA template
-        echo "Checking pre-configured Cilium from ULTRA template..."
-        /usr/local/bin/cilium status --wait=false || echo "Cilium starting up from pre-configured state"
-      register: cni_status  
+        # Deploy Cilium with basic configuration for speed
+        kubectl apply -f https://raw.githubusercontent.com/cilium/cilium/v{{ hostvars['localhost']['cni_version'] }}/install/kubernetes/quick-install.yaml
+        
+        # Wait briefly for CNI to be ready
+        sleep 10
+        echo "Cilium deployed in ULTRA-FAST mode"
+      register: cni_install
       ignore_errors: true
 
 # ======================================================================
@@ -186,16 +189,23 @@
   become: true
   
   tasks:
-    - name: "📊 Deploy pre-staged Metrics Server"
-      shell: kubectl apply -f /opt/kubernetes/addons/metrics-server.yaml
-      ignore_errors: true
-
-    - name: "⚖️ Deploy pre-staged MetalLB"  
-      shell: kubectl apply -f /opt/kubernetes/addons/metallb.yaml
-      ignore_errors: true
-
-    - name: "🎯 Create MetalLB IP pool"
+    - name: "📊 Deploy Metrics Server (ULTRA-FAST)"
       shell: |
+        # Deploy metrics server with insecure TLS for speed
+        kubectl apply -f https://github.com/kubernetes-sigs/metrics-server/releases/latest/download/components.yaml
+        # Patch for insecure TLS to speed up deployment
+        kubectl patch deployment metrics-server -n kube-system --type='merge' -p='{"spec":{"template":{"spec":{"containers":[{"name":"metrics-server","args":["--cert-dir=/tmp","--secure-port=4443","--kubelet-preferred-address-types=InternalIP,ExternalIP,Hostname","--kubelet-use-node-status-port","--metric-resolution=15s","--kubelet-insecure-tls"]}]}}}}'
+      ignore_errors: true
+
+    - name: "⚖️ Deploy MetalLB (ULTRA-FAST)"  
+      shell: |
+        # Deploy MetalLB with official manifests
+        kubectl apply -f https://raw.githubusercontent.com/metallb/metallb/v0.13.12/config/manifests/metallb-native.yaml
+        
+        # Wait for MetalLB to be ready before creating IP pool
+        sleep 15
+        
+        # Create IP pool
         cat <<EOF | kubectl apply -f -
         apiVersion: metallb.io/v1beta1
         kind: IPAddressPool
