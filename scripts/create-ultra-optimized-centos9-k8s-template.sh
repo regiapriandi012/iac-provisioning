@@ -192,39 +192,7 @@ cat > /etc/motd << 'EOF'
 ██║     ██╔══██║██╔══██╗██║╚██╗██║██║   ██║██║   ██║██╔═══╝ ██╔══██╗██╔══╝  ██╔═██╗ 
 ███████╗██║  ██║██████╔╝██║ ╚████║╚██████╔╝╚██████╔╝██║     ██║  ██║███████╗██║  ██╗
 ╚══════╝╚═╝  ╚═╝╚═════╝ ╚═╝  ╚═══╝ ╚═════╝  ╚═════╝ ╚═╝     ╚═╝  ╚═╝╚══════╝╚═╝  ╚═╝
-
-🚀 ULTRA-OPTIMIZED CentOS 9 Kubernetes Node
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-📋 Template Information:
-   • OS: CentOS Stream 9 Enterprise
-   • Kubernetes: Ready for cluster deployment
-   • Container Runtime: containerd optimized
-   • CNI: Cilium with advanced networking
-   • Performance: Ultra-fast deployment (25-30s target)
-   
-🔧 Available Tools:
-   • cilium, hubble - CNI management and observability
-   • kubectl with plugins - Kubernetes management
-   • crictl - Container runtime interface
-   • htop, tcpdump, jq - System utilities
-   
-📊 Pre-loaded Images:
-   • Kubernetes control plane images
-   • Cilium CNI with operator
-   • MetalLB load balancer
-   • Metrics server and monitoring stack
-   • Development and debugging tools
-   
-⚡ Quick Commands:
-   • kubectl get nodes - Check cluster status
-   • cilium status - Check CNI health
-   • crictl images - List pre-loaded images
-   • systemctl status kubelet - Check kubelet service
-
-💡 LABNGOPREK Infrastructure - CentOS 9 Enterprise Ready
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
 EOF
 
 # Enhanced shell aliases for productivity
