@@ -171,13 +171,33 @@
   tasks:
     - name: "🚀 Deploy Cilium CNI (ULTRA-FAST mode)"
       shell: |
-        # Use pre-installed Cilium CLI for ULTRA-FAST deployment
+        echo "Starting Cilium deployment with version {{ hostvars['localhost']['cni_version'] }}"
+        
+        # Check if Cilium CLI exists and is executable
+        if [ ! -f /usr/local/bin/cilium ]; then
+          echo "ERROR: Cilium CLI not found at /usr/local/bin/cilium"
+          exit 1
+        fi
+        
+        echo "Cilium CLI found, installing..."
         /usr/local/bin/cilium install --version={{ hostvars['localhost']['cni_version'] }}
         
-        # Wait for CNI to be ready
-        sleep 15
-        echo "Cilium deployed using pre-installed CLI"
+        echo "Waiting for CNI to be ready..."
+        sleep 20
+        
+        echo "Checking Cilium status..."
+        /usr/local/bin/cilium status --wait=false || true
+        
+        echo "Cilium deployment completed"
       register: cni_install
+      ignore_errors: true
+      
+    - name: "⚡ Remove control-plane taint for single-node deployments"
+      shell: |
+        # Remove taint to allow workloads on control-plane nodes
+        kubectl taint nodes --all node-role.kubernetes.io/control-plane- || true
+        echo "Control-plane taint removed for single-node cluster"
+      register: untaint_result
       ignore_errors: true
 
     - name: "🔍 Enable Hubble UI for observability"
