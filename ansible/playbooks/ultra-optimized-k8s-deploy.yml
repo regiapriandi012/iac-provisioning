@@ -192,6 +192,11 @@
       register: cni_install
       ignore_errors: true
       
+    - name: "📊 Display Cilium deployment output"
+      debug:
+        var: cni_install.stdout_lines
+      when: cni_install is defined
+      
     - name: "⚡ Remove control-plane taint for single-node deployments"
       shell: |
         # Remove taint to allow workloads on control-plane nodes
@@ -199,6 +204,11 @@
         echo "Control-plane taint removed for single-node cluster"
       register: untaint_result
       ignore_errors: true
+      
+    - name: "📊 Display untaint output"
+      debug:
+        var: untaint_result.stdout_lines
+      when: untaint_result is defined
 
     - name: "🔍 Enable Hubble UI for observability"
       shell: |
@@ -268,6 +278,13 @@
                   value: "elastic"
                 - name: ELASTICSEARCH_PASSWORD
                   value: "xrUW620aXmqkw*ErAWGC"
+                resources:
+                  requests:
+                    memory: "64Mi"
+                    cpu: "50m"
+                  limits:
+                    memory: "128Mi"
+                    cpu: "200m"
               hostNetwork: true
               dnsPolicy: ClusterFirstWithHostNet
               tolerations:
