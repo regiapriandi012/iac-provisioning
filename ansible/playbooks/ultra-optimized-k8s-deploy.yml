@@ -211,6 +211,32 @@
       debug:
         var: untaint_result.stdout_lines
       when: untaint_result is defined
+      
+    - name: "🔧 Remove disk pressure taint (prevents pod evictions)" 
+      shell: |
+        # Remove disk pressure taint that causes Metricbeat/Hubble evictions
+        kubectl taint nodes --all node.kubernetes.io/disk-pressure- || echo "No disk pressure taint found"
+        
+        # Also remove memory pressure taint if exists
+        kubectl taint nodes --all node.kubernetes.io/memory-pressure- || echo "No memory pressure taint found"
+        
+        echo "Pressure taints removal completed"
+      register: pressure_untaint_result
+      ignore_errors: true
+      
+    - name: "📊 Display pressure taint removal output"
+      debug:
+        var: pressure_untaint_result.stdout_lines  
+      when: pressure_untaint_result is defined
+      
+    - name: "🔄 Restart kubelet to clear taint cache"
+      shell: |
+        # Restart kubelet to ensure scheduler recognizes taint removal
+        systemctl restart kubelet
+        sleep 5
+        echo "Kubelet restarted and taint cache cleared"
+      register: kubelet_restart_result
+      ignore_errors: true
 
     - name: "🔍 Enable Hubble UI for observability"
       shell: |
