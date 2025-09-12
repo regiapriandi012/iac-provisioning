@@ -199,11 +199,13 @@
         var: cni_install.stdout_lines
       when: cni_install is defined
       
-    - name: "⚡ Remove control-plane taint for single-node deployments"
+    - name: "⚡ Untaint master node untuk single-node cluster"
       shell: |
-        # Remove taint to allow workloads on control-plane nodes
+        # Untaint semua taint biar pods bisa jalan di master node
         kubectl taint nodes --all node-role.kubernetes.io/control-plane- || true
-        echo "Control-plane taint removed for single-node cluster"
+        kubectl taint nodes --all node.kubernetes.io/disk-pressure- || true
+        kubectl taint nodes --all node.kubernetes.io/memory-pressure- || true
+        echo "Master node untainted - pods can now run"
       register: untaint_result
       ignore_errors: true
       
@@ -211,23 +213,6 @@
       debug:
         var: untaint_result.stdout_lines
       when: untaint_result is defined
-      
-    - name: "🔧 Remove disk pressure taint (prevents pod evictions)" 
-      shell: |
-        # Remove disk pressure taint that causes Metricbeat/Hubble evictions
-        kubectl taint nodes --all node.kubernetes.io/disk-pressure- || echo "No disk pressure taint found"
-        
-        # Also remove memory pressure taint if exists
-        kubectl taint nodes --all node.kubernetes.io/memory-pressure- || echo "No memory pressure taint found"
-        
-        echo "Pressure taints removal completed"
-      register: pressure_untaint_result
-      ignore_errors: true
-      
-    - name: "📊 Display pressure taint removal output"
-      debug:
-        var: pressure_untaint_result.stdout_lines  
-      when: pressure_untaint_result is defined
 
     - name: "🔍 Enable Hubble UI for observability"
       shell: |
