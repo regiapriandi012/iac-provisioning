@@ -54,7 +54,6 @@ ansible-playbook \
     playbooks/ultra-optimized-k8s-deploy.yml \
     -i inventory/k8s-inventory.json \
     --forks=200 \
-    --strategy=free \
     -e "kubernetes_version=${KUBERNETES_VERSION:-1.32.7}" \
     -e "cni_type=${CNI_TYPE:-cilium}" \
     -e "cni_version=${CNI_VERSION:-1.16.0}" \

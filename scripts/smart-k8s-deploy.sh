@@ -68,10 +68,10 @@ else
     # Fallback to direct playbook execution
     case $DEPLOYMENT_MODE in
         "ULTRA")
-            ansible-playbook playbooks/ultra-optimized-k8s-deploy.yml -i inventory/k8s-inventory.json --forks=200 --strategy=free
+            ansible-playbook playbooks/ultra-optimized-k8s-deploy.yml -i inventory/k8s-inventory.json --forks=200
             ;;
         "TEMPLATE")  
-            ansible-playbook playbooks/template-optimized-k8s-deploy.yml -i inventory/k8s-inventory.json --forks=100 --strategy=free
+            ansible-playbook playbooks/template-optimized-k8s-deploy.yml -i inventory/k8s-inventory.json --forks=100
             ;;
         "REGULAR")
             ansible-playbook playbooks/k8s-cluster-setup.yml -i inventory/k8s-inventory.json --forks=50
