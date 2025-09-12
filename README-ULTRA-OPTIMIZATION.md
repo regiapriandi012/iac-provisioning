@@ -31,7 +31,7 @@ This document describes the ULTRA-OPTIMIZED deployment system that achieves **25
 
 ### Jenkins Pipeline Parameters
 ```
-VM_TEMPLATE: t-debian12-ultra-k8s
+VM_TEMPLATE: t-debian12-ultra-k8s OR t-centos9-ultra-k8s
 ULTRA_OPTIMIZED_TEMPLATES: true (enables ultra mode)
 ```
 
@@ -44,11 +44,13 @@ ansible-playbook playbooks/ultra-optimized-k8s-deploy.yml -i inventory/k8s-inven
 
 ### Template Creation
 ```bash
-# Run on a base K8s-ready template VM
+# For Debian 12 - Run on a base K8s-ready template VM
 ./scripts/create-ultra-optimized-k8s-template.sh
+# Then convert VM to template: t-debian12-ultra-k8s
 
-# Then convert VM to template in Proxmox
-# Name it: t-debian12-ultra-k8s
+# For CentOS 9 - Run on a base K8s-ready template VM
+./scripts/create-ultra-optimized-centos9-k8s-template.sh
+# Then convert VM to template: t-centos9-ultra-k8s
 ```
 
 ## 📋 Template Requirements
@@ -78,7 +80,9 @@ regular_deployment: true   # Standard installation required
 ### Environment Config
 - **File**: `config/environment.conf`
 - **Setting**: `ULTRA_OPTIMIZED_DEPLOYMENT=true`
-- **Template**: `DEFAULT_VM_TEMPLATE=t-debian12-ultra-k8s`
+- **Templates**: 
+  - Debian: `DEFAULT_VM_TEMPLATE=t-debian12-ultra-k8s`
+  - CentOS: `DEFAULT_CENTOS_TEMPLATE=t-centos9-ultra-k8s`
 
 ### Ansible Configuration
 - **File**: `ansible/ansible-hyper.cfg`
@@ -101,12 +105,14 @@ regular_deployment: true   # Standard installation required
 
 ```
 ULTRA Template Creation:
-├── Base K8s Template (t-debian12-k8s-ready)
+├── Base K8s Templates:
+│   ├── Debian: t-debian12-k8s-ready → t-debian12-ultra-k8s
+│   └── CentOS: t-centos9-k8s-ready → t-centos9-ultra-k8s
 ├── + Container Image Pre-pulling (60-80s savings)
 ├── + CLI Tools Installation (30-40s savings)
 ├── + Manifest Pre-staging (15-20s savings)
 ├── + Performance Tuning (10-15s savings)
-└── = ULTRA Template (t-debian12-ultra-k8s)
+└── = ULTRA Templates (25-30s deployment)
 
 Deployment Flow:
 ├── Template Detection & Validation

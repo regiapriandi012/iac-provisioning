@@ -6,7 +6,7 @@ pipeline {
         string(name: 'CLUSTER_NAME', defaultValue: 'k8s-cluster', description: 'Name of the Kubernetes cluster')
         string(name: 'DESCRIPTION', defaultValue: 'Kubernetes cluster deployed from Django', description: 'Cluster description')
         choice(name: 'PROXMOX_NODE', choices: ['thinkcentre', 'proxmox'], description: 'Proxmox node to deploy on')
-        choice(name: 'VM_TEMPLATE', choices: ['t-debian12-ultra-k8s', 't-debian12-k8s-ready', 't-centos9-k8s-ready', 't-debian12-kube', 't-centos9-kube'], description: 'VM template to use')
+        choice(name: 'VM_TEMPLATE', choices: ['t-debian12-ultra-k8s', 't-centos9-ultra-k8s', 't-debian12-k8s-ready', 't-centos9-k8s-ready', 't-debian12-kube', 't-centos9-kube'], description: 'VM template to use')
         string(name: 'MASTER_COUNT', defaultValue: '3', description: 'Number of master nodes')
         string(name: 'WORKER_COUNT', defaultValue: '2', description: 'Number of worker nodes')
         string(name: 'CORES', defaultValue: '2', description: 'CPU cores per VM')
