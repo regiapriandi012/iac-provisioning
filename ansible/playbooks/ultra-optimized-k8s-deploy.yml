@@ -238,11 +238,11 @@
                 image: docker.elastic.co/beats/metricbeat:8.11.0
                 resources:
                   requests:
+                    memory: "64Mi"
+                    cpu: "50m"
+                  limits:
                     memory: "128Mi"
                     cpu: "100m"
-                  limits:
-                    memory: "256Mi"
-                    cpu: "200m"
                 volumeMounts:
                 - name: config
                   mountPath: /usr/share/metricbeat/metricbeat.yml
@@ -253,6 +253,9 @@
                   name: metricbeat-config
               hostNetwork: true
               dnsPolicy: ClusterFirstWithHostNet
+              tolerations:
+              - operator: Exists
+                effect: NoSchedule
         EOF
       ignore_errors: true
 
