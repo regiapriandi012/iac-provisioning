@@ -104,7 +104,6 @@
           --service-cidr="{{ lookup('env', 'SERVICE_CIDR') | default('10.96.0.0/12') }}" \
           --upload-certs \
           --skip-phases=addon/kube-proxy \
-          --skip-phases=addon/coredns \
           --skip-certificate-key-print \
           --skip-token-print \
           --v=0 \
@@ -120,6 +119,14 @@
         mkdir -p ~/.kube
         cp -f /etc/kubernetes/admin.conf ~/.kube/config
         chown $(id -u):$(id -g) ~/.kube/config
+      when: inventory_hostname == groups['k8s_masters'][0]
+
+    - name: "🔧 Configure kubelet with proper settings (ULTRA mode)"
+      shell: |
+        # Fix kubelet configuration for better stability
+        echo 'KUBELET_EXTRA_ARGS="--image-gc-high-threshold=90 --image-gc-low-threshold=80 --eviction-hard=memory.available<100Mi,nodefs.available<1Gi"' > /etc/default/kubelet
+        systemctl daemon-reload
+        systemctl restart kubelet
       when: inventory_hostname == groups['k8s_masters'][0]
 
     - name: "🔗 Extract join tokens (ULTRA optimized)"
@@ -168,6 +175,24 @@
       shell: "{{ join_worker }}"
 
 # ======================================================================
+# KUBELET CONFIGURATION FOR ALL NODES
+# ======================================================================
+- name: "🔧 Configure kubelet on all nodes"
+  hosts: k8s_cluster
+  gather_facts: false
+  become: true
+  serial: 0  # Maximum parallelism
+  
+  tasks:
+    - name: "🔧 Apply kubelet configuration to all nodes"
+      shell: |
+        # Fix kubelet configuration for better stability and disk management
+        echo 'KUBELET_EXTRA_ARGS="--image-gc-high-threshold=90 --image-gc-low-threshold=80 --eviction-hard=memory.available<100Mi,nodefs.available<1Gi"' > /etc/default/kubelet
+        systemctl daemon-reload
+        systemctl restart kubelet
+      when: inventory_hostname != groups['k8s_masters'][0]  # Skip first master as it's already configured
+
+# ======================================================================
 # ULTRA-FAST CNI DEPLOYMENT (Cilium with Pre-installed CLI)
 # ======================================================================
 - name: "🌐 ULTRA-FAST CNI Deployment"  
@@ -202,7 +227,7 @@
     - name: "⚡ Untaint master node untuk single-node cluster"
       shell: |
         # Untaint control-plane biar pods bisa jalan di master node
-        kubectl taint nodes --all node-role.kubernetes.io/control-plane- || true
+        kubectl taint nodes --all node-role.kubernetes.io/control-plane-
         echo "Master node untainted - pods can now run"
       register: untaint_result
       ignore_errors: true
@@ -237,6 +262,172 @@
         
         echo "Hubble UI enabled with NodePort access"
       register: hubble_setup
+      ignore_errors: true
+
+    - name: "🌐 Deploy CoreDNS for cluster DNS resolution"
+      shell: |
+        # Deploy CoreDNS with proper RBAC and configuration
+        kubectl apply -f - <<EOF
+        apiVersion: v1
+        kind: ServiceAccount
+        metadata:
+          name: coredns
+          namespace: kube-system
+        ---
+        apiVersion: rbac.authorization.k8s.io/v1
+        kind: ClusterRole
+        metadata:
+          name: system:coredns
+        rules:
+        - apiGroups: [""]
+          resources: ["endpoints", "services", "pods", "namespaces", "nodes"]
+          verbs: ["list", "watch", "get"]
+        - apiGroups: ["discovery.k8s.io"]
+          resources: ["endpointslices"]
+          verbs: ["list", "watch"]
+        ---
+        apiVersion: rbac.authorization.k8s.io/v1
+        kind: ClusterRoleBinding
+        metadata:
+          name: system:coredns
+        roleRef:
+          apiGroup: rbac.authorization.k8s.io
+          kind: ClusterRole
+          name: system:coredns
+        subjects:
+        - kind: ServiceAccount
+          name: coredns
+          namespace: kube-system
+        ---
+        apiVersion: v1
+        kind: ConfigMap
+        metadata:
+          name: coredns
+          namespace: kube-system
+        data:
+          Corefile: |
+            .:53 {
+                errors
+                health { lameduck 5s }
+                ready
+                kubernetes cluster.local in-addr.arpa ip6.arpa {
+                   pods insecure
+                   fallthrough in-addr.arpa ip6.arpa
+                   ttl 30
+                }
+                prometheus :9153
+                forward . /etc/resolv.conf
+                cache 30
+                loop
+                reload
+                loadbalance
+            }
+        ---
+        apiVersion: apps/v1
+        kind: Deployment
+        metadata:
+          name: coredns
+          namespace: kube-system
+          labels:
+            k8s-app: kube-dns
+        spec:
+          replicas: 1
+          selector:
+            matchLabels:
+              k8s-app: kube-dns
+          template:
+            metadata:
+              labels:
+                k8s-app: kube-dns
+            spec:
+              priorityClassName: system-cluster-critical
+              serviceAccountName: coredns
+              tolerations:
+                - key: node-role.kubernetes.io/control-plane
+                  operator: Exists
+                  effect: NoSchedule
+                - key: "CriticalAddonsOnly"
+                  operator: "Equal"
+                  value: "true"
+              nodeSelector:
+                kubernetes.io/os: linux
+              containers:
+              - name: coredns
+                image: registry.k8s.io/coredns/coredns:v1.11.1
+                imagePullPolicy: IfNotPresent
+                resources:
+                  limits:
+                    memory: 170Mi
+                  requests:
+                    cpu: 100m
+                    memory: 70Mi
+                args: ["-conf", "/etc/coredns/Corefile"]
+                volumeMounts:
+                - name: config-volume
+                  mountPath: /etc/coredns
+                  readOnly: true
+                ports:
+                - containerPort: 53
+                  name: dns
+                  protocol: UDP
+                - containerPort: 53
+                  name: dns-tcp
+                  protocol: TCP
+                - containerPort: 9153
+                  name: metrics
+                  protocol: TCP
+                securityContext:
+                  allowPrivilegeEscalation: false
+                  capabilities:
+                    add: ["NET_BIND_SERVICE"]
+                    drop: ["all"]
+                  readOnlyRootFilesystem: true
+                livenessProbe:
+                  httpGet:
+                    path: /health
+                    port: 8080
+                    scheme: HTTP
+                  initialDelaySeconds: 60
+                  timeoutSeconds: 5
+                readinessProbe:
+                  httpGet:
+                    path: /ready
+                    port: 8181
+                    scheme: HTTP
+              dnsPolicy: Default
+              volumes:
+                - name: config-volume
+                  configMap:
+                    name: coredns
+                    items:
+                    - key: Corefile
+                      path: Corefile
+        ---
+        apiVersion: v1
+        kind: Service
+        metadata:
+          name: kube-dns
+          namespace: kube-system
+          labels:
+            k8s-app: kube-dns
+        spec:
+          selector:
+            k8s-app: kube-dns
+          clusterIP: 10.96.0.10
+          ports:
+          - name: dns
+            port: 53
+            protocol: UDP
+          - name: dns-tcp
+            port: 53
+            protocol: TCP
+          - name: metrics
+            port: 9153
+            protocol: TCP
+        EOF
+        
+        echo "CoreDNS deployed for cluster DNS resolution"
+      register: coredns_deploy
       ignore_errors: true
 
 # ======================================================================

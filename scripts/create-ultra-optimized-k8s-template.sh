@@ -244,6 +244,14 @@ EOF
 
 systemctl restart containerd
 
+# Pre-configure kubelet for optimal performance
+log "Configuring kubelet with optimized settings..."
+mkdir -p /etc/default/
+cat > /etc/default/kubelet << 'EOF'
+# ULTRA-OPTIMIZED kubelet configuration for stable operation
+KUBELET_EXTRA_ARGS="--image-gc-high-threshold=90 --image-gc-low-threshold=80 --eviction-hard=memory.available<100Mi,nodefs.available<1Gi"
+EOF
+
 # Phase 8: Template Information Update
 log "Phase 8: Updating template information..."
 
@@ -266,6 +274,7 @@ Features:
   - kubectl plugins and utilities
   - Pre-staged manifests
   - Optimized containerd config
+  - Pre-configured kubelet settings
   - LABNGOPREK branding
   - Enhanced shell environment
   - Performance tuning applied
