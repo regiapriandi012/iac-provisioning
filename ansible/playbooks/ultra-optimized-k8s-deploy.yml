@@ -228,15 +228,6 @@
       debug:
         var: pressure_untaint_result.stdout_lines  
       when: pressure_untaint_result is defined
-      
-    - name: "🔄 Restart kubelet to clear taint cache"
-      shell: |
-        # Restart kubelet to ensure scheduler recognizes taint removal
-        systemctl restart kubelet
-        sleep 5
-        echo "Kubelet restarted and taint cache cleared"
-      register: kubelet_restart_result
-      ignore_errors: true
 
     - name: "🔍 Enable Hubble UI for observability"
       shell: |
