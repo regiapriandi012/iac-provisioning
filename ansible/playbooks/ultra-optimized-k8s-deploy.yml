@@ -271,6 +271,12 @@
               containers:
               - name: metricbeat
                 image: docker.elastic.co/beats/metricbeat:8.11.0
+                resources:
+                  limits:
+                    memory: 200Mi
+                  requests:
+                    cpu: 100m
+                    memory: 100Mi
                 env:
                 - name: ELASTICSEARCH_HOST
                   value: "172.16.20.90"
