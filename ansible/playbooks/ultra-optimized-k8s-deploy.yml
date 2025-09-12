@@ -171,24 +171,8 @@
   tasks:
     - name: "🚀 Deploy Cilium with ULTRA-optimized settings"
       shell: |
-        # Create temporary values file for Cilium
-        cat > /tmp/cilium-values.yaml <<EOF
-        kubeProxyReplacement: true
-        operator:
-          replicas: 1
-        hubble:
-          enabled: true
-          relay:
-            enabled: true
-          ui:
-            enabled: true
-        EOF
-        
-        # Use pre-installed Cilium CLI with values file
-        /usr/local/bin/cilium install \
-          --version="{{ hostvars['localhost']['cni_version'] }}" \
-          --values /tmp/cilium-values.yaml \
-          --wait=false
+        # Fuck the Cilium CLI, use direct kubectl with official manifest
+        kubectl apply -f https://raw.githubusercontent.com/cilium/cilium/v{{ hostvars['localhost']['cni_version'] }}/install/kubernetes/quick-install.yaml
       register: cilium_install
 
     - name: "⚡ Quick CNI status check (non-blocking)"
