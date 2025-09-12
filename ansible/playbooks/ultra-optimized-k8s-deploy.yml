@@ -201,10 +201,8 @@
       
     - name: "⚡ Untaint master node untuk single-node cluster"
       shell: |
-        # Untaint semua taint biar pods bisa jalan di master node
+        # Untaint control-plane biar pods bisa jalan di master node
         kubectl taint nodes --all node-role.kubernetes.io/control-plane- || true
-        kubectl taint nodes --all node.kubernetes.io/disk-pressure- || true
-        kubectl taint nodes --all node.kubernetes.io/memory-pressure- || true
         echo "Master node untainted - pods can now run"
       register: untaint_result
       ignore_errors: true
