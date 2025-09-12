@@ -21,6 +21,7 @@ pipeline {
         string(name: 'IP_RANGE_START', defaultValue: '10.200.0.0/24', description: 'IP range for VMs')
         booleanParam(name: 'SKIP_ENHANCEMENTS', defaultValue: false, description: '⚡ Skip cosmetic enhancements (zsh, banner, etc) for ULTRA-FAST deployment')
         booleanParam(name: 'ULTRA_FAST_MODE', defaultValue: true, description: '🚀 Enable all speed optimizations (reduced timeouts, parallel execution)')
+        booleanParam(name: 'AUTO_CLEANUP_ON_FAILURE', defaultValue: true, description: '🧹 Automatically destroy VMs when pipeline fails (disable for debugging)')
     }
 
     environment {
@@ -339,18 +340,75 @@ pipeline {
         }
         
         failure {
-            echo """
-            ==================== FAILURE ====================
-            Pipeline execution failed!
-            
-            Common troubleshooting steps:
-            1. Check Terraform state and resources
-            2. Verify VM connectivity and SSH access
-            3. Validate Ansible inventory and playbooks
-            4. Check network connectivity to target VMs
-            5. Review stage logs for specific errors
-            ==================================================
-            """
+            script {
+                echo """
+                ==================== FAILURE ====================
+                Pipeline execution failed!
+                
+                🧹 Starting automatic VM cleanup to prevent resource waste...
+                ==================================================
+                """
+                
+                // AUTO-CLEANUP: Destroy VMs on pipeline failure (if enabled)
+                if (params.AUTO_CLEANUP_ON_FAILURE) {
+                    try {
+                        timeout(time: 5, unit: 'MINUTES') {
+                            dir("${TERRAFORM_DIR}") {
+                            echo "🗑️  AUTO-DESTROYING VMs to prevent resource accumulation..."
+                            
+                            // Use emergency cleanup script for robust VM destruction
+                            sh '''
+                                # Set terraform variables for cleanup
+                                export TF_VAR_master_node_count=${MASTER_COUNT}
+                                export TF_VAR_worker_node_count=${WORKER_COUNT}
+                                export TF_VAR_proxmox_node=${PROXMOX_NODE}
+                                export TF_VAR_vm_template=${VM_TEMPLATE}
+                                export TF_VAR_ip_range_start=${IP_RANGE_START}
+                                export TF_VAR_pm_api_url=${PROXMOX_URL}
+                                export TF_VAR_pm_api_token_id=${PROXMOX_TOKEN_ID}
+                                export TF_VAR_pm_api_token_secret=${PROXMOX_TOKEN_SECRET}
+                                
+                                # Run emergency cleanup script
+                                cd ${WORKSPACE}
+                                chmod +x scripts/emergency_vm_cleanup.sh
+                                ./scripts/emergency_vm_cleanup.sh ${TERRAFORM_DIR} || {
+                                    echo "⚠️  Emergency cleanup script failed, trying basic cleanup..."
+                                    cd ${TERRAFORM_DIR}
+                                    terraform destroy -auto-approve -no-color || true
+                                }
+                            '''
+                            
+                            echo "✅ VM cleanup completed successfully!"
+                        }
+                    }
+                    } catch (Exception e) {
+                        echo "⚠️  VM cleanup failed: ${e.getMessage()}"
+                        echo "💡 Manual cleanup may be required - check Proxmox console"
+                    }
+                } else {
+                    echo "🚫 AUTO_CLEANUP_ON_FAILURE is disabled - VMs preserved for debugging"
+                    echo "💡 Remember to manually cleanup VMs after debugging:"
+                    echo "   ./scripts/emergency_vm_cleanup.sh terraform"
+                }
+                
+                echo """
+                ==================================================
+                Common troubleshooting steps:
+                1. Check Terraform state and resources
+                2. Verify VM connectivity and SSH access  
+                3. Validate Ansible inventory and playbooks
+                4. Check network connectivity to target VMs
+                5. Review stage logs for specific errors
+                
+                📋 VMs have been automatically cleaned up to prevent resource waste
+                
+                Manual cleanup commands (if needed):
+                🧹 Emergency: ./scripts/emergency_vm_cleanup.sh terraform
+                🗑️  Standard: cd terraform && terraform destroy --auto-approve
+                🔍 Check VMs: Check Proxmox console for any remaining VMs
+                ==================================================
+                """
+            }
         }
         
         cleanup {
