@@ -174,7 +174,7 @@
         # Use pre-installed Cilium CLI for maximum speed
         /usr/local/bin/cilium install \
           --version="{{ hostvars['localhost']['cni_version'] }}" \
-          --set kubeProxyReplacement=partial \
+          --set kubeProxyReplacement=true \
           --set operator.replicas=1 \
           --set hubble.enabled=true \
           --set hubble.relay.enabled=true \
