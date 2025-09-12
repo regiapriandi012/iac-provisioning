@@ -57,7 +57,9 @@
           register: ultra_validation
           delegate_to: "{{ item }}"
           loop: "{{ groups['k8s_cluster'] }}"
-          when: ultra_template_marker.results[ansible_loop.index0].stat.exists
+          loop_control:
+            index_var: my_idx
+          when: ultra_template_marker.results[my_idx].stat.exists
           ignore_errors: true
 
         - name: "STRICT ULTRA validation - no fallbacks allowed"
@@ -172,7 +174,7 @@
         # Use pre-installed Cilium CLI for maximum speed
         /usr/local/bin/cilium install \
           --version="{{ hostvars['localhost']['cni_version'] }}" \
-          --kube-proxy-replacement=partial \
+          --set kubeProxyReplacement=partial \
           --set operator.replicas=1 \
           --set hubble.enabled=true \
           --set hubble.relay.enabled=true \
