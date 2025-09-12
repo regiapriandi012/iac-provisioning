@@ -280,13 +280,6 @@
                   value: "elastic"
                 - name: ELASTICSEARCH_PASSWORD
                   value: "xrUW620aXmqkw*ErAWGC"
-                resources:
-                  requests:
-                    memory: "64Mi"
-                    cpu: "50m"
-                  limits:
-                    memory: "128Mi"
-                    cpu: "200m"
               hostNetwork: true
               dnsPolicy: ClusterFirstWithHostNet
               tolerations:
