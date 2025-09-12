@@ -197,6 +197,61 @@
         kubectl patch deployment metrics-server -n kube-system --type='merge' -p='{"spec":{"template":{"spec":{"containers":[{"name":"metrics-server","args":["--cert-dir=/tmp","--secure-port=4443","--kubelet-preferred-address-types=InternalIP,ExternalIP,Hostname","--kubelet-use-node-status-port","--metric-resolution=15s","--kubelet-insecure-tls"]}]}}}}'
       ignore_errors: true
 
+    - name: "📈 Deploy Metricbeat for Monitoring"
+      shell: |
+        # Deploy Metricbeat DaemonSet for monitoring
+        cat <<EOF | kubectl apply -f -
+        apiVersion: v1
+        kind: ConfigMap
+        metadata:
+          name: metricbeat-config
+          namespace: kube-system
+        data:
+          metricbeat.yml: |
+            metricbeat.config.modules:
+              path: /usr/share/metricbeat/modules.d/*.yml
+            output.console:
+              pretty: true
+            processors:
+            - add_kubernetes_metadata: ~
+        ---
+        apiVersion: apps/v1
+        kind: DaemonSet
+        metadata:
+          name: metricbeat
+          namespace: kube-system
+        spec:
+          selector:
+            matchLabels:
+              app: metricbeat
+          template:
+            metadata:
+              labels:
+                app: metricbeat
+            spec:
+              containers:
+              - name: metricbeat
+                image: docker.elastic.co/beats/metricbeat:8.11.0
+                resources:
+                  requests:
+                    memory: "128Mi"
+                    cpu: "100m"
+                  limits:
+                    memory: "256Mi"
+                    cpu: "200m"
+                volumeMounts:
+                - name: config
+                  mountPath: /usr/share/metricbeat/metricbeat.yml
+                  subPath: metricbeat.yml
+              volumes:
+              - name: config
+                configMap:
+                  name: metricbeat-config
+              hostNetwork: true
+              dnsPolicy: ClusterFirstWithHostNet
+        EOF
+      ignore_errors: true
+
     - name: "⚖️ Deploy MetalLB (ULTRA-FAST)"  
       shell: |
         # Deploy MetalLB with official manifests
