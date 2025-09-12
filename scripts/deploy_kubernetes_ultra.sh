@@ -56,7 +56,7 @@ ansible-playbook \
     --forks=200 \
     -e "kubernetes_version=${KUBERNETES_VERSION:-1.32.7}" \
     -e "cni_type=${CNI_TYPE:-cilium}" \
-    -e "cni_version=${CNI_VERSION:-1.15.6}" \
+    -e "cni_version=${CNI_VERSION:-1.16.0}" \
     -e "pod_network_cidr=${POD_NETWORK_CIDR:-10.244.0.0/16}" \
     -e "service_cidr=${SERVICE_CIDR:-10.96.0.0/12}"
 

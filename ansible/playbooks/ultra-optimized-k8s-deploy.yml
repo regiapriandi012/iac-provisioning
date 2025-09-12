@@ -25,7 +25,7 @@
   vars:
     kubernetes_version: "{{ lookup('env', 'KUBERNETES_VERSION') | default('1.32.7', true) }}"
     cni_type: "{{ lookup('env', 'CNI_TYPE') | default('cilium', true) }}"
-    cni_version: "{{ lookup('env', 'CNI_VERSION') | default('1.15.6', true) }}"
+    cni_version: "{{ lookup('env', 'CNI_VERSION') | default('1.16.0', true) }}"
 
   tasks:
     - name: "🔍 ULTRA-Template Detection & Validation"
@@ -172,7 +172,7 @@
     - name: "🚀 Deploy Cilium CNI (ULTRA-FAST mode)"
       shell: |
         # Use pre-installed Cilium CLI for ULTRA-FAST deployment
-        /usr/local/bin/cilium install --version=1.15.6
+        /usr/local/bin/cilium install --version={{ hostvars['localhost']['cni_version'] }}
         
         # Wait for CNI to be ready
         sleep 15
