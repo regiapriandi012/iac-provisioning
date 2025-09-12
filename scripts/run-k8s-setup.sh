@@ -71,19 +71,34 @@ else
     run_playbook "08-cilium.yml" "Cilium network plugin"
 fi
 
-# Run cluster enhancements (Zsh, LABNGOPREK banner, kubectl alias, metrics server)
-ENHANCEMENT_START=$(date +%s)
-echo "🎨 Applying LABNGOPREK cluster enhancements..."
+# Check if using ULTRA templates (skip enhancements if pre-baked)
+echo "🔍 Checking for ULTRA template optimization..."
+FIRST_NODE=$(python3 ${WORKSPACE}/scripts/get_first_master.py $INVENTORY_FILE 2>/dev/null || echo "")
 
-ansible-playbook \
-    -i ${WORKSPACE}/scripts/inventory.py \
-    playbooks/k8s-cluster-enhancements.yml \
-    --forks 50 \
-    --timeout 30
+if [ -n "$FIRST_NODE" ]; then
+    ULTRA_CHECK=$(ansible $FIRST_NODE -i ${WORKSPACE}/scripts/inventory.py -m stat -a "path=/etc/kubernetes-ultra-optimized" 2>/dev/null | grep -c "exists.*true" || echo "0")
+    
+    if [ "$ULTRA_CHECK" -gt 0 ]; then
+        echo "✅ ULTRA templates detected - skipping enhancements (already pre-baked)"
+        echo "⚡ ZSH, MOTD, and aliases already configured in template"
+    else
+        # Run cluster enhancements for non-ULTRA templates
+        ENHANCEMENT_START=$(date +%s)
+        echo "🎨 Applying LABNGOPREK cluster enhancements (regular templates)..."
 
-ENHANCEMENT_END=$(date +%s)
-ENHANCEMENT_DURATION=$((ENHANCEMENT_END - ENHANCEMENT_START))
-echo "✅ Cluster enhancements completed in ${ENHANCEMENT_DURATION} seconds"
+        ansible-playbook \
+            -i ${WORKSPACE}/scripts/inventory.py \
+            playbooks/k8s-cluster-enhancements.yml \
+            --forks 50 \
+            --timeout 30
+
+        ENHANCEMENT_END=$(date +%s)
+        ENHANCEMENT_DURATION=$((ENHANCEMENT_END - ENHANCEMENT_START))
+        echo "✅ Cluster enhancements completed in ${ENHANCEMENT_DURATION} seconds"
+    fi
+else
+    echo "⚠️  Could not detect template type - skipping enhancements"
+fi
 
 # Final verification
 FIRST_MASTER=$(python3 ${WORKSPACE}/scripts/get_first_master.py $INVENTORY_FILE)
