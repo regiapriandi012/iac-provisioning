@@ -4,7 +4,15 @@
 
 set -e
 
-INVENTORY_FILE=${1:-"${ANSIBLE_DIR}/inventory/k8s-inventory.json"}
+# Smart inventory file detection based on current directory
+if [ -f "inventory/k8s-inventory.json" ]; then
+    INVENTORY_FILE=${1:-"inventory/k8s-inventory.json"}
+elif [ -f "${ANSIBLE_DIR}/inventory/k8s-inventory.json" ]; then
+    INVENTORY_FILE=${1:-"${ANSIBLE_DIR}/inventory/k8s-inventory.json"}
+else
+    INVENTORY_FILE=${1:-"../ansible/inventory/k8s-inventory.json"}
+fi
+
 WORKSPACE=${WORKSPACE:-"/var/lib/jenkins/workspace/iac-provision"}
 
 echo "🚀 Starting SSH Connection Pool Manager..."

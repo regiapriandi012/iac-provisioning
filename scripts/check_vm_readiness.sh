@@ -52,6 +52,15 @@ sleep 20
 echo "🚀 Launching HYPER-PARALLEL VM readiness check..."
 if ${WORKSPACE}/scripts/hyper_parallel_vm_ready.sh ${INVENTORY_FILE} 30; then
     echo "✅ HYPER-PARALLEL VM readiness check SUCCEEDED!"
+    
+    # ADDITIONAL VERIFICATION: Test SSH connection to ensure VMs are truly ready
+    echo "🔍 Performing additional SSH verification..."
+    if ${WORKSPACE}/venv/bin/python ${WORKSPACE}/scripts/smart_vm_ready.py ${INVENTORY_FILE} 10; then
+        echo "✅ SSH verification confirmed - VMs are truly ready!"
+    else
+        echo "❌ SSH verification FAILED - VMs reported ready but not accessible!"
+        exit 1
+    fi
 else
     echo "⚠️  HYPER-PARALLEL check failed, falling back to standard retry mechanism..."
     

@@ -158,8 +158,15 @@ pipeline {
                                 def startTime = System.currentTimeMillis()
                                 
                                 // ULTRA-OPTIMIZED: SSH Pool + Combined readiness + deployment
-                                sh '../scripts/ssh_pool_manager.sh'
-                                sh '../scripts/check_vm_readiness.sh'
+                                sh '../scripts/ssh_pool_manager.sh || echo "⚠️ SSH pool setup failed - continuing anyway"'
+                                
+                                // CRITICAL: VM readiness check must succeed before deployment
+                                try {
+                                    sh '../scripts/check_vm_readiness.sh'
+                                    echo "✅ VM readiness confirmed - proceeding with deployment"
+                                } catch (Exception e) {
+                                    error "❌ VM READINESS FAILED: ${e.getMessage()}\n🛑 Aborting deployment to prevent connection errors"
+                                }
                                 
                                 if (env.TEMPLATE_DEPLOYMENT && env.TEMPLATE_DEPLOYMENT.toBoolean()) {
                                     echo "🚀 TEMPLATE-OPTIMIZED (~35-50s target)"
