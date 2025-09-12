@@ -171,14 +171,23 @@
   tasks:
     - name: "🚀 Deploy Cilium with ULTRA-optimized settings"
       shell: |
-        # Use pre-installed Cilium CLI for maximum speed
+        # Create temporary values file for Cilium
+        cat > /tmp/cilium-values.yaml <<EOF
+        kubeProxyReplacement: true
+        operator:
+          replicas: 1
+        hubble:
+          enabled: true
+          relay:
+            enabled: true
+          ui:
+            enabled: true
+        EOF
+        
+        # Use pre-installed Cilium CLI with values file
         /usr/local/bin/cilium install \
           --version="{{ hostvars['localhost']['cni_version'] }}" \
-          --set kubeProxyReplacement=true \
-          --set operator.replicas=1 \
-          --set hubble.enabled=true \
-          --set hubble.relay.enabled=true \
-          --set hubble.ui.enabled=true \
+          --values /tmp/cilium-values.yaml \
           --wait=false
       register: cilium_install
 
