@@ -57,7 +57,7 @@
           register: ultra_validation
           delegate_to: "{{ item }}"
           loop: "{{ groups['k8s_cluster'] }}"
-          when: ultra_template_marker.stat.exists
+          when: ultra_template_marker.results[ansible_loop.index0].stat.exists
           ignore_errors: true
 
         - name: "STRICT ULTRA validation - no fallbacks allowed"
@@ -68,7 +68,7 @@
               💡 Create templates using:
                 - ./scripts/create-ultra-optimized-k8s-template.sh (Debian)
                 - ./scripts/create-ultra-optimized-centos9-k8s-template.sh (CentOS)
-          when: not (ultra_template_marker.stat.exists and ultra_validation is succeeded)
+          when: ultra_template_marker.results | selectattr('stat.exists', 'equalto', false) | list | length > 0
 
         - name: "Set ULTRA optimization flags - STRICT MODE"
           set_fact:
