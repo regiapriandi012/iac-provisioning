@@ -60,18 +60,28 @@
           when: ultra_template_marker.stat.exists
           ignore_errors: true
 
-        - name: "Set ULTRA optimization flags"
-          set_fact:
-            ultra_optimized: "{{ ultra_template_marker.stat.exists and ultra_validation is succeeded }}"
-            template_optimized: "{{ ultra_template_marker.stat.exists }}"
+        - name: "STRICT ULTRA validation - no fallbacks allowed"
+          fail:
+            msg: |
+              ❌ ULTRA template validation FAILED!
+              🔧 Required: All nodes must have ULTRA-optimized templates
+              💡 Create templates using:
+                - ./scripts/create-ultra-optimized-k8s-template.sh (Debian)
+                - ./scripts/create-ultra-optimized-centos9-k8s-template.sh (CentOS)
+          when: not (ultra_template_marker.stat.exists and ultra_validation is succeeded)
 
-        - name: "🎯 Template Detection Results"
+        - name: "Set ULTRA optimization flags - STRICT MODE"
+          set_fact:
+            ultra_optimized: true
+            template_optimized: true
+
+        - name: "🎯 ULTRA-ONLY Mode Confirmation"
           debug:
             msg:
-              - "ULTRA Template: {{ 'YES' if ultra_optimized else 'NO' }}"
-              - "Base Template: {{ 'YES' if template_optimized else 'NO' }}" 
-              - "Expected deployment time: {{ '25-30s' if ultra_optimized else ('50s' if template_optimized else '174s') }}"
-              - "Performance gain: {{ '5-7x faster' if ultra_optimized else ('3.5x faster' if template_optimized else 'baseline') }}"
+              - "✅ ULTRA Template: VALIDATED"
+              - "✅ Expected deployment time: 25-30 seconds" 
+              - "🚀 Performance gain: 5-7x faster than baseline"
+              - "⚡ Mode: ULTRA-ONLY (no fallbacks)"
 
 # ======================================================================
 # ULTRA-FAST CLUSTER INITIALIZATION (Masters Only)
@@ -168,13 +178,11 @@
           --set hubble.ui.enabled=true \
           --wait=false
       register: cilium_install
-      when: hostvars['localhost']['ultra_optimized']
 
     - name: "⚡ Quick CNI status check (non-blocking)"
       shell: /usr/local/bin/cilium status --wait=false
       register: cni_status  
       ignore_errors: true
-      when: hostvars['localhost']['ultra_optimized']
 
 # ======================================================================
 # ULTRA-FAST ADDON DEPLOYMENT (Pre-staged Manifests)  
@@ -187,12 +195,10 @@
   tasks:
     - name: "📊 Deploy pre-staged Metrics Server"
       shell: kubectl apply -f /opt/kubernetes/addons/metrics-server.yaml
-      when: hostvars['localhost']['ultra_optimized']
       ignore_errors: true
 
     - name: "⚖️ Deploy pre-staged MetalLB"  
       shell: kubectl apply -f /opt/kubernetes/addons/metallb.yaml
-      when: hostvars['localhost']['ultra_optimized']
       ignore_errors: true
 
     - name: "🎯 Create MetalLB IP pool"
@@ -213,7 +219,6 @@
           name: default-l2adv
           namespace: metallb-system
         EOF
-      when: hostvars['localhost']['ultra_optimized']
       ignore_errors: true
 
 # ======================================================================

@@ -27,10 +27,17 @@ DEPLOYMENT_START=$(date +%s)
 
 log "Phase 1: Pre-deployment validation"
 
-# Verify ULTRA template availability
+# Verify ULTRA template availability - STRICT MODE (no fallbacks)
 if ! ansible all -i inventory/k8s-inventory.json -m stat -a "path=/etc/kubernetes-ultra-optimized" --one-line 2>/dev/null | grep -q "exists.*true"; then
-    warn "ULTRA-optimized templates not detected - falling back to template mode"
-    exec ../scripts/deploy_kubernetes_template.sh
+    echo -e "${RED}❌ ULTRA-optimized templates NOT FOUND!${NC}"
+    echo "🔧 Required templates:"
+    echo "  • t-debian12-ultra-k8s"
+    echo "  • t-centos9-ultra-k8s"
+    echo ""
+    echo "💡 Create templates using:"
+    echo "  ./scripts/create-ultra-optimized-k8s-template.sh"
+    echo "  ./scripts/create-ultra-optimized-centos9-k8s-template.sh"
+    exit 1
 fi
 
 log "✅ ULTRA-optimized templates confirmed"
