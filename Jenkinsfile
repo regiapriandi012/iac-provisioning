@@ -6,7 +6,7 @@ pipeline {
         string(name: 'CLUSTER_NAME', defaultValue: 'k8s-cluster', description: 'Name of the Kubernetes cluster')
         string(name: 'DESCRIPTION', defaultValue: 'Kubernetes cluster deployed from Django', description: 'Cluster description')
         choice(name: 'PROXMOX_NODE', choices: ['thinkcentre', 'proxmox'], description: 'Proxmox node to deploy on')
-        choice(name: 'VM_TEMPLATE', choices: ['t-debian12-k8s-ready', 't-centos9-k8s-ready', 't-debian12-kube', 't-centos9-kube'], description: 'VM template to use')
+        choice(name: 'VM_TEMPLATE', choices: ['t-debian12-ultra-k8s', 't-debian12-k8s-ready', 't-centos9-k8s-ready', 't-debian12-kube', 't-centos9-kube'], description: 'VM template to use')
         string(name: 'MASTER_COUNT', defaultValue: '3', description: 'Number of master nodes')
         string(name: 'WORKER_COUNT', defaultValue: '2', description: 'Number of worker nodes')
         string(name: 'CORES', defaultValue: '2', description: 'CPU cores per VM')
@@ -21,6 +21,7 @@ pipeline {
         string(name: 'IP_RANGE_START', defaultValue: '10.200.0.0/24', description: 'IP range for VMs')
         booleanParam(name: 'SKIP_ENHANCEMENTS', defaultValue: false, description: '⚡ Skip cosmetic enhancements (zsh, banner, etc) for ULTRA-FAST deployment')
         booleanParam(name: 'ULTRA_FAST_MODE', defaultValue: true, description: '🚀 Enable all speed optimizations (reduced timeouts, parallel execution)')
+        booleanParam(name: 'ULTRA_OPTIMIZED_TEMPLATES', defaultValue: true, description: '⚡ Use ULTRA-optimized templates for 25-30s deployment (5-7x faster)')
         booleanParam(name: 'AUTO_CLEANUP_ON_FAILURE', defaultValue: true, description: '🧹 Automatically destroy VMs when pipeline fails (disable for debugging)')
     }
 
@@ -82,6 +83,7 @@ pipeline {
                             env.CNI_TYPE = globalConfig.OVERRIDE_CNI_TYPE ?: (globalConfig.DEFAULT_CNI_TYPE ?: 'cilium')
                             env.CNI_VERSION = globalConfig.OVERRIDE_CNI_VERSION ?: (globalConfig.DEFAULT_CNI_VERSION ?: '1.16.0')
                             env.KUBERNETES_VERSION = globalConfig.OVERRIDE_KUBERNETES_VERSION ?: (globalConfig.DEFAULT_KUBERNETES_VERSION ?: '1.32.7')
+                            env.ULTRA_OPTIMIZED_MODE = params.ULTRA_OPTIMIZED_TEMPLATES ? 'true' : (globalConfig.ULTRA_OPTIMIZED_DEPLOYMENT ?: 'false')
                             env.TEMPLATE_DEPLOYMENT = globalConfig.TEMPLATE_DEPLOYMENT ?: 'true'
                             env.PARALLEL_DEPLOYMENT = globalConfig.PARALLEL_DEPLOYMENT ?: 'false'
                             env.PROXMOX_CREDENTIALS_PREFIX = globalConfig.PROXMOX_CREDENTIALS_PREFIX ?: 'proxmox'
@@ -169,10 +171,15 @@ pipeline {
                                     error "❌ VM READINESS FAILED: ${e.getMessage()}\n🛑 Aborting deployment to prevent connection errors"
                                 }
                                 
-                                if (env.TEMPLATE_DEPLOYMENT && env.TEMPLATE_DEPLOYMENT.toBoolean()) {
-                                    echo "🚀 TEMPLATE-OPTIMIZED (~35-50s target)"
+                                // Auto-detect deployment mode based on template and optimization settings
+                                if (env.ULTRA_OPTIMIZED_MODE && env.ULTRA_OPTIMIZED_MODE.toBoolean()) {
+                                    echo "⚡ ULTRA-OPTIMIZED DEPLOYMENT (~25-30s target) - 5-7x FASTER!"
+                                    sh '../scripts/deploy_kubernetes_ultra.sh'
+                                } else if (env.TEMPLATE_DEPLOYMENT && env.TEMPLATE_DEPLOYMENT.toBoolean()) {
+                                    echo "🚀 TEMPLATE-OPTIMIZED (~35-50s target) - 3.5x faster"
                                     sh '../scripts/deploy_kubernetes_template.sh'
                                 } else {
+                                    echo "🔧 REGULAR DEPLOYMENT (~174s baseline)"
                                     sh '../scripts/deploy_kubernetes_parallel.sh'
                                 }
                                 
