@@ -183,16 +183,7 @@
         # Force version 1.15.6 since 1.16.0 has known issues
         /usr/local/bin/cilium install --version=1.15.6
         
-        echo "Waiting for CNI pods to start..."
-        sleep 10
-        
-        echo "Waiting for Cilium to be ready..."
-        /usr/local/bin/cilium status --wait --wait-duration=60s || echo "Cilium still starting up"
-        
-        echo "Final Cilium status check..."
-        /usr/local/bin/cilium status --wait=false || true
-        
-        echo "Cilium deployment completed"
+        echo "Cilium deployment initiated (will be ready in background)"
       register: cni_install
       ignore_errors: true
       
