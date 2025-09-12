@@ -82,13 +82,28 @@ if command -v curl >/dev/null 2>&1; then
     echo "🔗 Trigger URL: ${JENKINS_TRIGGER_URL}"
     echo "📝 Parameters: ${POST_DATA}"
     
-    # Trigger the job
-    RESPONSE=$(curl -X POST \
-        -H "Content-Type: application/x-www-form-urlencoded" \
-        -d "${POST_DATA}" \
-        "${JENKINS_TRIGGER_URL}" \
-        -w "HTTP_STATUS:%{http_code}" \
-        -s || echo "HTTP_STATUS:000_CURL_FAILED")
+    # Get Jenkins crumb for CSRF protection
+    JENKINS_CRUMB=$(curl -s "${JENKINS_URL}/crumbIssuer/api/json" | grep -o '"crumb":"[^"]*"' | cut -d'"' -f4 2>/dev/null || echo "")
+    
+    # Trigger the job with proper headers
+    if [ -n "$JENKINS_CRUMB" ]; then
+        echo "🔒 Using Jenkins CSRF crumb for authentication"
+        RESPONSE=$(curl -X POST \
+            -H "Content-Type: application/x-www-form-urlencoded" \
+            -H "Jenkins-Crumb: ${JENKINS_CRUMB}" \
+            -d "${POST_DATA}" \
+            "${JENKINS_TRIGGER_URL}" \
+            -w "HTTP_STATUS:%{http_code}" \
+            -s || echo "HTTP_STATUS:000_CURL_FAILED")
+    else
+        echo "⚠️  No CSRF crumb available, trying without..."
+        RESPONSE=$(curl -X POST \
+            -H "Content-Type: application/x-www-form-urlencoded" \
+            -d "${POST_DATA}" \
+            "${JENKINS_TRIGGER_URL}" \
+            -w "HTTP_STATUS:%{http_code}" \
+            -s || echo "HTTP_STATUS:000_CURL_FAILED")
+    fi
     
     HTTP_STATUS=$(echo "$RESPONSE" | grep "HTTP_STATUS:" | cut -d: -f2)
     
