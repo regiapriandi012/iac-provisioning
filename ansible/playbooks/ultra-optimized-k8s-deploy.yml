@@ -235,32 +235,7 @@
         EOF
       ignore_errors: true
 
-    - name: "⚖️ Deploy MetalLB (ULTRA-FAST)"  
-      shell: |
-        # Deploy MetalLB with official manifests
-        kubectl apply -f https://raw.githubusercontent.com/metallb/metallb/v0.13.12/config/manifests/metallb-native.yaml
-        
-        # Wait for MetalLB to be ready before creating IP pool
-        sleep 15
-        
-        # Create IP pool
-        cat <<EOF | kubectl apply -f -
-        apiVersion: metallb.io/v1beta1
-        kind: IPAddressPool
-        metadata:
-          name: default-pool
-          namespace: metallb-system
-        spec:
-          addresses:
-          - 10.200.0.100-10.200.0.200
-        ---
-        apiVersion: metallb.io/v1beta1  
-        kind: L2Advertisement
-        metadata:
-          name: default-l2adv
-          namespace: metallb-system
-        EOF
-      ignore_errors: true
+    # MetalLB SKIPPED for ULTRA-FAST deployment (saves 20-30s)
 
 # ======================================================================
 # ULTRA-FAST VERIFICATION & COMPLETION
