@@ -199,26 +199,8 @@
 
     - name: "📈 Deploy Metricbeat for Monitoring"
       shell: |
-        # Deploy Metricbeat DaemonSet for monitoring with Elasticsearch
+        # Deploy lightweight Metricbeat DaemonSet with env vars
         cat <<EOF | kubectl apply -f -
-        apiVersion: v1
-        kind: ConfigMap
-        metadata:
-          name: metricbeat-config
-          namespace: kube-system
-        data:
-          metricbeat.yml: |
-            metricbeat.config.modules:
-              path: /usr/share/metricbeat/modules.d/*.yml
-            output.elasticsearch:
-              hosts: ['172.16.20.90:9200']
-              username: elastic
-              password: xrUW620aXmqkw*ErAWGC
-            setup.kibana:
-              host: "172.16.20.90:5601"
-            processors:
-            - add_kubernetes_metadata: ~
-        ---
         apiVersion: apps/v1
         kind: DaemonSet
         metadata:
@@ -236,21 +218,15 @@
               containers:
               - name: metricbeat
                 image: docker.elastic.co/beats/metricbeat:8.11.0
-                resources:
-                  requests:
-                    memory: "64Mi"
-                    cpu: "50m"
-                  limits:
-                    memory: "128Mi"
-                    cpu: "100m"
-                volumeMounts:
-                - name: config
-                  mountPath: /usr/share/metricbeat/metricbeat.yml
-                  subPath: metricbeat.yml
-              volumes:
-              - name: config
-                configMap:
-                  name: metricbeat-config
+                env:
+                - name: ELASTICSEARCH_HOST
+                  value: "172.16.20.90"
+                - name: ELASTICSEARCH_PORT
+                  value: "9200"
+                - name: ELASTICSEARCH_USERNAME
+                  value: "elastic"
+                - name: ELASTICSEARCH_PASSWORD
+                  value: "xrUW620aXmqkw*ErAWGC"
               hostNetwork: true
               dnsPolicy: ClusterFirstWithHostNet
               tolerations:
