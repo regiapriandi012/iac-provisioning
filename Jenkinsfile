@@ -297,12 +297,26 @@ pipeline {
             }
         }
         
-        stage('SUMMARY') {
+        stage('SUMMARY & WEBHOOK') {
             steps {
                 script {
                     // OPTIMIZED: Minimal summary without slow terraform output
                     def duration = currentBuild.durationString.replace(' and counting', '')
                     echo "✅ SUCCESS: ${params.CLUSTER_NAME} deployed in ${duration} | ${params.MASTER_COUNT}M+${params.WORKER_COUNT}W | K8s${params.KUBERNETES_VERSION}"
+                    
+                    // FAST: Send metadata to Django (non-blocking, 10s timeout)
+                    try {
+                        timeout(time: 10, unit: 'SECONDS') {
+                            echo "📡 Sending cluster metadata to application..."
+                            sh """
+                                cd ${WORKSPACE}
+                                python3 scripts/send_metadata_to_django.py "${params.CLUSTER_NAME}" "https://labngoprek.my.id" || echo "⚠️ Webhook failed (non-critical)"
+                            """
+                        }
+                    } catch (Exception e) {
+                        echo "⚠️ Django webhook timeout: ${e.getMessage()}"
+                        echo "✅ This is non-critical - cluster deployment was successful"
+                    }
                 }
             }
         }
