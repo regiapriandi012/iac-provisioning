@@ -220,7 +220,8 @@ pipeline {
             parallel {
                 stage('Extract KUBECONFIG') {
                     when {
-                        expression { env.RUN_ANSIBLE && env.RUN_ANSIBLE.toBoolean() }
+                        expression { false } // TEMPORARILY DISABLED - takes too long
+                        // expression { env.RUN_ANSIBLE && env.RUN_ANSIBLE.toBoolean() }
                     }
                     steps {
                         script {
@@ -241,7 +242,8 @@ pipeline {
                 
                 stage('Notify Services') {
                     when {
-                        expression { env.RUN_ANSIBLE && env.RUN_ANSIBLE.toBoolean() }
+                        expression { false } // TEMPORARILY DISABLED - takes too long
+                        // expression { env.RUN_ANSIBLE && env.RUN_ANSIBLE.toBoolean() }
                     }
                     steps {
                         script {
