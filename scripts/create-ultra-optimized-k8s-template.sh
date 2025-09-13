@@ -176,7 +176,6 @@ cat > /etc/motd << 'EOF'
                                                               
 
 Welcome to LABNGOPREK Kubernetes Cluster!
-Node: t-debian12-ultra-k8s
 OS: Debian 12
 Kernel: 6.1.0-25-cloud-amd64
 

@@ -189,7 +189,6 @@ cat > /etc/motd << 'EOF'
                                                               
 
 Welcome to LABNGOPREK Kubernetes Cluster!
-Node: t-centos9-ultra-k8s
 OS: CentOS Stream 9
 Kernel: 6.1.0-25-cloud-amd64
 
