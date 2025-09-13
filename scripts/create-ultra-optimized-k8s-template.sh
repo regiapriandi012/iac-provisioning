@@ -166,17 +166,30 @@ fi
 # Phase 6: LABNGOPREK Branding & MOTD
 log "Phase 6: Enhanced LABNGOPREK branding..."
 
-# Enhanced MOTD with system info
+# Enhanced MOTD with system info (simple ASCII banner + useful info)
 cat > /etc/motd << 'EOF'
+ _        _    ____  _   _  ____  ___  ____  ____  _____ _  __
+| |      / \  | __ )| \ | |/ ___|/ _ \|  _ \|  _ \| ____| |/ /
+| |     / _ \ |  _ \|  \| | |  _| | | | |_) | |_) |  _| | ' / 
+| |___ / ___ \| |_) | |\  | |_| | |_| |  __/|  _ <| |___| . \ 
+|_____/_/   \_\____/|_| \_|\____|\___/|_|   |_| \_\_____|_|\_\
+                                                              
 
-██╗      █████╗ ██████╗ ███╗   ██╗ ██████╗  ██████╗ ██████╗ ██████╗ ███████╗██╗  ██╗
-██║     ██╔══██╗██╔══██╗████╗  ██║██╔════╝ ██╔═══██╗██╔══██╗██╔══██╗██╔════╝██║ ██╔╝
-██║     ███████║██████╔╝██╔██╗ ██║██║  ███╗██║   ██║██████╔╝██████╔╝█████╗  █████╔╝ 
-██║     ██╔══██║██╔══██╗██║╚██╗██║██║   ██║██║   ██║██╔═══╝ ██╔══██╗██╔══╝  ██╔═██╗ 
-███████╗██║  ██║██████╔╝██║ ╚████║╚██████╔╝╚██████╔╝██║     ██║  ██║███████╗██║  ██╗
-╚══════╝╚═╝  ╚═╝╚═════╝ ╚═╝  ╚═══╝ ╚═════╝  ╚═════╝ ╚═╝     ╚═╝  ╚═╝╚══════╝╚═╝  ╚═╝
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Welcome to LABNGOPREK Kubernetes Cluster!
+Node: t-debian12-ultra-k8s
+OS: Debian 12
+Kernel: 6.1.0-25-cloud-amd64
 
+Kubernetes Commands:
+• k get nodes        (alias for kubectl get nodes)
+• k get pods -A      (get all pods)
+• k top nodes        (node resource usage)
+• k top pods -A      (pod resource usage)
+
+Cluster Information:
+• Master Nodes: (to be configured)
+• Worker Nodes: (to be configured)
+• CNI Plugin: cilium
 EOF
 
 # Enhanced shell aliases for productivity
