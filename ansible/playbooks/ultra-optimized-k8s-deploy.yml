@@ -171,6 +171,27 @@
   serial: 0  # Maximum parallelism
   
   tasks:
+    - name: "🧹 Clean existing Kubernetes files on workers (if any)"
+      shell: |
+        # Stop kubelet and containerd services
+        systemctl stop kubelet || true
+        systemctl stop containerd || true
+        
+        # Remove existing Kubernetes configuration files
+        rm -rf /etc/kubernetes/kubelet.conf
+        rm -rf /etc/kubernetes/pki/ca.crt
+        rm -rf /etc/kubernetes/bootstrap-kubelet.conf
+        rm -rf /var/lib/kubelet/*
+        
+        # Kill any process using port 10250
+        fuser -k 10250/tcp || true
+        
+        # Restart containerd
+        systemctl start containerd
+        
+        echo "Worker node cleaned and ready for join"
+      ignore_errors: true
+      
     - name: "🔗 Join worker nodes (ULTRA parallel)"
       shell: "{{ join_worker }}"
 
