@@ -42,33 +42,32 @@ log "Found existing template version: $EXISTING_VERSION"
 # Phase 2: ULTRA-PERFORMANCE Image Pre-pulling
 log "Phase 2: Pre-pulling ULTRA-PERFORMANCE images..."
 
-# Additional core images for faster deployment
+# ESSENTIAL core images for faster deployment (DISK SPACE OPTIMIZED)
 ULTRA_IMAGES=(
-    # Metrics and Monitoring (saves 15-20s)
+    # Metrics and Monitoring (ESSENTIAL - saves 15-20s)
     "registry.k8s.io/metrics-server/metrics-server:v0.7.2"
     
-    # Load Balancer (saves 10-15s)
+    # Load Balancer (ESSENTIAL - saves 10-15s)
     "quay.io/metallb/controller:v0.14.8"
     "quay.io/metallb/speaker:v0.14.8"
     
-    # Enhanced Monitoring (saves 20-25s) 
-    "elastic/metricbeat:8.15.0"
-    "grafana/grafana:latest"
-    "prom/prometheus:latest"
-    "prom/node-exporter:latest"
+    # Monitoring (ESSENTIAL - saves 10-15s) 
+    "docker.elastic.co/beats/metricbeat:8.2.0"  # Match playbook version
     
-    # Network utilities (saves 5-10s)
-    "nicolaka/netshoot:latest"
-    "busybox:1.36"
-    "alpine/curl:latest"
+    # Minimal utilities (ESSENTIAL - saves 5-10s)
+    "busybox:1.36"                               # Lightweight debugging
+    "alpine:latest"                              # Minimal base image
     
-    # Development tools (saves 10-15s)
-    "rockylinux:9"
-    "nginx:alpine"
-    "redis:alpine"
-    
-    # Container registry (saves 30s if used)
-    "registry:2"
+    # REMOVED for disk space optimization:
+    # - grafana/grafana:latest (~300MB+)
+    # - prom/prometheus:latest (~200MB+) 
+    # - prom/node-exporter:latest (~50MB+)
+    # - nicolaka/netshoot:latest (~150MB+)
+    # - nginx:alpine (~50MB+)
+    # - redis:alpine (~100MB+)
+    # - registry:2 (~100MB+)
+    # - rockylinux:9 (~80MB+)
+    # Total saved: ~1GB+ disk space
 )
 
 log "Pre-pulling ${#ULTRA_IMAGES[@]} additional performance images..."
@@ -284,10 +283,10 @@ Container Runtime: containerd optimized
 Additional Images: $(crictl images -q | wc -l) total
 Performance Target: 25-30 second deployment
 Features:
-  - Pre-pulled core K8s images
+  - Pre-pulled core K8s images (ESSENTIAL only)
   - Pre-pulled CNI images (Cilium)
-  - Pre-pulled monitoring images
-  - Pre-pulled development tools
+  - Pre-pulled monitoring images (Metricbeat 8.2.0)
+  - Minimal utilities (busybox, alpine)
   - CNI CLI tools (cilium, hubble)
   - kubectl plugins and utilities
   - Pre-staged manifests
@@ -297,6 +296,7 @@ Features:
   - Enhanced shell environment
   - Performance tuning applied
   - CentOS 9 specific optimizations
+  - DISK SPACE OPTIMIZED (~1GB+ saved)
 EOF
 
 # Create ultra optimization marker
