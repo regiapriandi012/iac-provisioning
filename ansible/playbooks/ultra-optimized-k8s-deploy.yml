@@ -171,25 +171,47 @@
   serial: 0  # Maximum parallelism
   
   tasks:
-    - name: "🧹 Clean existing Kubernetes files on workers (if any)"
+    - name: "🧹 Clean existing Kubernetes files on workers (ultra-optimized template aware)"
       shell: |
-        # Stop kubelet and containerd services
-        systemctl stop kubelet || true
-        systemctl stop containerd || true
-        
-        # Remove existing Kubernetes configuration files
-        rm -rf /etc/kubernetes/kubelet.conf
-        rm -rf /etc/kubernetes/pki/ca.crt
-        rm -rf /etc/kubernetes/bootstrap-kubelet.conf
-        rm -rf /var/lib/kubelet/*
-        
-        # Kill any process using port 10250
-        fuser -k 10250/tcp || true
-        
-        # Restart containerd
-        systemctl start containerd
-        
-        echo "Worker node cleaned and ready for join"
+        # Check if this is an ultra-optimized template
+        if [ -f "/etc/kubernetes-ultra-optimized" ]; then
+          echo "🚀 Ultra-optimized template detected - performing smart cleanup"
+          
+          # Stop kubelet (but keep containerd running for pre-pulled images)
+          systemctl stop kubelet || true
+          
+          # Remove only cluster-specific files (keep template optimizations)
+          rm -rf /etc/kubernetes/kubelet.conf
+          rm -rf /etc/kubernetes/bootstrap-kubelet.conf
+          rm -rf /var/lib/kubelet/config.yaml
+          rm -rf /var/lib/kubelet/kubeadm-flags.env
+          
+          # Kill any process using port 10250
+          fuser -k 10250/tcp || true
+          
+          # Keep containerd running and pre-pulled images intact
+          echo "✅ Ultra-optimized template cleanup completed - images preserved"
+        else
+          echo "📦 Regular template detected - performing full cleanup"
+          
+          # Stop kubelet and containerd services
+          systemctl stop kubelet || true
+          systemctl stop containerd || true
+          
+          # Remove existing Kubernetes configuration files
+          rm -rf /etc/kubernetes/kubelet.conf
+          rm -rf /etc/kubernetes/pki/ca.crt
+          rm -rf /etc/kubernetes/bootstrap-kubelet.conf
+          rm -rf /var/lib/kubelet/*
+          
+          # Kill any process using port 10250
+          fuser -k 10250/tcp || true
+          
+          # Restart containerd
+          systemctl start containerd
+          
+          echo "✅ Regular template cleanup completed"
+        fi
       ignore_errors: true
       
     - name: "🔗 Join worker nodes (ULTRA parallel)"
