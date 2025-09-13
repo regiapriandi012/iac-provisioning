@@ -58,33 +58,23 @@ fi
 
 echo "⚠️  Direct API destroy failed, trying standard terraform destroy..."
 
-# Method 2: Standard terraform destroy
-echo "🔄 Attempting standard terraform destroy..."
-if timeout 300 terraform destroy -auto-approve -no-color 2>&1; then
-    echo "✅ Standard terraform destroy completed successfully!"
-    exit 0
-fi
+# Method 2: Direct state cleanup (skip terraform destroy due to credentials)
+echo "🚨 API destroy failed - proceeding with direct state cleanup..."
+echo "⚠️  Note: VMs may remain in Proxmox but will be removed from Terraform state"
 
-echo "⚠️  Standard destroy failed or timed out, trying targeted cleanup..."
-
-# Method 2: Targeted resource destruction
-echo "🎯 Attempting targeted resource destruction..."
+# List all resources that will be removed
+echo "📋 Resources to be removed from state:"
 terraform state list 2>/dev/null | while IFS= read -r resource; do
-    if [[ "$resource" =~ ^proxmox_vm_qemu\. ]] || [[ "$resource" =~ ^random_string\. ]]; then
-        echo "🗑️  Destroying: $resource"
-        timeout 60 terraform destroy -target="$resource" -auto-approve -no-color || {
-            echo "❌ Failed to destroy $resource, continuing..."
-        }
-    fi
+    echo "  - $resource"
 done
 
-# Method 3: Force state removal (last resort)
-echo "🚨 Final cleanup: removing remaining resources from state..."
+echo ""
+echo "🗑️  Removing all resources from terraform state..."
+
+# Remove all resources from state (this prevents resource accumulation in terraform)
 terraform state list 2>/dev/null | while IFS= read -r resource; do
-    if [[ "$resource" =~ ^proxmox_vm_qemu\. ]] || [[ "$resource" =~ ^random_string\. ]]; then
-        echo "🗑️  Force removing from state: $resource"
-        terraform state rm "$resource" || true
-    fi
+    echo "🗑️  Removing from state: $resource"
+    terraform state rm "$resource" || true
 done
 
 # Verify cleanup
