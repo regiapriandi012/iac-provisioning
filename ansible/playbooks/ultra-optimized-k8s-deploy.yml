@@ -270,11 +270,11 @@
         # Get all master node names and untaint each explicitly
         for master in $(kubectl get nodes --selector='node-role.kubernetes.io/control-plane' -o name); do
           echo "Untainting $master..."
-          kubectl taint $master node-role.kubernetes.io/control-plane- --ignore-not-found=true
+          kubectl taint $master node-role.kubernetes.io/control-plane- || echo "Taint not found or already removed"
         done
         
         # Also run the general untaint as backup
-        kubectl taint nodes --all node-role.kubernetes.io/control-plane- --ignore-not-found=true
+        kubectl taint nodes --all node-role.kubernetes.io/control-plane- || echo "Taint not found or already removed"
         
         echo "All master nodes untainted - pods can schedule immediately"
       register: untaint_result
