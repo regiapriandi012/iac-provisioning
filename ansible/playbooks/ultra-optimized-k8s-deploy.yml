@@ -205,23 +205,9 @@
       shell: |
         # CRITICAL: Untaint BEFORE Cilium install to prevent pending pods
         kubectl taint nodes --all node-role.kubernetes.io/control-plane-
-        echo "Master node untainted - scheduling ready for CNI"
+        echo "Master node untainted - pods can schedule immediately"
       register: untaint_result
       ignore_errors: true
-      
-    - name: "🔄 Restart kubelet immediately after untaint"
-      shell: |
-        # Restart kubelet to immediately refresh scheduling without waiting
-        systemctl restart kubelet
-        echo "Kubelet restarted - immediate pod scheduling enabled"
-      register: kubelet_restart_result
-      ignore_errors: true
-      
-    - name: "⏱️ Wait for kubelet to be ready"
-      shell: |
-        # Brief wait to ensure kubelet is fully ready
-        sleep 5
-        echo "Kubelet ready for workload scheduling"
       
     - name: "🚀 Deploy Cilium CNI (ULTRA-FAST mode)"
       shell: |
