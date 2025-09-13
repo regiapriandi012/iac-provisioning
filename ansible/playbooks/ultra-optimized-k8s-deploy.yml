@@ -520,9 +520,9 @@
                 - name: ELASTICSEARCH_PORT
                   value: "9200"
                 - name: ELASTICSEARCH_USERNAME
-                  value: elastic
+                  value: cluster_monitor
                 - name: ELASTICSEARCH_PASSWORD
-                  value: xrUW620aXmqkw*ErAWGC
+                  value: ClusterMon2024!
                 - name: ELASTIC_CLOUD_ID
                   value:
                 - name: ELASTIC_CLOUD_AUTH
