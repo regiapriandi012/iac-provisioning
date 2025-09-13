@@ -227,7 +227,7 @@ pipeline {
                             try {
                                 timeout(time: 2, unit: 'MINUTES') {
                                     dir("${ANSIBLE_DIR}") {
-                                        sh '../scripts/extract_kubeconfig.sh'
+                                        sh '${WORKSPACE}/scripts/extract_kubeconfig.sh'
                                     }
                                 }
                             } catch (Exception e) {
@@ -271,7 +271,7 @@ pipeline {
                                                 env.BUILD_DURATION = duration
                                                 env.MASTER_COUNT = params.MASTER_COUNT
                                                 env.WORKER_COUNT = params.WORKER_COUNT
-                                                sh '../scripts/notify_slack.sh || echo "Slack notification skipped"'
+                                                sh '${WORKSPACE}/scripts/notify_slack.sh || echo "Slack notification skipped"'
                                             }
                                         } catch (Exception e) {
                                             echo "⚠️ Slack notification failed: ${e.getMessage()}"
