@@ -91,13 +91,29 @@
 - name: "⚡ ULTRA-FAST Master Node Initialization"
   hosts: k8s_masters
   serial: 1
-  gather_facts: false
+  gather_facts: true
   become: true
   
   tasks:
     - name: "🚀 Lightning-fast kubeadm init (ULTRA mode)"
       shell: |
         # ULTRA-optimized kubeadm init with maximum speed optimizations
+        {% if groups['k8s_masters'] | length > 1 %}
+        # HA setup: use first master IP as control plane endpoint
+        kubeadm init \
+          --kubernetes-version="{{ hostvars['localhost']['kubernetes_version'] }}" \
+          --pod-network-cidr="{{ lookup('env', 'POD_NETWORK_CIDR') | default('10.244.0.0/16') }}" \
+          --service-cidr="{{ lookup('env', 'SERVICE_CIDR') | default('10.96.0.0/12') }}" \
+          --control-plane-endpoint="{{ ansible_default_ipv4.address }}:6443" \
+          --upload-certs \
+          --skip-phases=addon/kube-proxy \
+          --skip-certificate-key-print \
+          --skip-token-print \
+          --v=0 \
+          --ignore-preflight-errors=SystemVerification,Swap,FileContent--proc-sys-net-bridge-bridge-nf-call-iptables \
+          > /dev/null 2>&1
+        {% else %}
+        # Single master setup  
         kubeadm init \
           --kubernetes-version="{{ hostvars['localhost']['kubernetes_version'] }}" \
           --pod-network-cidr="{{ lookup('env', 'POD_NETWORK_CIDR') | default('10.244.0.0/16') }}" \
@@ -109,6 +125,7 @@
           --v=0 \
           --ignore-preflight-errors=SystemVerification,Swap,FileContent--proc-sys-net-bridge-bridge-nf-call-iptables \
           > /dev/null 2>&1
+        {% endif %}
         
         echo "kubeadm init completed successfully"
       register: kubeadm_init
